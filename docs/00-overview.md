@@ -24,7 +24,7 @@ The gateway never knows the BaaS exists. Modifying the gateway is
 eveys-console/
 ├── apps/
 │   ├── server/   the BaaS  — Node + Fastify + ws + kafkajs
-│   └── web/      the UI    — React 18 + Mantine + TanStack Router
+│   └── web/      the UI    — React 18 + shadcn/ui (Tailwind + Radix) + TanStack Router
 └── packages/
     ├── protocol/   shared WS envelope (zod, both apps import)
     └── api-types/  generated from the gateway's OpenAPI 3.1 spec

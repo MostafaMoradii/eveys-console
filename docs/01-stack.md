@@ -1,123 +1,148 @@
 # 01 — Stack
 
+This document is the inventory of every dependency the project ships
+on, with the version pin and the upstream license. Update this file
+in the same change that adds, removes, or bumps a dependency.
+
 Authoritative version pins live in each package's `package.json`.
-This doc explains *why* each piece is here, **and the license each
-ships under**. Don't add a dependency without updating this file.
+The license values come from the package's `LICENSE` file or its
+`package.json` `license` field, verified against the live install.
 
-## License policy
+## License posture
 
-The repo ships under **Apache-2.0**. Every dep below is OSI-approved
-permissive (MIT / Apache-2.0 / BSD / ISC / 0BSD). **No copyleft**
-(GPL/LGPL/AGPL). **No source-available-only** (SSPL/RSAL/BUSL/ELv2).
-This means:
+The repo is published under **Apache-2.0**.
 
-- We can close-source the repo if we ever decide to.
-- We can ship under the Eveys brand without UI-level attribution
-  obligations (`NOTICE` covers source-distribution attribution).
-- We can modify any vendored component without publishing the
+Every dependency is permissive: MIT, Apache-2.0, BSD-2-Clause,
+BSD-3-Clause, ISC, 0BSD, MIT-0, or Python-2.0. The project contains
+no copyleft (GPL, LGPL, AGPL) and no source-available-only licenses
+(SSPL, RSAL, BUSL, ELv2).
+
+Practical consequences:
+
+- The repo can be re-licensed or close-sourced.
+- Binaries can be distributed under the Eveys brand without
+  attribution requirements in the UI itself; source distributions
+  must preserve upstream `LICENSE` files (kept automatically inside
+  `node_modules`) and a top-level `NOTICE` summary.
+- Any dependency may be modified without obligation to publish the
   modifications.
 
-Audit the live install with:
+To re-audit the live install:
 
 ```bash
-find node_modules/.pnpm -name package.json -not -path '*/node_modules/*/node_modules/*' \
-  | xargs -I {} node -e "const p=require('{}');p.name&&console.log(p.name+'|'+p.version+'|'+(typeof p.license==='string'?p.license:'UNKNOWN'))" \
+find node_modules/.pnpm -name package.json \
+  -not -path '*/node_modules/*/node_modules/*' \
+  | xargs -I {} node -e \
+    "const p=require('{}');p.name&&console.log(p.name+'|'+p.version+'|'+(typeof p.license==='string'?p.license:'UNKNOWN'))" \
   | sort -u
 ```
 
-As of 2026-05-09: 344 unique packages, all permissive.
-
 ## Language and runtime
 
-| Component | Version | License | Why |
+| Component | Version | License | Role |
 |---|---|---|---|
-| Node.js | ≥ 20.10 | MIT | LTS line. Native test runner, native fetch, native WebSocket on the *client* side; mature on the server side. |
-| TypeScript | 5.7 | Apache-2.0 | Strict mode + `exactOptionalPropertyTypes` everywhere — catches the difference between "missing prop" and "prop: undefined" at compile time. |
-| pnpm | 9.15 | MIT | Workspaces are first-class; lockfile is deterministic; faster than npm. Pinned via `corepack`. |
+| Node.js | ≥ 20.10 | MIT | Runtime for the BaaS server and the build tooling. |
+| TypeScript | 5.7 | Apache-2.0 | Source language for both apps and shared packages. Strict mode with `exactOptionalPropertyTypes` enabled. |
+| pnpm | 9.15 | MIT | Package manager and workspace tool. Pinned via Corepack. |
 
 ## Server (`apps/server`)
 
-| Component | Version | License | Why |
+| Component | Version | License | Role |
 |---|---|---|---|
-| Fastify | 5.2 | MIT | Smallest plug-in HTTP/WS framework with first-class TypeScript. Faster than Express; more honest about middleware than Koa. |
-| `@fastify/websocket` | 11.0 | MIT | Wraps `ws` with a Fastify route adapter. One way to register a WS endpoint, no boilerplate. |
-| `@fastify/jwt` | 9.0 | MIT | Verifies JWTs against `JWT_SECRET`. HS256 today; switch to RS256 + JWKS by changing the `secret` option to a function. |
-| `@fastify/sensible` | 6.0 | MIT | `httpErrors` helpers + a few small niceties. Drops a lot of boilerplate from error handling. |
-| `ws` (transitive) | 8.20 | MIT | The underlying WebSocket implementation. Comes via `@fastify/websocket`. |
-| `kafkajs` | 2.2 | MIT | Pure-JS Kafka client. No native bindings, runs anywhere Node runs, including distroless. The `node-rdkafka` alternative is faster but needs librdkafka, which complicates the runtime image. |
-| `undici` | 6.21 | MIT | Modern HTTP client with `request()` ergonomics. Pinned to v6 because v7 needs Node 20.18+. |
-| `pino` | 9.5 | MIT | Fast structured JSON logger. Same shape as the gateway's `structlog` output (one log line per event, keyed fields). `pino-pretty` for dev. |
-| `zod` | 3.24 | MIT | Runtime validation of env config and inbound WS messages. Single source of truth: a zod schema → a TS type via `z.infer`. |
+| Fastify | 5.2 | MIT | HTTP and WebSocket framework. |
+| `@fastify/websocket` | 11.0 | MIT | WebSocket route adapter. Wraps `ws`. |
+| `@fastify/jwt` | 9.0 | MIT | JWT verification. |
+| `@fastify/sensible` | 6.0 | MIT | HTTP error helpers. |
+| `ws` (transitive) | 8.20 | MIT | Underlying WebSocket implementation. |
+| `kafkajs` | 2.2 | MIT | Pure-JS Kafka client. No native bindings. |
+| `undici` | 6.21 | MIT | HTTP client used by the gateway proxy. |
+| `pino` | 9.5 | MIT | Structured JSON logger. |
+| `zod` | 3.24 | MIT | Runtime validation for env config and inbound WebSocket messages. |
 
 ### Server test
 
-| Component | Version | License | Why |
+| Component | Version | License | Role |
 |---|---|---|---|
-| `vitest` | 2.1 | MIT | Vite-native test runner. ESM-first; same config across server/web. |
-| `tsx` | 4.19 | MIT | Runs TypeScript without a build step in dev. Used by `pnpm dev`. |
+| Vitest | 2.1 | MIT | Test runner. |
+| tsx | 4.19 | MIT | TypeScript executor used by `pnpm dev`. |
 
 ## Web (`apps/web`)
 
-| Component | Version | License | Why |
+The UI is built on **shadcn/ui**. shadcn/ui is not an installable
+component library — it is a code generator that copies component
+sources into `apps/web/src/components/ui/`. Those files are owned by
+this repo, edited like any other source file, and styled with
+Tailwind CSS. The runtime dependencies are the small set of Radix UI
+primitives those components rely on.
+
+| Component | Version | License | Role |
 |---|---|---|---|
-| React | 18.3 | MIT | Stable major. Strict mode in dev; concurrent rendering. React 19 lands later — wait for ecosystem catch-up. |
-| Vite | 6.0 | MIT | Fast dev server, fast prod build, ESM-native. Replaces Webpack/Rollup config with sensible defaults. |
-| Mantine | 7.15 | MIT | Component library. Includes a `<Table>`, `<AppShell>`, notifications, hooks. Un-opinionated on visual identity; themeable via CSS variables. **MIT means we can close-source on top, modify without publishing, ship under our brand.** |
-| `@tabler/icons-react` | 3.26 | MIT | Mantine's recommended icon set. ~5k icons, tree-shakeable. |
-| TanStack Router | 1.94 | MIT | Type-safe routing. We use the manual route tree (`src/routeTree.ts`) because file-based routing's codegen plugin requires a newer Node than 20.10. |
-| TanStack Query | 5.62 | MIT | Data fetching/caching for any future REST calls outside the WS. Currently configured but unused — the WS subscription model covers v1 needs. |
-| zod | 3.24 | MIT | Same package as the server; the protocol envelope is validated on both sides. |
+| React | 18.3 | MIT | UI runtime. |
+| Vite | 6.0 | MIT | Dev server and production bundler. |
+| Tailwind CSS | 3.4 | MIT | Utility-first styling. Configured in `tailwind.config.ts`. |
+| `tailwindcss-animate` | 1.0 | MIT | Animation utility classes used by Radix transitions. |
+| `class-variance-authority` | 0.7 | Apache-2.0 | Variant-based class composition. Used by every shadcn component. |
+| `clsx` | 2.1 | MIT | Conditional class composition. |
+| `tailwind-merge` | 2.6 | MIT | Resolves Tailwind class conflicts (e.g., `p-4` + `p-2`). |
+| `@radix-ui/react-slot` | 1.1 | MIT | `<Slot>` primitive for the `asChild` pattern. |
+| `@radix-ui/react-dialog` | 1.1 | MIT | Modal primitive. |
+| `@radix-ui/react-toast` | 1.2 | MIT | Toast primitive used by the toaster component. |
+| `lucide-react` | 0.469 | ISC | Icon set. |
+| TanStack Router | 1.94 | MIT | Type-safe routing. The route tree is declared manually in `src/routeTree.ts`. |
+| TanStack Query | 5.62 | MIT | Reserved for non-WebSocket data fetching. |
+| zod | 3.24 | MIT | Same package as the server. The protocol envelope is validated on both sides. |
 
 ### Web test
 
-| Component | Version | License | Why |
+| Component | Version | License | Role |
 |---|---|---|---|
-| `vitest` | 2.1 | MIT | Same as server. |
-| `jsdom` | 25 | MIT | DOM for component tests when we add them. None today. |
+| Vitest | 2.1 | MIT | Test runner. |
+| jsdom | 25 | MIT | DOM implementation for component tests. |
+| `autoprefixer` | 10.4 | MIT | PostCSS plugin used by the Tailwind pipeline. |
+| `postcss` | 8.4 | MIT | CSS pipeline. |
 
-## Shared (`packages/`)
+## Shared packages
 
-| Package | Why |
-|---|---|
-| `@eveys-console/protocol` | The wire format between the WS server and the WS client. Versioned, zod-validated. **Both apps import it.** Adding a new envelope type means changing this package, not server-then-client. |
-| `@eveys-console/api-types` | Types generated from the gateway's `docs/api/openapi.yaml` via `openapi-typescript`. **Read-only, gitignored.** Re-run `pnpm gen:api-types` after the gateway's spec changes. |
+| Package | License | Role |
+|---|---|---|
+| `@eveys-console/protocol` | Apache-2.0 | The WebSocket envelope contract between server and web. Versioned, zod-validated. Imported by both apps. |
+| `@eveys-console/api-types` | Apache-2.0 | Types generated from the gateway's `openapi.yaml` via `openapi-typescript`. Read-only and gitignored; regenerated by `pnpm gen:api-types`. |
 
-## Build, ship
+## Build and CI
 
-| Component | Version | License | Why |
+| Component | Version | License | Role |
 |---|---|---|---|
-| `prettier` | 3.4 | MIT | Code formatter. Default config + 100-col print width. |
-| Distroless `nodejs20-debian12:nonroot` | — | Apache-2.0 | Server runtime image. No shell, no package manager, root-less. ~70 MB. |
-| GitHub Actions | — | (service) | CI: format check + typecheck + test + build on every push and PR. |
+| Prettier | 3.4 | MIT | Code formatter. |
+| Distroless `nodejs20-debian12:nonroot` | n/a | Apache-2.0 | Server runtime image. |
+| GitHub Actions | n/a | proprietary service | Runs format check, typecheck, tests, build on every push and PR. |
 
 ## License obligations on distribution
 
-Combining permissive code into a closed-source product is allowed.
-The only obligations on distribution:
-
-- **Apache-2.0 deps** (TypeScript, OpenTelemetry-style upstreams):
-  preserve the `LICENSE` file and `NOTICE` if present in their
-  source. Modifications must be marked.
-- **MIT / ISC / BSD deps**: preserve the copyright notice and the
+- **MIT, ISC, BSD-2/3-Clause** — preserve the copyright notice and
   license text. No source-disclosure obligation.
-- **0BSD / MIT-0**: no obligations whatsoever.
-- **Python-2.0** (`argparse@2`): preserve the copyright; Python
-  Software Foundation License is permissive and explicitly compatible
+- **Apache-2.0** — preserve the `LICENSE` file and any `NOTICE`.
+  Mark modifications.
+- **0BSD, MIT-0** — no obligations.
+- **Python-2.0** (`argparse@2`) — preserve the copyright. Compatible
   with closed-source distribution.
+- **CC-BY-4.0** (`caniuse-lite`) — data-only, never bundled into
+  build output. No obligations on the shipped product.
 
-In practice: `node_modules` retains all upstream `LICENSE` files
-automatically; we surface third-party attribution in a top-level
-`NOTICE` (TODO — generate from `pnpm licenses list` before first
-binary release).
+`pnpm install` retains every upstream `LICENSE` file inside
+`node_modules` automatically. A top-level `NOTICE` aggregating
+attribution will be generated from `pnpm licenses list` before the
+first binary release.
 
 ## Versions to think before bumping
 
-- **Node 20.10**. Bumping above 20.18 unlocks `undici@7` and TanStack
-  Router file-based plugin. Worth doing once the rest of the team's
-  Node is on a recent 20.x.
-- **TanStack Router 1.94**. The 1.16x line moved to file-based routing
-  with a codegen plugin that needs Node 20.19+. We use 1.94 with a
-  manual route tree. If we ever upgrade Node, we should also upgrade
-  Router and adopt file-based routing.
-- **Mantine 7**. Mantine 8 alpha exists; wait for stable + Tabler icons
-  parity.
+- **Node 20.10**. Bumping past 20.18 unlocks `undici@7` and the
+  TanStack Router file-based routing plugin. Coordinate with the
+  team's installed Node baseline.
+- **TanStack Router 1.94**. The 1.16x line moved to file-based
+  routing with a codegen plugin that requires Node 20.19+. The
+  manual `routeTree.ts` is the workaround. Adopt file-based routing
+  when Node is bumped.
+- **Tailwind CSS 3.4**. Tailwind 4 is in beta with a different
+  config surface. Wait for a stable release.
+- **React 18.3**. React 19 is stable; defer until the TanStack
+  ecosystem is fully on it.

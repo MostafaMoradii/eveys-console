@@ -1,115 +1,129 @@
-import { Alert, Badge, Button, Group, Loader, Paper, Stack, Table, Text, Title } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
-import { IconPlayerPlay, IconPlayerStop, IconRefresh } from '@tabler/icons-react';
 import { useParams } from '@tanstack/react-router';
+import { Loader2, Play, RotateCcw, Square } from 'lucide-react';
 
-import { useConsoleClient } from '../lib/ws-context';
-import { useSubscription } from '../hooks/use-subscription';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { useToast } from '@/components/ui/toaster';
+import { useSubscription } from '@/hooks/use-subscription';
+import { useConsoleClient } from '@/lib/ws-context';
 
 export function ChargerDetailPage() {
   const { cpId } = useParams({ strict: false }) as { cpId: string };
   const { client } = useConsoleClient();
+  const { toast } = useToast();
   const sub = useSubscription('charge-point', { cp_id: cpId });
 
   const runRpc = async (method: string, params: Record<string, unknown>) => {
     try {
       await client.rpc(method, params);
-      notifications.show({ color: 'teal', title: method, message: 'Command accepted by charger' });
+      toast({ title: method, description: 'Command accepted by charger' });
     } catch (err) {
-      notifications.show({
-        color: 'red',
+      toast({
+        variant: 'destructive',
         title: method,
-        message: err instanceof Error ? err.message : 'Command failed',
+        description: err instanceof Error ? err.message : 'Command failed',
       });
     }
   };
 
   if (sub.error) {
     return (
-      <Alert color="red" title={`Couldn't load ${cpId}`}>
-        {sub.error}
+      <Alert variant="destructive">
+        <AlertTitle>Couldn't load {cpId}</AlertTitle>
+        <AlertDescription>{sub.error}</AlertDescription>
       </Alert>
     );
   }
   if (sub.loading || !sub.snapshot || sub.snapshot.kind !== 'charge-point') {
     return (
-      <Group>
-        <Loader size="sm" /> <Text>Loading charger…</Text>
-      </Group>
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading charger…
+      </div>
     );
   }
 
   const cp = sub.snapshot.row;
 
   return (
-    <Stack>
-      <Group justify="space-between" align="flex-end">
+    <div className="space-y-4">
+      <div className="flex items-end justify-between">
         <div>
-          <Title order={3}>{cp.cp_id}</Title>
-          <Text c="dimmed" size="sm">
+          <h2 className="text-xl font-semibold">{cp.cp_id}</h2>
+          <p className="text-sm text-muted-foreground">
             {cp.vendor ?? '—'} / {cp.model ?? '—'} · firmware {cp.firmware_version ?? '?'}
-          </Text>
+          </p>
         </div>
-        <Group>
-          <Badge color={cp.online ? 'teal' : 'gray'}>{cp.online ? 'online' : 'offline'}</Badge>
-          <Badge variant="light">last_status: {cp.last_status ?? '—'}</Badge>
-        </Group>
-      </Group>
+        <div className="flex items-center gap-2">
+          <Badge variant={cp.online ? 'success' : 'muted'}>
+            {cp.online ? 'online' : 'offline'}
+          </Badge>
+          <Badge variant="secondary">last_status: {cp.last_status ?? '—'}</Badge>
+        </div>
+      </div>
 
-      <Paper p="md" withBorder>
-        <Title order={5} mb="xs">
-          Commands
-        </Title>
-        <Group>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle>Commands</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
           <Button
-            leftSection={<IconPlayerPlay size={14} />}
             onClick={() => runRpc('remote-start', { cp_id: cp.cp_id, id_tag: 'OPERATOR' })}
           >
-            RemoteStart
+            <Play className="h-4 w-4" /> RemoteStart
           </Button>
           <Button
-            color="red"
-            variant="light"
-            leftSection={<IconPlayerStop size={14} />}
+            variant="destructive"
             onClick={() => runRpc('remote-stop', { cp_id: cp.cp_id, transaction_id: 0 })}
           >
-            RemoteStop
+            <Square className="h-4 w-4" /> RemoteStop
           </Button>
           <Button
-            variant="light"
-            leftSection={<IconRefresh size={14} />}
+            variant="outline"
             onClick={() => runRpc('reset', { cp_id: cp.cp_id, type: 'Soft' })}
           >
-            Soft Reset
+            <RotateCcw className="h-4 w-4" /> Soft Reset
           </Button>
-        </Group>
-      </Paper>
+        </CardContent>
+      </Card>
 
-      <Paper p="md" withBorder>
-        <Title order={5} mb="xs">
-          Connectors
-        </Title>
-        <Table>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>connector_id</Table.Th>
-              <Table.Th>status</Table.Th>
-              <Table.Th>error_code</Table.Th>
-              <Table.Th>last_changed_at</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {cp.connectors.map((c) => (
-              <Table.Tr key={c.connector_id}>
-                <Table.Td>{c.connector_id}</Table.Td>
-                <Table.Td>{c.status}</Table.Td>
-                <Table.Td>{c.error_code ?? '—'}</Table.Td>
-                <Table.Td>{c.last_changed_at ?? '—'}</Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Paper>
-    </Stack>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle>Connectors</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>connector_id</TableHead>
+                <TableHead>status</TableHead>
+                <TableHead>error_code</TableHead>
+                <TableHead>last_changed_at</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {cp.connectors.map((c) => (
+                <TableRow key={c.connector_id}>
+                  <TableCell>{c.connector_id}</TableCell>
+                  <TableCell>{c.status}</TableCell>
+                  <TableCell>{c.error_code ?? '—'}</TableCell>
+                  <TableCell>{c.last_changed_at ?? '—'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

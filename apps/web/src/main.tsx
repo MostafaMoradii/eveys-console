@@ -1,15 +1,13 @@
-import { MantineProvider } from '@mantine/core';
-import { Notifications } from '@mantine/notifications';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 
-import '@mantine/core/styles.css';
-import '@mantine/notifications/styles.css';
+import './index.css';
 
-import { routeTree } from './routeTree';
-import { ConsoleClientProvider } from './lib/ws-context';
+import { ToastProvider } from '@/components/ui/toaster';
+import { ConsoleClientProvider } from '@/lib/ws-context';
+import { routeTree } from '@/routeTree';
 
 const router = createRouter({ routeTree });
 declare module '@tanstack/react-router' {
@@ -27,13 +25,12 @@ if (!root) throw new Error('missing #root');
 
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
-    <MantineProvider defaultColorScheme="auto">
-      <Notifications position="top-right" />
-      <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}>
+      <ToastProvider>
         <ConsoleClientProvider>
           <RouterProvider router={router} />
         </ConsoleClientProvider>
-      </QueryClientProvider>
-    </MantineProvider>
+      </ToastProvider>
+    </QueryClientProvider>
   </React.StrictMode>,
 );

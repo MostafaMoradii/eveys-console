@@ -55,7 +55,9 @@ aspirations.
 
 ## Out of scope, ever
 
-- Building our own component library. Mantine handles it.
+- Building a shared component library as an installable package. The
+  shadcn/ui sources live inline under `apps/web/src/components/ui/`
+  and are owned by this repo.
 - A general predicate-based subscription language (Hasura-style).
   Named queries only; new views = small server change.
 - Modifying the gateway. If a feature needs a gateway change, it's a

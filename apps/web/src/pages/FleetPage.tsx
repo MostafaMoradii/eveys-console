@@ -1,10 +1,20 @@
-import { Alert, Anchor, Badge, Group, Loader, Stack, Table, Text, Title } from '@mantine/core';
 import { Link } from '@tanstack/react-router';
+import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
-import { useSubscription } from '../hooks/use-subscription';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { useSubscription } from '@/hooks/use-subscription';
 
 export function FleetPage() {
   const sub = useSubscription('charge-points', {});
@@ -27,65 +37,73 @@ export function FleetPage() {
 
   if (sub.error) {
     return (
-      <Alert color="red" title="Couldn't load fleet">
-        {sub.error}
+      <Alert variant="destructive">
+        <AlertTitle>Couldn't load fleet</AlertTitle>
+        <AlertDescription>{sub.error}</AlertDescription>
       </Alert>
     );
   }
   if (sub.loading || !sub.snapshot) {
     return (
-      <Group>
-        <Loader size="sm" /> <Text>Loading fleet…</Text>
-      </Group>
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading fleet…
+      </div>
     );
   }
 
   return (
-    <Stack>
-      <Group justify="space-between">
-        <Title order={3}>Fleet — {rows.length} chargers</Title>
-        <Text size="sm" c="dimmed">
+    <div className="space-y-4">
+      <div className="flex items-end justify-between">
+        <h2 className="text-xl font-semibold">Fleet — {rows.length} chargers</h2>
+        <p className="text-sm text-muted-foreground">
           Live; updates as chargers connect, change status, or boot.
-        </Text>
-      </Group>
-      <Table striped highlightOnHover withTableBorder>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>cp_id</Table.Th>
-            <Table.Th>online</Table.Th>
-            <Table.Th>last status</Table.Th>
-            <Table.Th>vendor / model</Table.Th>
-            <Table.Th>last heartbeat</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {rows.map((row) => (
-            <FleetRow key={row.cp_id} row={row} />
-          ))}
-        </Table.Tbody>
-      </Table>
-    </Stack>
+        </p>
+      </div>
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>cp_id</TableHead>
+              <TableHead>online</TableHead>
+              <TableHead>last status</TableHead>
+              <TableHead>vendor / model</TableHead>
+              <TableHead>last heartbeat</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <FleetRow key={row.cp_id} row={row} />
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
 }
 
 function FleetRow({ row }: { row: ChargePointSummary }) {
   return (
-    <Table.Tr>
-      <Table.Td>
-        <Anchor component={Link} to={`/charge-points/${row.cp_id}`}>
+    <TableRow>
+      <TableCell>
+        <Link
+          to="/charge-points/$cpId"
+          params={{ cpId: row.cp_id } as never}
+          className="text-primary underline-offset-2 hover:underline"
+        >
           {row.cp_id}
-        </Anchor>
-      </Table.Td>
-      <Table.Td>
-        <Badge color={row.online ? 'teal' : 'gray'} variant="light">
+        </Link>
+      </TableCell>
+      <TableCell>
+        <Badge variant={row.online ? 'success' : 'muted'}>
           {row.online ? 'online' : 'offline'}
         </Badge>
-      </Table.Td>
-      <Table.Td>{row.last_status ?? '—'}</Table.Td>
-      <Table.Td>
+      </TableCell>
+      <TableCell>{row.last_status ?? '—'}</TableCell>
+      <TableCell>
         {row.vendor ?? '—'} / {row.model ?? '—'}
-      </Table.Td>
-      <Table.Td>{row.last_heartbeat_at ?? '—'}</Table.Td>
-    </Table.Tr>
+      </TableCell>
+      <TableCell>{row.last_heartbeat_at ?? '—'}</TableCell>
+    </TableRow>
   );
 }

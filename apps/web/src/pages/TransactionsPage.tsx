@@ -1,50 +1,65 @@
-import { Alert, Group, Loader, Stack, Table, Text, Title } from '@mantine/core';
+import { Loader2 } from 'lucide-react';
 
-import { useSubscription } from '../hooks/use-subscription';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { useSubscription } from '@/hooks/use-subscription';
 
 export function TransactionsPage() {
   const sub = useSubscription('transactions-active', {});
 
   if (sub.error) {
     return (
-      <Alert color="red" title="Couldn't load transactions">
-        {sub.error}
+      <Alert variant="destructive">
+        <AlertTitle>Couldn't load transactions</AlertTitle>
+        <AlertDescription>{sub.error}</AlertDescription>
       </Alert>
     );
   }
   if (sub.loading || !sub.snapshot || sub.snapshot.kind !== 'transactions-active') {
     return (
-      <Group>
-        <Loader size="sm" /> <Text>Loading transactions…</Text>
-      </Group>
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading transactions…
+      </div>
     );
   }
 
   return (
-    <Stack>
-      <Title order={3}>Active transactions — {sub.snapshot.rows.length}</Title>
-      <Table striped withTableBorder>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>transaction_id</Table.Th>
-            <Table.Th>cp_id</Table.Th>
-            <Table.Th>id_tag</Table.Th>
-            <Table.Th>started</Table.Th>
-            <Table.Th>energy (Wh)</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {sub.snapshot.rows.map((r) => (
-            <Table.Tr key={r.transaction_id}>
-              <Table.Td>{r.transaction_id}</Table.Td>
-              <Table.Td>{r.cp_id}</Table.Td>
-              <Table.Td>{r.id_tag}</Table.Td>
-              <Table.Td>{r.start_at}</Table.Td>
-              <Table.Td>{r.energy_delivered_wh ?? '—'}</Table.Td>
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-    </Stack>
+    <div className="space-y-4">
+      <h2 className="text-xl font-semibold">
+        Active transactions — {sub.snapshot.rows.length}
+      </h2>
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>transaction_id</TableHead>
+              <TableHead>cp_id</TableHead>
+              <TableHead>id_tag</TableHead>
+              <TableHead>started</TableHead>
+              <TableHead>energy (Wh)</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sub.snapshot.rows.map((r) => (
+              <TableRow key={r.transaction_id}>
+                <TableCell>{r.transaction_id}</TableCell>
+                <TableCell>{r.cp_id}</TableCell>
+                <TableCell>{r.id_tag}</TableCell>
+                <TableCell>{r.start_at}</TableCell>
+                <TableCell>{r.energy_delivered_wh ?? '—'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
 }

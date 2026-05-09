@@ -17,7 +17,7 @@ Apache-2.0.
 |---|---|---|---|
 | WebSocket | `:8090/ws` | browser → BaaS | Auth + subscriptions + RPCs in one connection. Subprotocol: `eveys-console-v1` + `bearer.<jwt>`. |
 | Health | `:8090/healthz`, `:8090/readyz` | k8s → BaaS | Liveness / readiness probes. |
-| Web | `:5180` (dev) | browser | React + Mantine + TanStack Router console. |
+| Web | `:5180` (dev) | browser | React + shadcn/ui (Tailwind + Radix) + TanStack Router console. |
 
 ## Repo layout
 
@@ -31,7 +31,7 @@ apps/
 │       ├── rest/          typed client to the gateway's /api/v1
 │       ├── routes/        WS + health Fastify routes
 │       └── main.ts        process entry — wires the components
-└── web/                   React + Mantine + TanStack Router console
+└── web/                   React + shadcn/ui + TanStack Router console
     └── src/
         ├── api/           typed WS client (subscribe / rpc / reconnect)
         ├── components/    AppShell
@@ -83,8 +83,9 @@ schemas; the same types are imported by both server and web).
 
 Snapshot/tail consistency is **read-after-write with dedup**: clients
 key entities by `(cp_id, last_modified_at)` so the small overlap window
-between snapshot fetch and the first delta is harmless. Cloudscape /
-Mantine table components handle this naturally with `trackBy`.
+between snapshot fetch and the first delta is harmless. The Fleet
+table reduces the snapshot + the latest delta into a `Map<cp_id, row>`
+on every render; the React reconciler handles row identity by key.
 
 ## Build, test, ship
 
