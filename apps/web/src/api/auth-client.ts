@@ -3,7 +3,7 @@
 //   2. compute solution in the browser (SHA-256 leading-zeros).
 //   3. /auth/login    → returns JWT.
 
-const BASE = import.meta.env.VITE_BAAS_BASE_URL ?? 'http://127.0.0.1:8090';
+import { BAAS_BASE_URL as BASE } from '@/lib/baas-url';
 
 interface ChallengeResponse {
   challenge: string;

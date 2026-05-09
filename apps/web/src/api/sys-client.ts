@@ -1,7 +1,7 @@
 // Operator-facing system status. Polled from SystemPage; cheap on the
 // server side (one HTTP probe to the gateway + in-memory state).
 
-const BASE = import.meta.env.VITE_BAAS_BASE_URL ?? 'http://127.0.0.1:8090';
+import { BAAS_BASE_URL as BASE } from '@/lib/baas-url';
 
 export interface ComponentStatus {
   ok: boolean;

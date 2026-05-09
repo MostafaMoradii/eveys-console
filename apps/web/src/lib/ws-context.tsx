@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { ConsoleClient, type ConnectionStatus } from '../api/ws-client';
+import { BAAS_WS_URL as WS_URL } from './baas-url';
 
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8090/ws';
 const TOKEN_KEY = 'eveys-console.token';
 
 interface ConsoleClientContextValue {
