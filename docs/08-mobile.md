@@ -187,3 +187,31 @@ doesn't strictly gate any of them.
 - Keep an eye on bundle size: every Radix primitive we add (Sheet
   for the drawer, anything else) shows up in `pnpm build` output.
   Acceptable cost: < 25 KB gz total across all phases.
+
+## Touch and a11y posture (after M-6)
+
+- **Hit-area utility**: `.touch-target` in `index.css` extends a
+  control's hit area to 44 × 44 px **only on touch devices**
+  (`@media (pointer: coarse)`) via a transparent `::before`
+  overlay. The visible size doesn't change; desktop is unaffected.
+- **Applied to**: hamburger menu, theme-toggle items, sheet close
+  button. Pagination Previous/Next + page-size select grow from
+  `h-7` to `h-9` below `sm` instead, since their visible size
+  needed bumping anyway.
+- **Not applied to**: the FleetPage row-expand chevron and view-
+  toggle buttons — both are desktop-only (the row-expand chevron
+  only renders in table view, which is hidden below `sm` after
+  M-3; the view-toggle is hidden too).
+- **Focus-visible**: Buttons use `focus-visible:` so a click
+  doesn't leave the ring lingering; Inputs and Selects use plain
+  `focus:` because the orange-border-on-focus is the visual
+  affordance "this is where typing goes" — desirable regardless of
+  input modality. The Sheet close button was on plain `focus:`
+  (lit up after a click); switched to `focus-visible:`.
+- **Real-device verification**: still owed. The M-6 commit verified
+  every change in DevTools at 360 / 768 / 1280 px and via tab-key
+  navigation. iOS Safari and Android Chrome haven't been hit
+  hands-on; the things to watch for are touch-callout behaviour on
+  the hamburger button, the sheet's backdrop tap dismissal on iOS,
+  and the bottom-anchored filter sheet's keyboard-aware resize on
+  Android.

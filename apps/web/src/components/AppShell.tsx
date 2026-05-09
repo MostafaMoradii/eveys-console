@@ -42,7 +42,7 @@ export function ConsoleShell() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 p-0 lg:hidden"
+                className="touch-target h-8 w-8 p-0 lg:hidden"
                 aria-label="Open navigation"
               >
                 <Menu className="h-4 w-4" />

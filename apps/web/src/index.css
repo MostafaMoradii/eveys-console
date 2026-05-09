@@ -91,3 +91,31 @@
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
 }
+
+@layer utilities {
+  /*
+   * Extends an element's hit area to at least 44 × 44 px on touch
+   * devices (Apple HIG / Material guidance) without changing the
+   * visible size. The element stays compact in the layout; a
+   * transparent ::before lays a larger invisible target on top.
+   * Desktop is unaffected because the rule is gated to coarse
+   * pointers only.
+   *
+   * Use on small icon-only controls (hamburger, pagination buttons,
+   * theme toggle items, etc.). For controls that already render
+   * ≥ 44 × 44 (full-width buttons, large primary CTAs), no need.
+   */
+  @media (pointer: coarse) {
+    .touch-target {
+      position: relative;
+    }
+    .touch-target::before {
+      content: '';
+      position: absolute;
+      inset: 50% 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+}

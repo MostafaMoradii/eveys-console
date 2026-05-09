@@ -769,7 +769,7 @@ function Pagination({
         <Select
           value={String(pageSize)}
           onChange={(e) => onPageSizeChange(Number(e.currentTarget.value))}
-          className="h-7 w-[80px] text-xs"
+          className="h-9 w-[80px] text-xs sm:h-7"
         >
           <option value="50">50</option>
           <option value="100">100</option>
@@ -785,7 +785,7 @@ function Pagination({
             size="sm"
             onClick={onBack}
             disabled={!canGoBack}
-            className="h-7"
+            className="h-9 sm:h-7"
           >
             <ChevronLeft className="h-3.5 w-3.5" /> Previous
           </Button>
@@ -794,7 +794,7 @@ function Pagination({
             size="sm"
             onClick={onNext}
             disabled={!canGoNext}
-            className="h-7"
+            className="h-9 sm:h-7"
           >
             Next <ChevronRight className="h-3.5 w-3.5" />
           </Button>

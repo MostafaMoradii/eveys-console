@@ -70,8 +70,8 @@ export const SheetContent = forwardRef<
       {children}
       <DialogPrimitive.Close
         className={cn(
-          'absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background ' +
-            'transition-opacity hover:opacity-100 focus:outline-none focus:ring-1 focus:ring-ring',
+          'touch-target absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background ' +
+            'transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
         )}
         aria-label="Close"
       >

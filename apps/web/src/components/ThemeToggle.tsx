@@ -23,7 +23,7 @@ export function ThemeToggle() {
           aria-pressed={mode === m}
           onClick={() => setMode(m)}
           className={cn(
-            'h-7 w-7 p-0',
+            'touch-target h-7 w-7 p-0',
             mode === m && 'bg-accent text-accent-foreground',
           )}
         >

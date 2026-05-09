@@ -97,9 +97,21 @@ sub-phase is shippable on its own.
       time) / `consumed_wh` underneath. Empty state added for both
       layouts ("No active transactions right now."). Bundle
       +0.2 KB gz.
-- [ ] **M-6** — Touch + accessibility polish: 44 × 44 hit targets,
-      focus-visible across the new sheet/drawer patterns,
-      real-device pass on iOS Safari + Android Chrome. (~0.5 day)
+- [x] **M-6** — Touch + accessibility polish (code side). New
+      `.touch-target` utility in `index.css` extends a control's
+      hit area to 44 × 44 on touch devices via a transparent
+      `::before` overlay; visible size unchanged, desktop
+      unaffected. Applied to the hamburger button, theme-toggle
+      items, sheet close button. Pagination Previous/Next + page-
+      size select bumped from `h-7` to `h-9` below `sm` (visible-
+      size grow, since they needed it anyway). Sheet close button
+      switched from `focus:` to `focus-visible:` so a click
+      doesn't leave the ring. Bundle +0.0 KB gz.
+- [ ] **M-6 follow-up** — Real-device pass on iOS Safari + Android
+      Chrome. The code is in place; what's still owed is hands-on
+      verification. Watch for: hamburger touch-callout, sheet
+      backdrop-tap dismissal on iOS, filter sheet keyboard-aware
+      resize on Android.
 
 ## Phase 2 — Production-shaped [later]
 
