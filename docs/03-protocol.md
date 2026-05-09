@@ -107,8 +107,11 @@ replies as `inReplyTo`.
   inReplyTo: "r-1", subscriptionId: "s-abc" }
 
 // First message after acceptance: the snapshot.
+// `charge-points` snapshots also carry `next_cursor` (nullable) for
+// forward pagination — pass it back as the `cursor` param on the
+// next subscribe to load the next page.
 { v: 1, type: "snapshot", subscriptionId: "s-abc",
-  snapshot: { kind: "charge-points", rows: [...] },
+  snapshot: { kind: "charge-points", rows: [...], next_cursor: "eyJpZCI6NjF9" },
   cursor: "gw:cp-list:1700000000" }
 
 // Subsequent: zero or more deltas.
@@ -172,6 +175,25 @@ The client appends to an array. Bounded by client-side retention
 ```
 
 The client replaces the whole entity.
+
+### Subscription params
+
+Each named query takes its own param shape. Unknown params are
+ignored, missing required params return an `error` envelope with
+`invalid_message`.
+
+| Query | Required | Optional |
+|---|---|---|
+| `charge-points` | — | `online` (bool), `vendor` (string, exact match), `limit` (1–10000), `cursor` (opaque from prior snapshot's `next_cursor`) |
+| `charge-point` | `cp_id` (string) | — |
+| `transactions-active` | — | (none yet — server returns the gateway's full active list) |
+| `meter-history` | `cp_id` (string) | — |
+| `status-history` | `cp_id` (string) | — |
+
+`charge-points` server-side filters (`online`, `vendor`) cut the
+loaded page on the gateway. Any other UI filter (e.g. status enum,
+free-text search across `cp_id`/`vendor`/`model`/`serial`) is
+client-side over the loaded page only.
 
 ### Error codes
 

@@ -138,7 +138,7 @@ ignores stale duplicates.
 
 | Name | Snapshot source | Delta source | Notes |
 |---|---|---|---|
-| `charge-points` | `GET /api/v1/charge-points` | `cp.boot`, `cp.status` | Resolver re-fetches `GET /charge-points/{cp_id}` per event for a complete row. Filter by `online`/`vendor` in params; mismatching events emit a `remove` delta. |
+| `charge-points` | `GET /api/v1/charge-points` | `cp.boot`, `cp.status` | Resolver re-fetches `GET /charge-points/{cp_id}` per event for a complete row. Params: `online`, `vendor`, `limit`, `cursor` — all forwarded to the gateway. The snapshot envelope carries `next_cursor` (nullable) so the client can advance forward. Mismatching events emit a `remove` delta so subscribers can drop the row from the loaded page. |
 | `charge-point` | `GET /api/v1/charge-points/:cp_id` | `cp.boot`, `cp.status` (filtered by `cp_id`) | Same re-fetch pattern. Singleton; deltas replace the whole entity. |
 | `transactions-active` | `GET /api/v1/transactions?active=true` | `tx.started` | Maps the protobuf payload's camelCase fields to the wire shape (`transaction_id`, `cp_id`, `id_tag`, `meter_start_wh`, `started_reported_at`, …). |
 | `meter-history` | (empty in v1) | `cp.meter` (filtered by `cp_id`) | One Kafka event fans out to N deltas, one per `sampledValues[]` entry. Enum suffix stripped (e.g. `UNIT_WH` → `WH`). |

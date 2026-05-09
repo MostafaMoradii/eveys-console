@@ -45,7 +45,7 @@ Audience: SRE / on-call engineer administering the gateway.
 | Path | Page | Purpose |
 |---|---|---|
 | `/` | System status | Live grid of service health: BaaS uptime + WS connection count, Gateway probe + version, Postgres, Redis, Kafka tail. Polls `/sys/status` every 5 s. |
-| `/inspect/charge-points` | Charge points | Live list of every charger known to the gateway. WS subscription, snapshot+delta. |
+| `/inspect/charge-points` | Charge points | Live list of every charger known to the gateway. Table or grid view (toggleable). Server-side filters (`online`, `vendor`) and client-side filters (text search across `cp_id`/`vendor`/`model`/`serial`, status enum). Cursor-paginated (50/100/250/500). Per-row expand → connector-level status, error code, last change. |
 | `/inspect/charge-points/$cpId` | Charger detail | Single charger, all its connectors. RemoteStart / RemoteStop / Soft Reset buttons. |
 | `/inspect/transactions` | Active transactions | Live list of in-flight transactions. |
 

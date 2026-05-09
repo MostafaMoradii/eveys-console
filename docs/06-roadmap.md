@@ -34,8 +34,18 @@ aspirations.
 - [x] Wire-shape regression fixture: `packages/protocol/test/wire-shapes.test.ts`
       parses real captured gateway responses; if the schemas drift
       from the gateway, CI fails.
+- [x] Charge points page expanded: table + grid views (toggleable),
+      server-side filters (online/vendor) + client-side filters
+      (search, status), cursor pagination with page-size dropdown,
+      per-row connector drill-down, status pills colour-coded by
+      OCPP state.
+- [x] Snapshot envelope carries `next_cursor` for the
+      `charge-points` query (protocol package + server resolver +
+      web client).
 - [ ] First component test on the web side (FleetPage with a fake
-      ConsoleClient).
+      ConsoleClient). The page now has enough state to be worth
+      testing — view toggle, filter pipeline, pagination cursor
+      stack, delta application.
 - [ ] Connection-status banner: show "stale" when Kafka tail lags or
       gateway snapshot is older than N seconds.
 - [ ] WS client: dedupe entities by `(id, last_modified_at)` instead
