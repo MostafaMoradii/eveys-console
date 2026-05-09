@@ -65,9 +65,12 @@ sub-phase is shippable on its own.
       route change. Built on `@radix-ui/react-dialog` (already in
       deps); shadcn-style `<Sheet>` primitive added under
       `components/ui/sheet.tsx`. Bundle +9 KB gz.
-- [ ] **M-2** — Header compaction below `sm`: title shrinks to icon
-      only, sign-out becomes icon-only with `aria-label`,
-      ws-status pill becomes a dot. (~0.25 day)
+- [x] **M-2** — Header compaction below `sm`. Wordmark hides
+      (`hidden sm:inline`) leaving the bolt icon as the brand cue;
+      sign-out collapses to icon-only via `hidden sm:inline` on
+      the label and tighter padding; ws-status pill becomes a
+      colour-coded 8 px dot via a small `<ConnectionStatusIndicator>`
+      that picks the form per breakpoint. No new deps; bundle +0.1 KB gz.
 - [ ] **M-3** — Mobile-first FleetPage. Default to grid below `sm`;
       filter bar collapses to a "Filters (N)" sheet trigger;
       pagination row stacks vertically. (~0.5 day)

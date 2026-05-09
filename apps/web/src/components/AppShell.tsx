@@ -63,22 +63,25 @@ export function ConsoleShell() {
           </Sheet>
 
           <Bolt className="h-5 w-5 text-brand-orange" />
-          <span className="font-semibold">OCPP Gateway · System Console</span>
+          {/* Wordmark hides below `sm` — the page heading in the
+              main area is enough at that size, and the bolt icon
+              keeps the brand cue. */}
+          <span className="hidden font-semibold sm:inline">OCPP Gateway · System Console</span>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge variant={statusVariant} className="text-xs">
-            ws: {status}
-          </Badge>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <ConnectionStatusIndicator status={status} variant={statusVariant} />
           <ThemeToggle />
+          {/* Sign-out: full pill with icon+label at `sm+`, icon-only
+              below. The aria-label keeps it accessible either way. */}
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setToken(null)}
-            className="gap-1"
+            className="gap-1 px-2 sm:px-3"
             aria-label="Sign out"
           >
             <LogOut className="h-3.5 w-3.5" />
-            <span className="text-xs">Sign out</span>
+            <span className="hidden text-xs sm:inline">Sign out</span>
           </Button>
         </div>
       </header>
@@ -95,6 +98,41 @@ export function ConsoleShell() {
         </main>
       </div>
     </div>
+  );
+}
+
+// Connection status: full labelled badge ("ws: open") at `sm+`,
+// colour-coded dot below. Variant maps the same way in either form
+// — dot colour comes from the variant token so the brand palette
+// owns it.
+function ConnectionStatusIndicator({
+  status,
+  variant,
+}: {
+  status: string;
+  variant: 'success' | 'warning' | 'destructive';
+}) {
+  const dotColour =
+    variant === 'success'
+      ? 'bg-success'
+      : variant === 'warning'
+        ? 'bg-amber-500'
+        : 'bg-destructive';
+  return (
+    <>
+      {/* `sm+`: labelled pill, same as before. */}
+      <Badge variant={variant} className="hidden text-xs sm:inline-flex">
+        ws: {status}
+      </Badge>
+      {/* below `sm`: dot with title for long-press / hover. The
+          aria-label gives screen readers the full status. */}
+      <span
+        className={cn('inline-block h-2 w-2 shrink-0 rounded-full sm:hidden', dotColour)}
+        role="img"
+        aria-label={`WebSocket ${status}`}
+        title={`WebSocket: ${status}`}
+      />
+    </>
   );
 }
 
