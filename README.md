@@ -1,5 +1,7 @@
 # eveys-console
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
+
 System-administration console for the OCPP gateway. Sign-in
 protected, single WebSocket per tab, live snapshot+tail subscriptions
 backed by the gateway's existing Kafka topics and REST API.
