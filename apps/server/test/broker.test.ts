@@ -332,9 +332,12 @@ describe('Broker — transactions-active deltas', () => {
       cp_id: 'CP_T',
       connector_id: 1,
       id_tag: 'TAG-001',
-      meter_start: 100,
-      start_at: '2026-01-01T12:00:00Z',
-      active: true,
+      meter_start_wh: 100,
+      meter_stop_wh: null,
+      consumed_wh: null,
+      started_reported_at: '2026-01-01T12:00:00Z',
+      stopped_reported_at: null,
+      stop_reason: null,
     });
   });
 });

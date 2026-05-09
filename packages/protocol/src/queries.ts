@@ -12,7 +12,9 @@ export type QueryName = z.infer<typeof queryName>;
 export const queryParams = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
 export type QueryParams = z.infer<typeof queryParams>;
 
-const isoTimestamp = z.string().datetime();
+// The gateway emits ISO-8601 with explicit +00:00 offset (Python isoformat).
+// Use offset:true so zod accepts both `Z` and `±HH:MM`.
+const isoTimestamp = z.string().datetime({ offset: true });
 
 export const connectorState = z.object({
   connector_id: z.number().int().nonnegative(),
@@ -21,36 +23,56 @@ export const connectorState = z.object({
   last_changed_at: isoTimestamp.nullable(),
 });
 
-export const chargePointSummary = z.object({
-  cp_id: z.string(),
-  online: z.boolean(),
-  pod_id: z.string().nullable(),
-  vendor: z.string().nullable(),
-  model: z.string().nullable(),
-  firmware_version: z.string().nullable(),
-  serial_number: z.string().nullable(),
-  last_boot_at: isoTimestamp.nullable(),
-  last_heartbeat_at: isoTimestamp.nullable(),
-  last_status: z.string().nullable(),
-  last_seen_seq: z.number().int().nonnegative(),
-  connectors: z.array(connectorState),
-});
+// Mirrors the gateway's `GET /api/v1/charge-points` row shape (see
+// docs/integration/02-gateway-rest-api.md). Anything the gateway can
+// omit on a row must be `.nullable()` here, and anything the gateway
+// adds in a future minor must be tolerated by the schema (see the
+// `.passthrough()` at the bottom — accepts unknown fields rather than
+// rejecting the whole row).
+export const chargePointSummary = z
+  .object({
+    cp_id: z.string(),
+    online: z.boolean(),
+    pod_id: z.string().nullable(),
+    vendor: z.string().nullable(),
+    model: z.string().nullable(),
+    firmware_version: z.string().nullable(),
+    serial_number: z.string().nullable(),
+    last_boot_at: isoTimestamp.nullable(),
+    last_heartbeat_at: isoTimestamp.nullable(),
+    last_status: z.string().nullable(),
+    last_diagnostics_status: z.string().nullable().optional(),
+    last_firmware_status: z.string().nullable().optional(),
+    connectors: z.array(connectorState),
+  })
+  .passthrough();
 export type ChargePointSummary = z.infer<typeof chargePointSummary>;
 
-export const transactionSummary = z.object({
-  transaction_id: z.number().int(),
-  cp_id: z.string(),
-  connector_id: z.number().int().nonnegative(),
-  id_tag: z.string(),
-  start_at: isoTimestamp,
-  meter_start: z.number(),
-  meter_last: z.number().nullable(),
-  energy_delivered_wh: z.number().nullable(),
-  active: z.boolean(),
-  last_seen_seq: z.number().int().nonnegative(),
-});
+// Mirrors the gateway's transaction row shape (see #129/#130 PR).
+// `started_reported_at` is the OCPP timestamp claimed by the charger;
+// `started_received_at` is the gateway's wall-clock receive time.
+// `meter_*_wh` and `consumed_wh` are integer Wh as the OCPP 1.6 native
+// unit. `consumed_wh = meter_stop_wh - meter_start_wh` when stopped.
+export const transactionSummary = z
+  .object({
+    transaction_id: z.number().int(),
+    cp_id: z.string(),
+    connector_id: z.number().int().nonnegative(),
+    id_tag: z.string(),
+    meter_start_wh: z.number(),
+    meter_stop_wh: z.number().nullable(),
+    consumed_wh: z.number().nullable(),
+    started_reported_at: isoTimestamp,
+    started_received_at: isoTimestamp,
+    stopped_reported_at: isoTimestamp.nullable(),
+    stopped_received_at: isoTimestamp.nullable(),
+    stop_reason: z.string().nullable(),
+  })
+  .passthrough();
 export type TransactionSummary = z.infer<typeof transactionSummary>;
 
+// Live MeterValues sample. Produced server-side by the BaaS broker
+// (one per `sampledValue` in the gateway's Kafka cp.meter event).
 export const meterSample = z.object({
   cp_id: z.string(),
   transaction_id: z.number().int().nullable(),
@@ -62,6 +84,7 @@ export const meterSample = z.object({
 });
 export type MeterSample = z.infer<typeof meterSample>;
 
+// Live StatusNotification, mapped server-side.
 export const statusEvent = z.object({
   cp_id: z.string(),
   connector_id: z.number().int().nonnegative(),

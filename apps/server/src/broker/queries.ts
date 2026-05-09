@@ -134,17 +134,23 @@ const transactionsActive: QueryResolver = {
     if (event.topic !== 'tx.started') return [];
     const p = event.payload as Record<string, unknown> | null;
     if (!p || typeof p !== 'object') return [];
+    // The wire shape mirrors the gateway's GET /api/v1/transactions row.
+    // For a delta from a tx.started event we only have a subset; the
+    // missing fields (stopped_*, consumed_wh) are null because the
+    // session is still open.
     const row = {
       transaction_id: Number(p.transactionId ?? 0),
       cp_id: event.cpId ?? '',
       connector_id: Number(p.connectorId ?? 0),
       id_tag: String(p.idTag ?? ''),
-      start_at: String(p.chargerReportedAt ?? event.timestamp.toISOString()),
-      meter_start: Number(p.meterStartWh ?? 0),
-      meter_last: null,
-      energy_delivered_wh: null,
-      active: true,
-      last_seen_seq: 0,
+      meter_start_wh: Number(p.meterStartWh ?? 0),
+      meter_stop_wh: null,
+      consumed_wh: null,
+      started_reported_at: String(p.chargerReportedAt ?? event.timestamp.toISOString()),
+      started_received_at: event.timestamp.toISOString(),
+      stopped_reported_at: null,
+      stopped_received_at: null,
+      stop_reason: null,
     };
     return [
       {

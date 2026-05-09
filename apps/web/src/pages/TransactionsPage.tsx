@@ -53,8 +53,8 @@ export function TransactionsPage() {
                 <TableCell>{r.transaction_id}</TableCell>
                 <TableCell>{r.cp_id}</TableCell>
                 <TableCell>{r.id_tag}</TableCell>
-                <TableCell>{r.start_at}</TableCell>
-                <TableCell>{r.energy_delivered_wh ?? '—'}</TableCell>
+                <TableCell>{r.started_reported_at}</TableCell>
+                <TableCell>{r.consumed_wh ?? '—'}</TableCell>
               </TableRow>
             ))}
           </TableBody>
