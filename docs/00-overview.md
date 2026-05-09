@@ -40,7 +40,10 @@ end-to-end.
 
 ## Audience and pages
 
-Audience: SRE / on-call engineer administering the gateway.
+Audience: SRE / on-call engineer administering the gateway. Primary
+device is desktop; the on-call read path and a small set of
+commands also have to work on a phone — see
+[`08-mobile.md`](./08-mobile.md).
 
 | Path | Page | Purpose |
 |---|---|---|

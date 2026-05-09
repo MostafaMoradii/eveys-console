@@ -54,6 +54,30 @@ aspirations.
       asserts every wire-shape fixture still parses (catches gateway
       schema drift before it lands in console-side prod).
 
+## Phase M — Mobile responsiveness [parallel track, ~2.25 days]
+
+The on-call read path has to work on a phone. Plan, breakpoints,
+and current gaps in [`08-mobile.md`](./08-mobile.md). Each
+sub-phase is shippable on its own.
+
+- [ ] **M-1** — AppShell mobile drawer. Sidebar collapses to a
+      hamburger sheet below `lg`; persistent above. (~0.5 day)
+- [ ] **M-2** — Header compaction below `sm`: title shrinks to icon
+      only, sign-out becomes icon-only with `aria-label`,
+      ws-status pill becomes a dot. (~0.25 day)
+- [ ] **M-3** — Mobile-first FleetPage. Default to grid below `sm`;
+      filter bar collapses to a "Filters (N)" sheet trigger;
+      pagination row stacks vertically. (~0.5 day)
+- [ ] **M-4** — Mobile-first ChargerDetailPage. Stacked commands
+      (RemoteStop + Reset only on phone; RemoteStart hidden behind
+      a "More" disclosure to reduce misclick risk); connector table
+      → card list below `sm`. (~0.25 day)
+- [ ] **M-5** — Mobile-first TransactionsPage. 5-column table →
+      card list below `sm`. (~0.25 day)
+- [ ] **M-6** — Touch + accessibility polish: 44 × 44 hit targets,
+      focus-visible across the new sheet/drawer patterns,
+      real-device pass on iOS Safari + Android Chrome. (~0.5 day)
+
 ## Phase 2 — Production-shaped [later]
 
 - [ ] JWT verification via JWKS (RS256). Plug into a real IdP.
