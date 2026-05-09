@@ -1,5 +1,16 @@
 # 02 — Architecture
 
+> Decisions captured as ADRs in [`docs/adr/`](./adr/). Most relevant
+> here: [ADR-0001](./adr/0001-baas-shape-consume-gateway.md)
+> (consume gateway, don't modify),
+> [ADR-0002](./adr/0002-websocket-over-sse-or-polling.md)
+> (WebSocket transport),
+> [ADR-0003](./adr/0003-named-queries-over-predicate-language.md)
+> (named queries),
+> [ADR-0005](./adr/0005-resolver-async-array-api.md) (resolver API),
+> [ADR-0006](./adr/0006-refetch-instead-of-snapshot-store.md)
+> (re-fetch policy).
+
 ```
                      Browser (React app)
                             │

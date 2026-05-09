@@ -1,5 +1,11 @@
 # 07 — Security
 
+> Decisions captured as ADRs in [`docs/adr/`](./adr/). Most relevant
+> here: [ADR-0007](./adr/0007-jwt-in-ws-subprotocol-header.md)
+> (JWT in the WS subprotocol header),
+> [ADR-0008](./adr/0008-self-hosted-pow-captcha.md) (self-hosted PoW
+> CAPTCHA).
+
 This document is the threat model for the BaaS and the console UI.
 The realtime console is an operator tool that exposes:
 
