@@ -91,8 +91,12 @@ sub-phase is shippable on its own.
       someone's car. Connectors render as a table at `sm+` and as
       a divided card list below — same fields, single-column. Bundle
       +0.4 KB gz.
-- [ ] **M-5** — Mobile-first TransactionsPage. 5-column table →
-      card list below `sm`. (~0.25 day)
+- [x] **M-5** — Mobile-first TransactionsPage. 5-column table →
+      divided card list below `sm`. Each card: `tx N` badge +
+      truncated cp_id on the top row, `id_tag` / started (relative
+      time) / `consumed_wh` underneath. Empty state added for both
+      layouts ("No active transactions right now."). Bundle
+      +0.2 KB gz.
 - [ ] **M-6** — Touch + accessibility polish: 44 × 44 hit targets,
       focus-visible across the new sheet/drawer patterns,
       real-device pass on iOS Safari + Android Chrome. (~0.5 day)
