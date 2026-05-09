@@ -71,9 +71,17 @@ sub-phase is shippable on its own.
       the label and tighter padding; ws-status pill becomes a
       colour-coded 8 px dot via a small `<ConnectionStatusIndicator>`
       that picks the form per breakpoint. No new deps; bundle +0.1 KB gz.
-- [ ] **M-3** — Mobile-first FleetPage. Default to grid below `sm`;
-      filter bar collapses to a "Filters (N)" sheet trigger;
-      pagination row stacks vertically. (~0.5 day)
+- [x] **M-3** — Mobile-first FleetPage. Below `sm` the view-mode is
+      forced to grid (table doesn't fit); the user's saved
+      preference survives for when they resize back up. Filter bar
+      collapses behind a "Filters (N)" sheet trigger — same fields
+      stacked vertically inside a bottom-anchored sheet, with an
+      active-count badge so the operator can see at a glance that
+      filters are on. Pagination row stacks vertically below `sm`,
+      "Rows per page" on its own row and "Page N · Previous · Next"
+      on a second. New `useIsBelow(breakpoint)` helper in
+      `lib/use-breakpoint.ts` (matchMedia-based, reactive). Bundle
+      +0.6 KB gz.
 - [ ] **M-4** — Mobile-first ChargerDetailPage. Stacked commands
       (RemoteStop + Reset only on phone; RemoteStart hidden behind
       a "More" disclosure to reduce misclick risk); connector table

@@ -10,6 +10,7 @@ import {
   Loader2,
   Plug,
   Search,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -22,6 +23,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
+import {
   Table,
   TableBody,
   TableCell,
@@ -30,6 +38,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useSubscription } from '@/hooks/use-subscription';
+import { useIsBelow } from '@/lib/use-breakpoint';
 import { cn } from '@/lib/utils';
 
 type ViewMode = 'table' | 'grid';
@@ -51,13 +60,19 @@ const STATUSES = [
 const VIEW_KEY = 'eveys-console.fleet-view';
 
 export function FleetPage() {
-  // Persist the view-mode pick across navigations.
-  const [view, setView] = useState<ViewMode>(
+  const isPhone = useIsBelow('sm');
+
+  // Persist the user's view-mode pick across navigations. Below
+  // `sm` we force grid (the table doesn't fit on a phone) but
+  // we don't overwrite the stored preference — when the user
+  // resizes back up to desktop, their chosen view returns.
+  const [savedView, setSavedView] = useState<ViewMode>(
     () => (localStorage.getItem(VIEW_KEY) as ViewMode) ?? 'table',
   );
   useEffect(() => {
-    localStorage.setItem(VIEW_KEY, view);
-  }, [view]);
+    localStorage.setItem(VIEW_KEY, savedView);
+  }, [savedView]);
+  const view: ViewMode = isPhone ? 'grid' : savedView;
 
   // Server-side filters — pushed into the subscription params.
   const [onlineFilter, setOnlineFilter] = useState<OnlineFilter>('all');
@@ -175,10 +190,14 @@ export function FleetPage() {
             Live; updates on every BootNotification and StatusNotification.
           </p>
         </div>
-        <ViewToggle view={view} onChange={setView} />
+        {/* View toggle hidden below `sm` — phones force grid mode
+            because the table needs columns we can't render at that
+            width. The stored pref still survives. */}
+        {!isPhone ? <ViewToggle view={view} onChange={setSavedView} /> : null}
       </div>
 
       <FilterBar
+        isPhone={isPhone}
         onlineFilter={onlineFilter}
         onOnlineChange={(v) => {
           setOnlineFilter(v);
@@ -213,6 +232,7 @@ export function FleetPage() {
 }
 
 interface FilterBarProps {
+  isPhone: boolean;
   onlineFilter: OnlineFilter;
   onOnlineChange: (v: OnlineFilter) => void;
   vendorFilter: string;
@@ -225,7 +245,62 @@ interface FilterBarProps {
   onSearchChange: (v: string) => void;
 }
 
-function FilterBar({
+function FilterBar(props: FilterBarProps) {
+  const activeCount = countActiveFilters(props);
+
+  if (props.isPhone) {
+    return (
+      <div className="flex items-center gap-2">
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 gap-2"
+              aria-label="Open filters"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Filters
+              {activeCount > 0 ? (
+                <Badge variant="secondary" className="ml-0.5 h-5 px-1.5 text-[10px]">
+                  {activeCount}
+                </Badge>
+              ) : null}
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
+            <SheetHeader className="pb-2">
+              <SheetTitle>Filters</SheetTitle>
+            </SheetHeader>
+            <div className="flex flex-col gap-3 pt-2">
+              <FilterFields {...props} stretch />
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded-md border bg-card/40 p-3">
+      <FilterFields {...props} />
+    </div>
+  );
+}
+
+function countActiveFilters(p: FilterBarProps): number {
+  let n = 0;
+  if (p.search.trim()) n++;
+  if (p.onlineFilter !== 'all') n++;
+  if (p.vendorFilter.trim()) n++;
+  if (p.statusFilter !== 'all') n++;
+  return n;
+}
+
+// Renders the four filter fields. `stretch` makes each field
+// `w-full` for the mobile sheet layout; the desktop bar uses fixed
+// widths so the row remains compact.
+function FilterFields({
   onlineFilter,
   onOnlineChange,
   vendorFilter,
@@ -236,26 +311,28 @@ function FilterBar({
   onStatusChange,
   search,
   onSearchChange,
-}: FilterBarProps) {
+  stretch = false,
+}: FilterBarProps & { stretch?: boolean }) {
+  const fieldFull = stretch ? 'w-full' : '';
   return (
-    <div className="flex flex-wrap items-end gap-2 rounded-md border bg-card/40 p-3">
-      <FilterField label="Search" hint="cp_id, vendor, model, serial">
-        <div className="relative">
+    <>
+      <FilterField label="Search" hint="cp_id, vendor, model, serial" stretch={stretch}>
+        <div className={cn('relative', fieldFull)}>
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => onSearchChange(e.currentTarget.value)}
             placeholder="filter loaded page…"
-            className="h-9 pl-8 w-[260px]"
+            className={cn('h-9 pl-8', stretch ? 'w-full' : 'w-[260px]')}
           />
         </div>
       </FilterField>
 
-      <FilterField label="Online" hint="server-side">
+      <FilterField label="Online" hint="server-side" stretch={stretch}>
         <Select
           value={onlineFilter}
           onChange={(e) => onOnlineChange(e.currentTarget.value as OnlineFilter)}
-          className="w-[120px]"
+          className={cn(stretch ? 'w-full' : 'w-[120px]')}
         >
           <option value="all">All</option>
           <option value="online">Online</option>
@@ -263,7 +340,7 @@ function FilterBar({
         </Select>
       </FilterField>
 
-      <FilterField label="Vendor" hint="server-side">
+      <FilterField label="Vendor" hint="server-side" stretch={stretch}>
         <Input
           list="vendor-options"
           value={vendorFilter}
@@ -273,7 +350,7 @@ function FilterBar({
             if (e.key === 'Enter') onVendorCommit();
           }}
           placeholder="any"
-          className="h-9 w-[160px]"
+          className={cn('h-9', stretch ? 'w-full' : 'w-[160px]')}
         />
         <datalist id="vendor-options">
           {knownVendors.map((v) => (
@@ -282,13 +359,13 @@ function FilterBar({
         </datalist>
       </FilterField>
 
-      <FilterField label="Status" hint="loaded page">
+      <FilterField label="Status" hint="loaded page" stretch={stretch}>
         <Select
           value={statusFilter}
           onChange={(e) =>
             onStatusChange(e.currentTarget.value as (typeof STATUSES)[number])
           }
-          className="w-[160px]"
+          className={cn(stretch ? 'w-full' : 'w-[160px]')}
         >
           {STATUSES.map((s) => (
             <option key={s} value={s}>
@@ -297,7 +374,7 @@ function FilterBar({
           ))}
         </Select>
       </FilterField>
-    </div>
+    </>
   );
 }
 
@@ -305,13 +382,15 @@ function FilterField({
   label,
   hint,
   children,
+  stretch = false,
 }: {
   label: string;
   hint?: string;
   children: React.ReactNode;
+  stretch?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className={cn('flex flex-col gap-1', stretch && 'w-full')}>
       <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
         {hint ? (
@@ -681,9 +760,11 @@ function Pagination({
   onNext,
   pageNumber,
 }: PaginationProps) {
+  // Stacks vertically below `sm` so each row gets enough horizontal
+  // space; horizontal at sm+ to keep the desktop layout compact.
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col items-stretch gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center justify-between gap-2 sm:justify-start">
         <span>Rows per page</span>
         <Select
           value={String(pageSize)}
@@ -696,14 +777,28 @@ function Pagination({
           <option value="500">500</option>
         </Select>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 sm:justify-end">
         <span>Page {pageNumber}</span>
-        <Button variant="outline" size="sm" onClick={onBack} disabled={!canGoBack} className="h-7">
-          <ChevronLeft className="h-3.5 w-3.5" /> Previous
-        </Button>
-        <Button variant="outline" size="sm" onClick={onNext} disabled={!canGoNext} className="h-7">
-          Next <ChevronRight className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onBack}
+            disabled={!canGoBack}
+            className="h-7"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" /> Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onNext}
+            disabled={!canGoNext}
+            className="h-7"
+          >
+            Next <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
     </div>
   );
