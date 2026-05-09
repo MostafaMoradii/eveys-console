@@ -43,11 +43,14 @@ export class GatewayClient {
     return this.json<unknown>('/api/v1/health');
   }
 
-  listChargePoints(params: { online?: boolean; vendor?: string; limit?: number } = {}) {
+  listChargePoints(
+    params: { online?: boolean; vendor?: string; limit?: number; cursor?: string } = {},
+  ) {
     const qs = new URLSearchParams();
     if (params.online !== undefined) qs.set('online', String(params.online));
     if (params.vendor) qs.set('vendor', params.vendor);
     if (params.limit) qs.set('limit', String(params.limit));
+    if (params.cursor) qs.set('cursor', params.cursor);
     const suffix = qs.toString() ? `?${qs}` : '';
     return this.json<unknown>(`/api/v1/charge-points${suffix}`);
   }

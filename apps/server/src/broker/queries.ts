@@ -43,13 +43,21 @@ interface QueryResolver {
 
 const chargePoints: QueryResolver = {
   async snapshot(params, gateway) {
-    const filter: { online?: boolean; vendor?: string; limit?: number } = {};
+    const filter: { online?: boolean; vendor?: string; limit?: number; cursor?: string } = {};
     if (typeof params.online === 'boolean') filter.online = params.online;
     if (typeof params.vendor === 'string') filter.vendor = params.vendor;
     if (typeof params.limit === 'number') filter.limit = params.limit;
-    const data = (await gateway.listChargePoints(filter)) as { charge_points: ChargePointSummary[] };
+    if (typeof params.cursor === 'string') filter.cursor = params.cursor;
+    const data = (await gateway.listChargePoints(filter)) as {
+      charge_points: ChargePointSummary[];
+      next_cursor?: string | null;
+    };
     const cursor = `gw:cp-list:${Date.now()}`;
-    const snapshot: SnapshotForQuery = { kind: 'charge-points', rows: data.charge_points };
+    const snapshot: SnapshotForQuery = {
+      kind: 'charge-points',
+      rows: data.charge_points,
+      next_cursor: data.next_cursor ?? null,
+    };
     return { cursor, snapshot };
   },
   async deltasFromEvent(params, event, gateway) {

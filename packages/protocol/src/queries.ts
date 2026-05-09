@@ -96,7 +96,13 @@ export const statusEvent = z.object({
 export type StatusEvent = z.infer<typeof statusEvent>;
 
 export const snapshotForQuery = z.union([
-  z.object({ kind: z.literal('charge-points'), rows: z.array(chargePointSummary) }),
+  z.object({
+    kind: z.literal('charge-points'),
+    rows: z.array(chargePointSummary),
+    // Cursor-paginated snapshot: pass back to subscribe to get the
+    // next page. `null` means "you're on the last page".
+    next_cursor: z.string().nullable().optional(),
+  }),
   z.object({ kind: z.literal('charge-point'), row: chargePointSummary }),
   z.object({ kind: z.literal('transactions-active'), rows: z.array(transactionSummary) }),
   z.object({ kind: z.literal('meter-history'), rows: z.array(meterSample) }),
