@@ -41,6 +41,7 @@ import { buildLogger } from './logger.js';
 import { GatewayClient } from './rest/gateway-client.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerSysConfigRoute } from './routes/sys-config.js';
 import { registerSysStatusRoute } from './routes/sys-status.js';
 import { registerWsRoute } from './routes/ws.js';
 
@@ -96,6 +97,7 @@ async function main() {
   await registerHealthRoutes(app);
   await registerAuthRoutes(app, { pow, users });
   await registerSysStatusRoute(app, { broker, gateway, kafka, startedAt });
+  await registerSysConfigRoute(app, { config });
   await registerWsRoute(app, { broker, gateway });
 
   if (users.size === 0) {
