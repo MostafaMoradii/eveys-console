@@ -51,13 +51,18 @@ find node_modules/.pnpm -name package.json \
 |---|---|---|---|
 | Fastify | 5.2 | MIT | HTTP and WebSocket framework. |
 | `@fastify/websocket` | 11.0 | MIT | WebSocket route adapter. Wraps `ws`. |
-| `@fastify/jwt` | 9.0 | MIT | JWT verification. |
+| `@fastify/jwt` | 9.0 | MIT | JWT signing + verification (login + WS auth). |
+| `@fastify/cors` | 10.0 | MIT | CORS for the auth and sys-status REST routes. Allow-list in `ALLOWED_ORIGINS`; falls back to permissive in dev. |
+| `@fastify/rate-limit` | 10.2 | MIT | Per-IP rate limit. Currently scoped to `POST /auth/login`. |
 | `@fastify/sensible` | 6.0 | MIT | HTTP error helpers. |
 | `ws` (transitive) | 8.20 | MIT | Underlying WebSocket implementation. |
 | `kafkajs` | 2.2 | MIT | Pure-JS Kafka client. No native bindings. |
+| `protobufjs` | 7.4 | BSD-3-Clause | Decodes the gateway's `eveys.events.v1.EventEnvelope` Kafka payloads. Pure JS; loads the vendored `.proto` at boot. |
 | `undici` | 6.21 | MIT | HTTP client used by the gateway proxy. |
 | `pino` | 9.5 | MIT | Structured JSON logger. |
-| `zod` | 3.24 | MIT | Runtime validation for env config and inbound WebSocket messages. |
+| `pino-pretty` | 11.3 | MIT | Dev-only human-readable transport for pino. Engaged when `LOG_PRETTY=true`. |
+| `bcryptjs` | 2.4 | MIT | Password hashing for `CONSOLE_USERS`. Pure JS — no native build, runs in distroless. ~10× slower than native `bcrypt`; login is not hot-path. |
+| `zod` | 3.24 | MIT | Runtime validation for env config, login bodies, and inbound WebSocket messages. |
 
 ### Server test
 

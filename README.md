@@ -1,13 +1,16 @@
 # eveys-console
 
-Realtime operator console for the OCPP gateway. A WebSocket-backed
-backend-as-a-service plus a React UI for tracking and managing charge
-points without polling.
+System-administration console for the OCPP gateway. Sign-in
+protected, single WebSocket per tab, live snapshot+tail subscriptions
+backed by the gateway's existing Kafka topics and REST API.
 
-The service consumes the gateway's existing event stream (Kafka topics)
-and REST API, multiplexes per-tab subscriptions over a single
-WebSocket, and tunnels OCPP commands (`RemoteStart`, `RemoteStop`,
-`Reset`, …) over the same connection. The gateway is unmodified.
+The console targets SRE / on-call engineers operating the gateway —
+not end-customer fleet managers. The front page is a service-status
+grid (BaaS, Gateway, Postgres, Redis, Kafka). Charge-point and
+transaction inspection live one level down under `/inspect`.
+
+The gateway is consumed unchanged; everything the console offers is
+built on the gateway's existing surfaces.
 
 Apache-2.0.
 
@@ -15,84 +18,101 @@ Apache-2.0.
 
 | Surface | Bind | Direction | Purpose |
 |---|---|---|---|
-| WebSocket | `:8090/ws` | browser → BaaS | Auth + subscriptions + RPCs in one connection. Subprotocol: `eveys-console-v1` + `bearer.<jwt>`. |
-| Health | `:8090/healthz`, `:8090/readyz` | k8s → BaaS | Liveness / readiness probes. |
-| Web | `:5180` (dev) | browser | React + shadcn/ui (Tailwind + Radix) + TanStack Router console. |
+| WebSocket | `:8090/ws` | browser → BaaS | Subscriptions + RPCs in one connection. Subprotocol: `eveys-console-v1` + `bearer.<jwt>`. |
+| REST (auth) | `:8090/auth/{challenge,login}` | browser → BaaS | Proof-of-work CAPTCHA + username/password login. Returns a short-lived JWT. |
+| REST (status) | `:8090/sys/status` | browser → BaaS | Aggregated service health (gateway probe + Kafka + WS connection count). JWT-protected. |
+| Health | `:8090/healthz`, `:8090/readyz` | k8s → BaaS | Liveness / readiness probes. Unauthenticated. |
+| Web | `:5180` (dev) | browser | React + shadcn/ui (Tailwind + Radix) + TanStack Router. |
 
 ## Repo layout
 
 ```
 apps/
-├── server/                Node + Fastify + ws + kafkajs BaaS
+├── server/                       Node + Fastify + ws + kafkajs BaaS
+│   ├── proto/events/v1/          vendored gateway event schema
+│   ├── scripts/                  mint-dev-token, hash-password
 │   └── src/
-│       ├── auth/          JWT verification, principal shape
-│       ├── broker/        per-connection subscription state, query resolvers
-│       ├── kafka/         Kafka tail (one consumer group per deployment)
-│       ├── rest/          typed client to the gateway's /api/v1
-│       ├── routes/        WS + health Fastify routes
-│       └── main.ts        process entry — wires the components
-└── web/                   React + shadcn/ui + TanStack Router console
+│       ├── auth/                 JWT verification, PoW CAPTCHA, user store (bcrypt)
+│       ├── broker/               per-connection subscription state, query resolvers
+│       ├── kafka/                Kafka tail + protobuf event-envelope decoder
+│       ├── rest/                 typed client to the gateway's /api/v1
+│       ├── routes/               auth, ws, sys-status, health
+│       └── main.ts               process entry — wires the components
+└── web/                          React + shadcn/ui console
     └── src/
-        ├── api/           typed WS client (subscribe / rpc / reconnect)
-        ├── components/    AppShell
-        ├── hooks/         useSubscription
-        ├── lib/           WS context provider
-        ├── pages/         FleetPage, ChargerDetailPage, TransactionsPage
-        └── routes/        TanStack Router file-based routes
+        ├── api/                  typed clients (auth-client, sys-client, ws-client)
+        ├── components/           AppShell, ThemeToggle, ui/ shadcn primitives
+        ├── hooks/                useSubscription
+        ├── lib/                  WS context, theme context, baas-url resolver
+        ├── pages/                LoginPage, SystemPage (/), Fleet/Charger/Transactions (/inspect)
+        └── routeTree.ts          manual TanStack route tree
 
 packages/
-├── protocol/              shared WS envelope contract (zod schemas + TS types)
-└── api-types/             types generated from the gateway's OpenAPI spec
+├── protocol/                     shared WS envelope contract (zod schemas + TS types)
+└── api-types/                    types generated from the gateway's OpenAPI spec
 ```
 
 ## Quick start
 
 Prereqs: Node ≥ 20.10, `pnpm` 9.15 (`corepack prepare pnpm@9.15.0 --activate`),
-Docker (for a local Kafka if you don't have one running already), the
-OCPP gateway running locally and reachable at `http://localhost:8080`
-with `EVEYS_OCPP_REST_INBOUND_TOKENS=dev-token`.
+Docker, and the OCPP gateway running locally on `:8080` with REST + Kafka up.
 
 ```bash
 pnpm install
 pnpm gen:api-types
 cp apps/server/.env.example apps/server/.env
 cp apps/web/.env.example apps/web/.env
-# edit apps/server/.env: set JWT_SECRET, GATEWAY_TOKEN, KAFKA_BROKERS
+# edit apps/server/.env: set JWT_SECRET, GATEWAY_TOKEN, KAFKA_BROKERS,
+# CONSOLE_USERS (one or more username:bcrypthash pairs).
+
+# Hash a password for CONSOLE_USERS:
+echo -n "yourPassword" | pnpm --filter @eveys-console/server hash-password
 
 pnpm dev
 ```
 
-Server on `http://localhost:8090`, web on `http://localhost:5180`. Paste a
-JWT (signed with `JWT_SECRET`, audience `eveys-console`, issuer
-`eveys-console`) into the token field in the top bar to connect.
+Server on `http://localhost:8090`, web on `http://localhost:5180`.
+Open the web URL, sign in with the username/password you put in
+`CONSOLE_USERS`. The login form runs a small client-side
+proof-of-work CAPTCHA before submitting (~50 ms in a real browser).
+
+The `mint-token` script (`pnpm --filter @eveys-console/server mint-token`)
+is also kept as a dev-only fallback for headless tests.
 
 ## Realtime model
 
 Each browser tab opens one WebSocket. Inside that connection it can:
 
 - **subscribe** to a named query (`charge-points`, `charge-point`,
-  `transactions-active`, `meter-history`, `status-history`). The server
-  returns a snapshot from the gateway's REST, then a stream of deltas
-  derived from the Kafka tail.
+  `transactions-active`, `meter-history`, `status-history`). The
+  server returns a snapshot, then a stream of deltas. A single Kafka
+  event can fan out to multiple deltas (e.g. one MeterValues report
+  carries N samples → N appends).
 - **unsubscribe** when the component unmounts.
-- **rpc** to issue OCPP commands; the server forwards to the gateway and
-  relays the response back over the same WebSocket.
+- **rpc** to issue OCPP commands (`remote-start`, `remote-stop`,
+  `reset`); the server forwards to the gateway's REST and relays the
+  response back over the same WebSocket.
 
-The protocol is defined in `packages/protocol/src/envelope.ts` (zod
-schemas; the same types are imported by both server and web).
+The wire format is defined in `packages/protocol/`. zod schemas
+validate every message in both directions; both apps import the same
+schemas so the contract is enforced symmetrically.
 
-Snapshot/tail consistency is **read-after-write with dedup**: clients
-key entities by `(cp_id, last_modified_at)` so the small overlap window
-between snapshot fetch and the first delta is harmless. The Fleet
-table reduces the snapshot + the latest delta into a `Map<cp_id, row>`
-on every render; the React reconciler handles row identity by key.
+Snapshot+tail consistency is **read-after-write with dedup**: the
+client keys collection rows by primary ID so the small window between
+the snapshot fetch and the first delta is harmless. The FleetPage
+reduces snapshot + latest delta into a `Map<cp_id, row>` on every
+render.
+
+Wire payloads from Kafka are protobuf-encoded `EventEnvelope`s (the
+gateway's own schema, vendored at `apps/server/proto/events/v1/`).
+The decoder lives in `apps/server/src/kafka/event-decoder.ts`.
 
 ## Build, test, ship
 
 ```bash
 pnpm format        # prettier
 pnpm typecheck     # tsc --noEmit across all packages
-pnpm test          # vitest, all packages
+pnpm test          # vitest, all packages (~40 tests)
 pnpm build         # tsc + vite build, both apps
 ```
 

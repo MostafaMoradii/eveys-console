@@ -22,10 +22,13 @@ documented here for the cases when they aren't.
 
 - **Server**: one concern per directory under `src/` (`auth/`,
   `broker/`, `kafka/`, `rest/`, `routes/`). `main.ts` is the only
-  file that knows the concrete topology.
+  file that knows the concrete topology. Vendored upstream schemas
+  (the gateway's events `.proto`) live under `proto/` next to
+  `src/`, not inside it — they're inputs, not source.
 - **Web**: routes are declared in `routeTree.ts`; pages live in
-  `pages/`; reusable components live in `components/`; hooks live in
-  `hooks/`; API/network code lives in `api/` and `lib/`. Don't mix.
+  `pages/`; reusable components live in `components/` (shadcn UI
+  primitives under `components/ui/`); hooks live in `hooks/`;
+  API/network code lives in `api/` and `lib/`. Don't mix.
 
 ## Naming
 
@@ -34,10 +37,12 @@ documented here for the cases when they aren't.
   files; don't introduce a third style.
 - **Exports**: prefer named exports. Default exports only when a
   framework demands it (e.g. Vite's HMR boundary).
-- **Test files**: colocated under `test/` per app, named
-  `<unit>.test.ts`. No coverage gate yet; aim for the broker, the
-  protocol envelope, and the WS client to have meaningful tests
-  before the next feature.
+- **Test files**: colocated under `test/` per app/package, named
+  `<unit>.test.ts`. No coverage gate yet; the broker, the auth
+  module, the config loader, the protocol envelope, and the live
+  wire-shape fixtures have tests today (~33 across server +
+  protocol). Component tests on the web side are still missing —
+  next thing to add.
 
 ## Logging
 

@@ -1,8 +1,12 @@
 # 00 — Overview
 
-> The realtime operator console for the OCPP gateway. A WebSocket-backed
-> backend-as-a-service plus a React UI for tracking and managing charge
-> points without polling. The gateway is unmodified.
+> System-administration console for the OCPP gateway. A WebSocket-
+> backed BaaS plus a React UI, sign-in protected, that gives SRE / on-
+> call engineers a live view of the gateway's service state and a
+> drill-down into individual charge points and transactions.
+>
+> The gateway is unmodified; everything here builds on its existing
+> Kafka topics + REST API.
 
 ## What this repo is
 
@@ -14,9 +18,10 @@
 2. The gateway's existing **REST API** (`/api/v1/...`) for snapshot
    reads and command dispatch.
 3. The gateway's **OpenAPI spec** (`docs/api/openapi.yaml`) for typing.
+4. The gateway's **event-envelope proto schema** for decoding the
+   protobuf-encoded Kafka payloads.
 
-The gateway never knows the BaaS exists. Modifying the gateway is
-**out of scope** for any change to this repo.
+The gateway never knows the BaaS exists.
 
 ## Two deployable artifacts
 
@@ -30,26 +35,44 @@ eveys-console/
     └── api-types/  generated from the gateway's OpenAPI 3.1 spec
 ```
 
-Both apps deploy together. Same release cadence, same versioning,
-shared types end-to-end.
+Both apps deploy together. Same release cadence, shared types
+end-to-end.
 
-## What's in scope
+## Audience and pages
 
-- Live tracking of every charger in the fleet.
-- Drill-down to a single charger with its connectors and recent
-  state.
-- Active-transactions view.
-- Issuing OCPP commands (RemoteStart, RemoteStop, Reset) over the
-  same WebSocket.
-- JWT auth for operators (HS256 in dev, swap to RS256 + JWKS in
-  production).
+Audience: SRE / on-call engineer administering the gateway.
 
-## What's out of scope
+| Path | Page | Purpose |
+|---|---|---|
+| `/` | System status | Live grid of service health: BaaS uptime + WS connection count, Gateway probe + version, Postgres, Redis, Kafka tail. Polls `/sys/status` every 5 s. |
+| `/inspect/charge-points` | Charge points | Live list of every charger known to the gateway. WS subscription, snapshot+delta. |
+| `/inspect/charge-points/$cpId` | Charger detail | Single charger, all its connectors. RemoteStart / RemoteStop / Soft Reset buttons. |
+| `/inspect/transactions` | Active transactions | Live list of in-flight transactions. |
 
-- Modifying the gateway. Not even a single line.
+The login page (`/`) renders before any of the above when there's no
+JWT in storage.
+
+## In scope
+
+- Live service status of the gateway and its data plane.
+- Live charger inspection (list + drill-down).
+- Live active-transactions list.
+- Issuing OCPP commands (RemoteStart, RemoteStop, Reset) from the
+  charger detail page.
+- Username + password login (bcrypt-hashed users in env), with a
+  client-side proof-of-work CAPTCHA on the login form.
+- HS256 JWT auth (RS256 + JWKS swap-in is documented for prod).
+- light / dark / system theme.
+
+## Out of scope
+
+- Modifying the gateway. Gateway changes are PRs against the gateway
+  repo, not the console.
 - Owning user accounts / RFID tokens / billing. Those live in the
-  configured backend behind the gateway.
-- Replacing the gateway's REST API. We consume it; we don't redefine
-  it.
+  Eveys backend behind the gateway.
+- Replacing the gateway's REST API. The console consumes it; it
+  doesn't redefine it.
 - A general predicate-based subscription language (Hasura-style).
   Named queries only.
+- Customer-facing fleet dashboards. Different audience, different
+  product.

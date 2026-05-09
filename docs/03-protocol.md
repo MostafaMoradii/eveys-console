@@ -1,17 +1,68 @@
-# 03 — Protocol (WebSocket envelope)
+# 03 — Protocol
 
-The `@eveys-console/protocol` package defines the wire format. Both
-apps import it; both apps validate every message via the same zod
-schemas. Adding a new envelope type means changing this package, not
-server-then-client.
+Two surfaces between the web app and the BaaS:
 
-## Versioning
+1. **REST** — login (`/auth/challenge`, `/auth/login`) and system
+   status (`/sys/status`). Plain HTTP/JSON.
+2. **WebSocket** — subscriptions and RPCs. Versioned envelope,
+   zod-validated on both sides via `@eveys-console/protocol`.
 
-Every message carries `v: 1`. Future incompatible changes bump to
-`v: 2` and the server can negotiate down on subscribe. Today: single
-version, no negotiation, hard-drop on mismatch.
+Both surfaces speak JSON. Adding a new WS envelope type means
+changing the protocol package, not server-then-client.
 
-## Subprotocol
+## Auth (REST)
+
+```
+client → server  : POST /auth/challenge
+                   (no body)
+server → client  : { challenge, difficulty, expires_at }
+
+(client computes a SHA-256 leading-zero-bits solution against
+ challenge with at least `difficulty` bits)
+
+client → server  : POST /auth/login
+                   { username, password, challenge, solution }
+server → client  : 200 { token, expires_at }
+              or : 400 { error: "pow_invalid" | ... }
+              or : 401 { error: "invalid_credentials" }
+              or : 429 (rate limited; per-IP)
+              or : 503 { error: "login_disabled" }  // no users configured
+```
+
+The challenge is an HMAC-signed payload `{nonce, difficulty,
+issuedAt}` (signed with `JWT_SECRET` so the BaaS doesn't need
+server-side state to verify the solution). The PoW threshold is
+`AUTH_POW_DIFFICULTY` (default 16, ≈50 ms in a real browser; bumps
+quickly into the 100s of ms at 18-20).
+
+Tokens are HS256 JWTs with audience `JWT_AUDIENCE`, issuer
+`JWT_ISSUER`, TTL `JWT_TTL_SECONDS` (default 8 h). The web stores
+them in `localStorage`; see `docs/07-security.md` for the production
+posture and the path to RS256 + JWKS.
+
+## System status (REST)
+
+```
+client → server  : GET /sys/status
+                   Authorization: Bearer <jwt>
+server → client  : { baas: {uptime_seconds, started_at},
+                     gateway: {ok, version, components, latency_ms},
+                     kafka: {ok, consumer_running, topics},
+                     connections: {websockets} }
+```
+
+Polled by SystemPage every 5 s. Cheap; one HTTP probe to the gateway
+plus in-memory state.
+
+## WebSocket envelope
+
+### Versioning
+
+Every WebSocket message carries `v: 1`. Future incompatible changes
+bump to `v: 2` and the server can negotiate down on subscribe.
+Today: single version, no negotiation, hard-drop on mismatch.
+
+### Subprotocol
 
 The browser opens the WebSocket with two `Sec-WebSocket-Protocol`
 tokens:
@@ -26,7 +77,7 @@ way browsers can authenticate a `new WebSocket()` without cookies).
 The server picks `eveys-console-v1` as the negotiated subprotocol;
 the JWT is parsed out of the second token and verified.
 
-## Client → server
+### Client → server
 
 ```ts
 // Subscribe to a named query.
@@ -48,7 +99,7 @@ the JWT is parsed out of the second token and verified.
 `id` is a client-chosen request ID. The server echoes it back in
 replies as `inReplyTo`.
 
-## Server → client
+### Server → client
 
 ```ts
 // Subscription accepted, returns the server-assigned subscriptionId.
@@ -77,7 +128,7 @@ replies as `inReplyTo`.
   serverTime: "2026-05-09T20:00:00.000Z" }
 ```
 
-## Cursors
+### Cursors
 
 `cursor` is opaque and informational. Clients should treat it as a
 black box. Two formats are emitted today:
@@ -91,7 +142,7 @@ Don't parse them. Don't depend on their format. They become
 authoritative when we add resumable subscriptions in a future
 version.
 
-## Delta shapes
+### Delta shapes
 
 Two patterns:
 
@@ -122,7 +173,7 @@ The client appends to an array. Bounded by client-side retention
 
 The client replaces the whole entity.
 
-## Error codes
+### Error codes
 
 | Code | Meaning |
 |---|---|
@@ -134,3 +185,29 @@ The client replaces the whole entity.
 | `rate_limited` | Subscription cap or per-connection rate limit hit. |
 | `upstream_unavailable` | Gateway REST or Kafka is not reachable. |
 | `internal_error` | Catch-all; bug or unexpected exception. |
+
+## Wire shapes
+
+The collection rows mirror the gateway's REST response shape so
+there's no translation layer. Authoritative definitions are in
+`packages/protocol/src/queries.ts`. Every entity uses
+`.passthrough()` so adding fields server-side doesn't reject old
+clients.
+
+`ChargePointSummary` — fields the gateway returns from
+`GET /api/v1/charge-points`: `cp_id`, `online`, `pod_id`, `vendor`,
+`model`, `firmware_version`, `serial_number`, `last_boot_at`,
+`last_heartbeat_at`, `last_status`, `last_diagnostics_status`,
+`last_firmware_status`, `connectors[]`. Timestamps are ISO 8601 with
+either `Z` or `±HH:MM` (Python isoformat output).
+
+`TransactionSummary` — fields the gateway returns from
+`GET /api/v1/transactions`: `transaction_id`, `cp_id`, `connector_id`,
+`id_tag`, `meter_start_wh`, `meter_stop_wh`, `consumed_wh`,
+`started_reported_at`, `started_received_at`, `stopped_reported_at`,
+`stopped_received_at`, `stop_reason`. Stopped fields are null while
+the transaction is active.
+
+`MeterSample` and `StatusEvent` — server-side projections from the
+broker resolvers (Kafka payloads → wire shape). See
+`docs/02-architecture.md`.

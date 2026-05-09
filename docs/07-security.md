@@ -19,11 +19,23 @@ public interface.
 
 ## Authentication
 
-- Every WebSocket connection requires a JWT in the
-  `Sec-WebSocket-Protocol` header (`bearer.<jwt>`).
-- The token must be signed with `JWT_SECRET`, audience
-  `JWT_AUDIENCE`, issuer `JWT_ISSUER`. All three are validated.
-- Expired or unsigned tokens close the WS with code 4401.
+Two paths to a JWT, both valid:
+
+1. **Login form** — `POST /auth/challenge` then `POST /auth/login`
+   with username + password (verified against bcrypt hashes in
+   `CONSOLE_USERS`) + a proof-of-work solution. Per-IP rate limit on
+   `/auth/login` (default 5/min, configurable via
+   `AUTH_LOGIN_MAX_PER_MIN`).
+2. **`mint-token` script** — signs a JWT directly with `JWT_SECRET`.
+   Bypasses the user store; for headless tests only.
+
+Both paths produce the same envelope: HS256 JWT, audience
+`JWT_AUDIENCE`, issuer `JWT_ISSUER`, TTL `JWT_TTL_SECONDS` (default
+8 h).
+
+WebSocket connections carry the JWT in the `Sec-WebSocket-Protocol`
+header (`bearer.<jwt>`). Expired or unsigned tokens close the WS
+with code 4401.
 
 ### Status
 
@@ -35,12 +47,15 @@ public interface.
 
 ### Open issues
 
-- No CORS / Origin check on the WebSocket. Browsers don't send a
-  preflight for WS, but the server should still reject opens whose
-  `Origin` header isn't an allow-listed UI domain.
-- `mint-token` script signs admin tokens with the same secret. Shell
-  access on the deploy host = admin tokens. **Strip this script
-  from production images.**
+- HTTP CORS is wired (`@fastify/cors` with optional `ALLOWED_ORIGINS`
+  allow-list). The **WebSocket handshake does not check Origin** —
+  the server should still reject WS opens whose `Origin` header isn't
+  an allow-listed UI domain. Browsers don't preflight WS, so this is
+  a real hole on a public deploy.
+- `mint-token` and `hash-password` scripts sign / hash with the same
+  secret store as the running server. Shell access on the deploy
+  host = ability to mint admin tokens. **Strip these scripts from
+  production images.**
 - Web app stores the JWT in `localStorage`. XSS exfiltrates the
   token. Production should switch to httpOnly cookies + CSRF tokens
   for the WS upgrade, or short-lived (minutes) JWTs auto-refreshed
@@ -82,17 +97,35 @@ public interface.
 
 ## Rate limiting and DoS
 
-- **Not implemented.** A single connection can spam subscribe /
-  unsubscribe / RPC and the server will dispatch every message.
-- Mitigations to add before public deploy:
-  - Per-connection token bucket (e.g., 50 messages / s).
-  - Cap on concurrent subscriptions per connection
-    (`WS_MAX_SUBSCRIPTIONS_PER_CONN` exists in config but isn't
-    enforced yet).
-  - Per-IP connection limit at the proxy (Envoy `ratelimit` filter
-    or Nginx `limit_conn`).
-  - Coalesce noisy `cp.meter` deltas server-side — one per
-    connection per N seconds, not one per Kafka event.
+What's wired:
+
+- **Per-IP rate limit on `/auth/login`** via `@fastify/rate-limit`.
+  Default 5 attempts/minute, configurable via
+  `AUTH_LOGIN_MAX_PER_MIN`.
+- **Proof-of-work CAPTCHA** on the login form — adds ~50–100 ms of
+  CPU work per attempt in a real browser, more for higher
+  `AUTH_POW_DIFFICULTY`. Won't stop a determined attacker but
+  trivially blocks dumb credential-stuffing scripts that don't
+  bother computing it.
+
+What's not yet wired:
+
+- No per-connection rate limit on the WS. A single connection can
+  spam subscribe/unsubscribe/RPC and the server will dispatch every
+  message.
+- `WS_MAX_SUBSCRIPTIONS_PER_CONN` exists in config but isn't
+  enforced.
+- No `cp.meter` coalescing — one delta per sample per Kafka event.
+  A noisy charger can flood every subscriber.
+
+Mitigations to add before public deploy:
+
+- Per-connection token bucket on the WS (e.g., 50 messages / s).
+- Enforce `WS_MAX_SUBSCRIPTIONS_PER_CONN`.
+- Per-IP connection limit at the reverse proxy (Envoy `ratelimit`
+  filter or Nginx `limit_conn`).
+- Coalesce `cp.meter` deltas server-side — one per connection per
+  N seconds, not one per Kafka event.
 
 ## Secrets handling
 

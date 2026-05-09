@@ -8,7 +8,7 @@ repo. Read in order; each doc is small and single-purpose.
 | [00](./00-overview.md) | Overview | First. What this repo is and isn't. |
 | [01](./01-stack.md) | Stack | Before adding a dependency. Lists every dep, its version, and why. |
 | [02](./02-architecture.md) | Architecture | Before changing how subscriptions or the broker work. |
-| [03](./03-protocol.md) | WS protocol | Before changing the wire format. |
+| [03](./03-protocol.md) | Protocol | Auth REST, sys-status REST, and the WS envelope. Before changing any wire format. |
 | [04](./04-local-dev.md) | Local dev | First time setting up. |
 | [05](./05-conventions.md) | Conventions | TypeScript rules, naming, logging, commits. |
 | [06](./06-roadmap.md) | Roadmap | What's done, what's next, what's deliberately out of scope. |

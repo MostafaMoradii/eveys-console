@@ -3,30 +3,37 @@
 ```
                      Browser (React app)
                             │
-                wss://baas/ws  (auth + subs + RPCs, single connection)
-                            │
+                            │  POST /auth/{challenge,login}  (PoW + bcrypt)
+                            │  GET  /sys/status              (JWT)
+                            │  WS   /ws                      (subprotocol-bearer JWT)
                             ▼
-            ┌────────────────────────────────┐
-            │  Realtime BaaS (apps/server)   │
-            │                                │
-            │  WS gateway → broker           │
-            │       │           │            │
-            │       │           ▼            │
-            │       │   subscription state   │
-            │       │   (per connection)     │
-            │       │                        │
-            │   ┌───┴────┐    ┌──────────┐   │
-            │   │ Kafka  │    │ REST     │   │
-            │   │ tail   │    │ proxy +  │   │
-            │   │        │    │ commands │   │
-            │   └────┬───┘    └────┬─────┘   │
-            └────────┼─────────────┼─────────┘
-                     ▼             ▼
-            ┌────────────────────────────────┐
-            │ eveys-mobility/OCPP            │
-            │ Kafka topics + REST + commands │
-            │ (unmodified)                   │
-            └────────────────────────────────┘
+            ┌────────────────────────────────────┐
+            │  Realtime BaaS (apps/server)       │
+            │                                    │
+            │  ┌────────┐                        │
+            │  │  auth  │  POW + bcrypt + JWT    │
+            │  └────────┘                        │
+            │  ┌──────────────────┐              │
+            │  │ ws route +       │              │
+            │  │ subscription     │              │
+            │  │ broker (state)   │              │
+            │  └────────┬─────────┘              │
+            │           │                        │
+            │   ┌───────┴────────┐               │
+            │   │                │               │
+            │  ┌┴───────┐  ┌─────┴────┐  ┌────┐  │
+            │  │ kafka  │  │ rest     │  │sys-│  │
+            │  │ tail + │  │ proxy +  │  │stat│  │
+            │  │ proto  │  │ commands │  │us  │  │
+            │  │ decode │  │          │  │    │  │
+            │  └────┬───┘  └────┬─────┘  └─┬──┘  │
+            └───────┼───────────┼──────────┼─────┘
+                    ▼           ▼          ▼
+            ┌────────────────────────────────────┐
+            │ eveys-mobility/OCPP                │
+            │ Kafka topics + REST + /health      │
+            │ (unmodified)                       │
+            └────────────────────────────────────┘
                             │
                             │ OCPP-J
                             ▼
@@ -35,38 +42,65 @@
 
 ## Components
 
+**Auth** (`apps/server/src/auth/`, `apps/server/src/routes/auth.ts`).
+Three pieces: a bcrypt user store seeded from `CONSOLE_USERS`, a
+proof-of-work CAPTCHA verifier, and the `/auth/challenge` and
+`/auth/login` routes. Login returns an HS256 JWT signed with
+`JWT_SECRET`. Per-IP rate limit on `/auth/login` via
+`@fastify/rate-limit`.
+
 **WS server** (`apps/server/src/routes/ws.ts`). Terminates the
-browser connection. Validates the JWT in the WS subprotocol (the
-browser's only way to authenticate a `new WebSocket()` without
+browser connection. Validates the JWT carried in the WS subprotocol
+(the browser's only way to authenticate `new WebSocket()` without
 cookies). Owns the per-connection lifecycle: heartbeat, dispatch,
 graceful close.
 
 **Broker** (`apps/server/src/broker/`). The only stateful component.
 Holds a map of `connectionId → { subscriptions: Map<id, Subscription> }`.
-On every Kafka event, asks each subscription's resolver "does this
-event affect you?" and delivers a delta if so.
+On every Kafka event, runs each subscription's resolver in parallel
+and delivers any deltas the resolver produces. Resolver failures are
+logged and isolated — one bad resolver doesn't block peer
+subscriptions.
 
 **Query resolvers** (`apps/server/src/broker/queries.ts`). One per
-named query. Each knows: how to fetch the snapshot (call the gateway's
-REST), and how to map a Kafka event to a delta (or `null` if the
-event is irrelevant). Adding a new query = adding a resolver here +
-extending the protocol's `QueryName` enum.
+named query. Each implements `deltasFromEvent(params, event,
+gateway): Promise<Delta[]>` — async because some resolvers re-fetch
+from the gateway's REST, returning an array because one Kafka event
+can fan out (e.g. one `cp.meter` report with N samples → N appends).
+The same module also owns the snapshot fetch.
 
-**Kafka tail** (`apps/server/src/kafka/tail.ts`). One consumer group
-per BaaS deployment. Decodes the gateway's versioned event envelope
-into `KafkaEvent { topic, cpId, cursor, payload, timestamp }`. Each
-listener gets every event; the broker's per-subscription filter
-decides relevance.
+**Kafka tail** (`apps/server/src/kafka/tail.ts`). One consumer per
+BaaS process. Subscribes to `cp.boot`, `cp.status`, `cp.meter`,
+`tx.started`. Each message is a protobuf `eveys.events.v1.EventEnvelope`;
+`event-decoder.ts` parses it via `protobufjs` against the vendored
+`.proto` at `apps/server/proto/events/v1/events.proto`. Listeners
+receive a typed `KafkaEvent { topic, cpId, cursor, payload, timestamp }`
+where `payload` is the decoded oneof branch.
 
 **REST proxy** (`apps/server/src/rest/gateway-client.ts`). Typed
 client for the gateway's `/api/v1/...`. Used by:
-- Resolvers' snapshot fetches.
+- Snapshot fetches in resolvers.
 - The WS layer's RPC dispatch (RemoteStart, RemoteStop, Reset, …).
+- The `charge-points` and `charge-point` resolvers' delta path —
+  they re-fetch the full row from `GET /charge-points/{cp_id}` on
+  every `cp.boot`/`cp.status` event because the protobuf payload only
+  carries a slice of `ChargePointSummary`.
+- The `/sys/status` route's gateway-health probe.
+
+**Sys-status route** (`apps/server/src/routes/sys-status.ts`).
+Aggregates BaaS uptime + WS connection count + gateway `/health`
+probe + Kafka tail state into one JSON-Schema'd response. Polled by
+the SystemPage every 5 s.
 
 **Web client** (`apps/web/src/api/ws-client.ts`). One `ConsoleClient`
 instance per app. Multiplexes subscriptions over a single WebSocket.
 Reconnect with exponential backoff; replays active subscriptions on
 reconnect; rejects in-flight RPCs with `'disconnected'`.
+
+**BaaS URL resolver** (`apps/web/src/lib/baas-url.ts`). Resolves the
+REST and WS URLs at runtime from `window.location.hostname` to avoid
+the `localhost`-vs-`127.0.0.1` cross-origin trap. Override per-deploy
+with `VITE_BAAS_BASE_URL` / `VITE_WS_URL`.
 
 ## Subscription model: snapshot + tail
 
@@ -91,13 +125,13 @@ ignores stale duplicates.
 
 ## Five named queries
 
-| Name | Snapshot source | Delta source |
-|---|---|---|
-| `charge-points` | `GET /api/v1/charge-points` | `cp.boot`, `cp.status` |
-| `charge-point` | `GET /api/v1/charge-points/:cp_id` | `cp.boot`, `cp.status` (filtered by `cp_id`) |
-| `transactions-active` | `GET /api/v1/transactions?active=true` | `tx.started` |
-| `meter-history` | (empty for v1) | `cp.meter` (filtered by `cp_id`) |
-| `status-history` | (empty for v1) | `cp.status` (filtered by `cp_id`) |
+| Name | Snapshot source | Delta source | Notes |
+|---|---|---|---|
+| `charge-points` | `GET /api/v1/charge-points` | `cp.boot`, `cp.status` | Resolver re-fetches `GET /charge-points/{cp_id}` per event for a complete row. Filter by `online`/`vendor` in params; mismatching events emit a `remove` delta. |
+| `charge-point` | `GET /api/v1/charge-points/:cp_id` | `cp.boot`, `cp.status` (filtered by `cp_id`) | Same re-fetch pattern. Singleton; deltas replace the whole entity. |
+| `transactions-active` | `GET /api/v1/transactions?active=true` | `tx.started` | Maps the protobuf payload's camelCase fields to the wire shape (`transaction_id`, `cp_id`, `id_tag`, `meter_start_wh`, `started_reported_at`, …). |
+| `meter-history` | (empty in v1) | `cp.meter` (filtered by `cp_id`) | One Kafka event fans out to N deltas, one per `sampledValues[]` entry. Enum suffix stripped (e.g. `UNIT_WH` → `WH`). |
+| `status-history` | (empty in v1) | `cp.status` (filtered by `cp_id`) | Empty `error_code`/`info` strings normalised to `null`. |
 
 Adding a new query = one resolver in `queries.ts` + one entry in the
 protocol's `QueryName` enum + corresponding `SnapshotForQuery` /
