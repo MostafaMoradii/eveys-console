@@ -101,8 +101,12 @@ primitives those components rely on.
 
 | Component | Version | License | Role |
 |---|---|---|---|
-| Vitest | 2.1 | MIT | Test runner. |
-| jsdom | 25 | MIT | DOM implementation for component tests. |
+| Vitest | 2.1 | MIT | Test runner. Configured separately in `vitest.config.ts` because vitest pulls vite@5 as a peer while the workspace runs vite@6 — co-locating the `test` field on `vite.config.ts` trips a `Plugin`-type clash under `exactOptionalPropertyTypes`. |
+| jsdom | 25 | MIT | DOM implementation for component tests. Shimmed in `test/setup.ts` for `matchMedia` and `scrollIntoView`. |
+| `@testing-library/react` | 16.1 | MIT | Render + query helpers for React component tests. |
+| `@testing-library/dom` | 10.4 | MIT | Underlying DOM-query library (peer of @testing-library/react). |
+| `@testing-library/user-event` | 14.5 | MIT | Realistic user-interaction simulator (typing, clicking, selectOptions). |
+| `@testing-library/jest-dom` | 6.6 | MIT | Custom matchers (`toBeInTheDocument`, `toBeDisabled`, …) registered via `test/setup.ts`. |
 | `autoprefixer` | 10.4 | MIT | PostCSS plugin used by the Tailwind pipeline. |
 | `postcss` | 8.4 | MIT | CSS pipeline. |
 
