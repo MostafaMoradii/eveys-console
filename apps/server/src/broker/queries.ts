@@ -105,10 +105,28 @@ const transactionsActive: QueryResolver = {
   },
   deltaFromEvent(_params, event) {
     if (event.topic !== 'tx.started') return null;
+    // protobufjs decodes proto3 snake_case field names to camelCase by
+    // default, so the inner payload keys here are transactionId,
+    // connectorId, idTag, meterStartWh, chargerReportedAt — not
+    // transaction_id etc. Map them to the wire shape the UI expects
+    // (TransactionSummary in @eveys-console/protocol).
+    const p = event.payload as Record<string, unknown> | null;
+    if (!p || typeof p !== 'object') return null;
+    const row = {
+      transaction_id: Number(p.transactionId ?? 0),
+      cp_id: event.cpId ?? '',
+      connector_id: Number(p.connectorId ?? 0),
+      id_tag: String(p.idTag ?? ''),
+      start_at: String(p.chargerReportedAt ?? event.timestamp.toISOString()),
+      meter_start: Number(p.meterStartWh ?? 0),
+      meter_last: null,
+      energy_delivered_wh: null,
+      active: true,
+      last_seen_seq: 0,
+    };
     return {
       cursor: event.cursor,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delta: { kind: 'transactions-active', op: 'upsert', row: event.payload as any },
+      delta: { kind: 'transactions-active', op: 'upsert', row },
     };
   },
 };

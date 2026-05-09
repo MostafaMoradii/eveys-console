@@ -5,6 +5,7 @@
 import { Kafka, type Consumer, type EachMessagePayload } from 'kafkajs';
 
 import type { Config } from '../config.js';
+import { decodeEnvelope } from './event-decoder.js';
 import type { Logger } from '../logger.js';
 
 export interface KafkaEvent {
@@ -73,20 +74,27 @@ export class KafkaTail {
 
   private handle = async ({ topic, partition, message }: EachMessagePayload) => {
     if (!message.value) return;
-    let payload: unknown;
+    // The gateway publishes protobuf-encoded `eveys.events.v1.EventEnvelope`
+    // on every topic. Decode here so listeners receive the `payload` branch
+    // of the oneof (cp_boot / cp_status / cp_meter / tx_started / …) as a
+    // plain object, not raw bytes.
+    let envelope;
     try {
-      payload = JSON.parse(message.value.toString('utf8'));
+      envelope = decodeEnvelope(Buffer.from(message.value));
     } catch (err) {
-      this.log.warn({ topic, partition, err }, 'kafka.payload_not_json');
+      this.log.warn({ topic, partition, err }, 'kafka.envelope_decode_failed');
       return;
     }
-    const cpId = message.key?.toString('utf8') ?? null;
+    const cpId = envelope.cp_id || message.key?.toString('utf8') || null;
     const cursor = `k:${topic}:${partition}:${message.offset}`;
     const event: KafkaEvent = {
       topic,
       cpId,
       cursor,
-      payload,
+      // Forward the decoded oneof branch as the payload — that's the row
+      // shape the broker resolvers want (e.g. the `tx_started` payload
+      // for tx.started messages).
+      payload: envelope.payload,
       timestamp: new Date(Number(message.timestamp)),
     };
     for (const listener of this.listeners) {
