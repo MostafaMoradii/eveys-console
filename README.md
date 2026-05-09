@@ -123,4 +123,5 @@ CI runs `format:check + typecheck + test + build` on every PR.
 
 ## License
 
-Apache-2.0. See [`LICENSE`](./LICENSE).
+Apache-2.0. See [`LICENSE`](./LICENSE) for the licence text and
+[`NOTICE`](./NOTICE) for attribution and trademark notices.
