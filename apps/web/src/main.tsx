@@ -6,7 +6,9 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 
 import { ToastProvider } from '@/components/ui/toaster';
-import { ConsoleClientProvider } from '@/lib/ws-context';
+import { ThemeProvider } from '@/lib/theme-context';
+import { ConsoleClientProvider, useConsoleClient } from '@/lib/ws-context';
+import { LoginPage } from '@/pages/LoginPage';
 import { routeTree } from '@/routeTree';
 
 const router = createRouter({ routeTree });
@@ -20,17 +22,25 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
 });
 
+function AppGate() {
+  const { token } = useConsoleClient();
+  if (!token) return <LoginPage />;
+  return <RouterProvider router={router} />;
+}
+
 const root = document.getElementById('root');
 if (!root) throw new Error('missing #root');
 
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <ConsoleClientProvider>
-          <RouterProvider router={router} />
-        </ConsoleClientProvider>
-      </ToastProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <ConsoleClientProvider>
+            <AppGate />
+          </ConsoleClientProvider>
+        </ToastProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   </React.StrictMode>,
 );

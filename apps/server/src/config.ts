@@ -11,6 +11,27 @@ const schema = z.object({
   JWT_SECRET: z.string().min(16),
   JWT_AUDIENCE: z.string().default('eveys-console'),
   JWT_ISSUER: z.string().default('eveys-console'),
+  JWT_TTL_SECONDS: z.coerce.number().int().positive().default(8 * 3600),
+
+  // Login users. CSV of `username:bcrypthash` pairs. Empty disables login
+  // entirely (the WS still accepts pre-minted JWTs — useful for headless
+  // tests / service callers).
+  // Generate a hash with `pnpm --filter @eveys-console/server hash-password`.
+  CONSOLE_USERS: z.string().default(''),
+
+  // Anti-robot proof-of-work CAPTCHA on the login form.
+  // Difficulty = number of leading zero bits the client's hash must have.
+  // 16 ≈ 50 ms on a laptop; 20 ≈ 1 s; tune for your threat model.
+  AUTH_POW_DIFFICULTY: z.coerce.number().int().min(0).max(28).default(16),
+  AUTH_POW_TTL_SECONDS: z.coerce.number().int().positive().default(120),
+
+  // Login rate limit per IP. The WS endpoint has its own limits.
+  AUTH_LOGIN_MAX_PER_MIN: z.coerce.number().int().positive().default(5),
+
+  // Comma-separated list of allowed Origin headers on the WS handshake and
+  // login routes. Empty = no Origin check (laptop dev). Set to your console
+  // hostname(s) in production.
+  ALLOWED_ORIGINS: z.string().default(''),
 
   // Gateway upstream
   GATEWAY_BASE_URL: z.string().url(),

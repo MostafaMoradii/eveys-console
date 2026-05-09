@@ -2,46 +2,85 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Brand palette (locked):
+ *   --brand-orange     Eveys orange     #F04E1F  (primary)
+ *   --brand-cloud      cloud / off-white #F4F4F4  (light surface)
+ *   --brand-slate      brand slate      #1A282F  (text on light, primary fg)
+ *   --brand-blue       chart blue       #1080F0
+ *   --brand-green      charging-active   #22C55E
+ *   --brand-red        destructive      #F02050
+ *
+ * The shadcn-style semantic tokens (--background, --foreground, etc.)
+ * are mapped from these. Switching the theme changes the mapping; the
+ * brand values stay constant.
+ */
+
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    /* Brand (constant across themes) */
+    --brand-orange: 14 87% 53%;       /* #F04E1F */
+    --brand-cloud: 0 0% 96%;          /* #F4F4F4 */
+    --brand-slate: 203 27% 14%;       /* #1A282F */
+    --brand-blue: 209 88% 51%;        /* #1080F0 */
+    --brand-green: 142 71% 45%;       /* #22C55E */
+    --brand-red: 343 88% 53%;         /* #F02050 */
+
+    /* Light theme — default */
+    --background: var(--brand-cloud);
+    --foreground: var(--brand-slate);
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
+    --card-foreground: var(--brand-slate);
+    --primary: var(--brand-orange);
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 92%;
+    --secondary-foreground: var(--brand-slate);
+    --muted: 0 0% 92%;
+    --muted-foreground: 203 15% 35%;
+    --accent: 14 87% 95%;
+    --accent-foreground: var(--brand-slate);
+    --destructive: var(--brand-red);
+    --destructive-foreground: 0 0% 100%;
+    --success: var(--brand-green);
+    --success-foreground: 0 0% 100%;
+    --info: var(--brand-blue);
+    --info-foreground: 0 0% 100%;
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: var(--brand-orange);
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    /*
+     * Dark theme: very low-contrast borders. Brand-slate is the page
+     * background; cards and inputs sit one or two notches above it; the
+     * border is the same lightness as muted/secondary so it's almost
+     * invisible by default. Cards are still distinguishable because
+     * their background is lighter than the page, not because they have
+     * a bright outline. Use shadow / spacing for separation, not strokes.
+     */
+    --background: 203 30% 10%;          /* slightly darker than brand-slate */
+    --foreground: 0 0% 92%;
+    --card: 203 27% 13%;                /* one notch up from background */
+    --card-foreground: 0 0% 92%;
+    --primary: var(--brand-orange);
+    --primary-foreground: 0 0% 100%;
+    --secondary: 203 22% 17%;
+    --secondary-foreground: 0 0% 92%;
+    --muted: 203 22% 17%;
+    --muted-foreground: 203 12% 60%;
+    --accent: 203 25% 19%;
+    --accent-foreground: 0 0% 92%;
+    --destructive: var(--brand-red);
+    --destructive-foreground: 0 0% 100%;
+    --success: var(--brand-green);
+    --success-foreground: 0 0% 100%;
+    --info: var(--brand-blue);
+    --info-foreground: 0 0% 100%;
+    --border: 203 22% 17%;              /* matches muted — no glow */
+    --input: 203 22% 17%;
+    --ring: var(--brand-orange);
   }
 
   * {

@@ -38,7 +38,7 @@ export function FleetPage() {
   if (sub.error) {
     return (
       <Alert variant="destructive">
-        <AlertTitle>Couldn't load fleet</AlertTitle>
+        <AlertTitle>Couldn't load charge points</AlertTitle>
         <AlertDescription>{sub.error}</AlertDescription>
       </Alert>
     );
@@ -47,7 +47,7 @@ export function FleetPage() {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Loading fleet…
+        Loading charge points…
       </div>
     );
   }
@@ -55,9 +55,11 @@ export function FleetPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between">
-        <h2 className="text-xl font-semibold">Fleet — {rows.length} chargers</h2>
+        <h2 className="text-xl font-semibold">
+          Charge points — {rows.length} known
+        </h2>
         <p className="text-sm text-muted-foreground">
-          Live; updates as chargers connect, change status, or boot.
+          Live; updates on every BootNotification and StatusNotification.
         </p>
       </div>
       <div className="rounded-md border">
@@ -87,7 +89,7 @@ function FleetRow({ row }: { row: ChargePointSummary }) {
     <TableRow>
       <TableCell>
         <Link
-          to="/charge-points/$cpId"
+          to="/inspect/charge-points/$cpId"
           params={{ cpId: row.cp_id } as never}
           className="text-primary underline-offset-2 hover:underline"
         >

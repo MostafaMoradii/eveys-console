@@ -22,17 +22,23 @@ import { resolve } from 'node:path';
   }
 })();
 
+import fastifyCors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
+import fastifyRateLimit from '@fastify/rate-limit';
 import fastifySensible from '@fastify/sensible';
 import fastifyWebsocket from '@fastify/websocket';
 import Fastify from 'fastify';
 
+import { PowVerifier } from './auth/pow.js';
+import { UserStore } from './auth/users.js';
 import { Broker } from './broker/broker.js';
 import { loadConfig, type Config } from './config.js';
 import { KafkaTail } from './kafka/tail.js';
 import { buildLogger } from './logger.js';
 import { GatewayClient } from './rest/gateway-client.js';
+import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerSysStatusRoute } from './routes/sys-status.js';
 import { registerWsRoute } from './routes/ws.js';
 
 declare module 'fastify' {
@@ -50,6 +56,16 @@ async function main() {
   app.decorate('config', config);
 
   await app.register(fastifySensible);
+  await app.register(fastifyRateLimit, {
+    global: false, // Per-route only.
+  });
+  const allowedOrigins = config.ALLOWED_ORIGINS.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  await app.register(fastifyCors, {
+    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+    credentials: false,
+  });
   await app.register(fastifyJwt, {
     secret: config.JWT_SECRET,
     verify: { allowedAud: config.JWT_AUDIENCE },
@@ -70,9 +86,20 @@ async function main() {
   const gateway = new GatewayClient(config, logger);
   const kafka = new KafkaTail(config, logger);
   const broker = new Broker(kafka, gateway, logger);
+  const users = new UserStore(config);
+  const pow = new PowVerifier(config);
 
+  const startedAt = new Date();
   await registerHealthRoutes(app);
+  await registerAuthRoutes(app, { pow, users });
+  await registerSysStatusRoute(app, { broker, gateway, kafka, startedAt });
   await registerWsRoute(app, { broker, gateway });
+
+  if (users.size === 0) {
+    logger.warn('login disabled: CONSOLE_USERS is empty. WS still accepts pre-minted JWTs.');
+  } else {
+    logger.info({ users: users.size }, 'login enabled');
+  }
 
   await kafka.start();
   broker.start();

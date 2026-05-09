@@ -41,6 +41,22 @@ export default {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        success: {
+          DEFAULT: 'hsl(var(--success))',
+          foreground: 'hsl(var(--success-foreground))',
+        },
+        info: {
+          DEFAULT: 'hsl(var(--info))',
+          foreground: 'hsl(var(--info-foreground))',
+        },
+        brand: {
+          orange: 'hsl(var(--brand-orange))',
+          cloud: 'hsl(var(--brand-cloud))',
+          slate: 'hsl(var(--brand-slate))',
+          blue: 'hsl(var(--brand-blue))',
+          green: 'hsl(var(--brand-green))',
+          red: 'hsl(var(--brand-red))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',

@@ -21,6 +21,15 @@ export class KafkaTail {
   private readonly consumer: Consumer;
   private readonly listeners = new Set<KafkaListener>();
   private running = false;
+  private topics: string[] = [];
+
+  isRunning(): boolean {
+    return this.running;
+  }
+
+  subscribedTopics(): string[] {
+    return [...this.topics];
+  }
 
   constructor(
     private readonly cfg: Config,
@@ -36,16 +45,16 @@ export class KafkaTail {
   async start() {
     if (this.running) return;
     await this.consumer.connect();
-    const topics = [
+    this.topics = [
       this.cfg.KAFKA_TOPICS_BOOT,
       this.cfg.KAFKA_TOPICS_STATUS,
       this.cfg.KAFKA_TOPICS_METER,
       this.cfg.KAFKA_TOPICS_TX_STARTED,
     ];
-    for (const t of topics) {
+    for (const t of this.topics) {
       await this.consumer.subscribe({ topic: t, fromBeginning: false });
     }
-    this.log.info({ topics }, 'kafka.subscribed');
+    this.log.info({ topics: this.topics }, 'kafka.subscribed');
 
     await this.consumer.run({ eachMessage: this.handle });
     this.running = true;

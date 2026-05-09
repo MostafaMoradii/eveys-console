@@ -39,6 +39,10 @@ export class GatewayClient {
     return (await res.body.json()) as T;
   }
 
+  health() {
+    return this.json<unknown>('/api/v1/health');
+  }
+
   listChargePoints(params: { online?: boolean; vendor?: string; limit?: number } = {}) {
     const qs = new URLSearchParams();
     if (params.online !== undefined) qs.set('online', String(params.online));

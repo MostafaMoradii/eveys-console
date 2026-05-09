@@ -51,6 +51,10 @@ export class Broker {
     this.connections.delete(connectionId);
   }
 
+  connectionCount(): number {
+    return this.connections.size;
+  }
+
   async subscribe(
     connectionId: string,
     query: QueryName,

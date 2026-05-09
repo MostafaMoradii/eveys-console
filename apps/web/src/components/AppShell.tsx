@@ -1,13 +1,14 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
-import { Bolt, List, Receipt } from 'lucide-react';
+import { Activity, Bolt, LogOut, Plug, Receipt } from 'lucide-react';
 
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { useConsoleClient } from '@/lib/ws-context';
 import { cn } from '@/lib/utils';
 
 export function ConsoleShell() {
-  const { status, token, setToken } = useConsoleClient();
+  const { status, setToken } = useConsoleClient();
   const router = useRouterState();
   const path = router.location.pathname;
 
@@ -18,38 +19,69 @@ export function ConsoleShell() {
     <div className="flex min-h-screen flex-col">
       <header className="flex h-14 items-center justify-between border-b bg-background px-4">
         <div className="flex items-center gap-2">
-          <Bolt className="h-5 w-5" />
-          <span className="font-semibold">Eveys Console</span>
+          <Bolt className="h-5 w-5 text-brand-orange" />
+          <span className="font-semibold">OCPP Gateway · System Console</span>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant={statusVariant}>{status}</Badge>
-          <Input
-            placeholder="Bearer JWT"
-            className="h-8 w-[280px] text-xs"
-            value={token ?? ''}
-            onChange={(e) => setToken(e.currentTarget.value || null)}
-          />
+          <Badge variant={statusVariant} className="text-xs">
+            ws: {status}
+          </Badge>
+          <ThemeToggle />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setToken(null)}
+            className="gap-1"
+            aria-label="Sign out"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span className="text-xs">Sign out</span>
+          </Button>
         </div>
       </header>
 
       <div className="flex flex-1">
         <nav className="w-56 border-r bg-background p-2">
-          <NavItem to="/" label="Fleet overview" icon={<List className="h-4 w-4" />} active={path === '/'} />
-          <NavItem
-            to="/transactions"
-            label="Active transactions"
-            icon={<Receipt className="h-4 w-4" />}
-            active={path.startsWith('/transactions')}
-          />
-          <p className="mt-4 px-2 text-xs text-muted-foreground">
-            Drill into a charger from the Fleet view.
-          </p>
+          <NavSection title="System">
+            <NavItem
+              to="/"
+              label="Status"
+              icon={<Activity className="h-4 w-4" />}
+              active={path === '/'}
+            />
+          </NavSection>
+
+          <NavSection title="Inspect">
+            <NavItem
+              to="/inspect/charge-points"
+              label="Charge points"
+              icon={<Plug className="h-4 w-4" />}
+              active={path.startsWith('/inspect/charge-points')}
+            />
+            <NavItem
+              to="/inspect/transactions"
+              label="Transactions"
+              icon={<Receipt className="h-4 w-4" />}
+              active={path === '/inspect/transactions'}
+            />
+          </NavSection>
         </nav>
 
         <main className="flex-1 p-6">
           <Outlet />
         </main>
       </div>
+    </div>
+  );
+}
+
+function NavSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-3">
+      <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </p>
+      <div className="space-y-0.5">{children}</div>
     </div>
   );
 }

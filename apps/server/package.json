@@ -12,14 +12,18 @@
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "mint-token": "node scripts/mint-dev-token.mjs"
+    "mint-token": "node scripts/mint-dev-token.mjs",
+    "hash-password": "node scripts/hash-password.mjs"
   },
   "dependencies": {
     "@eveys-console/api-types": "workspace:*",
     "@eveys-console/protocol": "workspace:*",
+    "@fastify/cors": "10.0.2",
     "@fastify/jwt": "9.0.2",
+    "@fastify/rate-limit": "10.2.2",
     "@fastify/sensible": "6.0.2",
     "@fastify/websocket": "11.0.1",
+    "bcryptjs": "2.4.3",
     "fastify": "5.2.1",
     "kafkajs": "2.2.4",
     "pino": "9.5.0",
@@ -28,6 +32,7 @@
     "zod": "3.24.1"
   },
   "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
     "@types/node": "20.17.10",
     "@types/ws": "8.5.13",
     "tsx": "4.19.2",
