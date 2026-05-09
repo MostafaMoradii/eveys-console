@@ -5,4 +5,5 @@ out
 coverage
 **/*.generated.ts
 packages/api-types/src/generated
+packages/api-types/openapi.yaml
 pnpm-lock.yaml
