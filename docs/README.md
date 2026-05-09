@@ -12,6 +12,7 @@ repo. Read in order; each doc is small and single-purpose.
 | [04](./04-local-dev.md) | Local dev | First time setting up. |
 | [05](./05-conventions.md) | Conventions | TypeScript rules, naming, logging, commits. |
 | [06](./06-roadmap.md) | Roadmap | What's done, what's next, what's deliberately out of scope. |
+| [07](./07-security.md) | Security | Threat model. Read before any non-loopback deployment. |
 
 Adding a doc here? Number it next, give it one job, link from this
 index, keep it under ~150 lines.

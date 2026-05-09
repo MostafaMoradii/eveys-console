@@ -40,7 +40,7 @@ const now = Math.floor(Date.now() / 1000);
 const header = { alg: 'HS256', typ: 'JWT' };
 const payload = {
   sub,
-  email: 'dev@local',
+  email: 'dev@local.test',
   roles: ['admin'],
   iss: issuer,
   aud: audience,

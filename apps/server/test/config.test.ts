@@ -27,4 +27,22 @@ describe('loadConfig', () => {
     expect(cfg.PORT).toBe(9001);
     expect(cfg.WS_MAX_SUBSCRIPTIONS_PER_CONN).toBe(10);
   });
+
+  it('refuses placeholder JWT_SECRET when binding non-loopback', () => {
+    const env = {
+      ...baseEnv,
+      JWT_SECRET: 'replace-me-with-a-real-secret-of-at-least-16-bytes',
+      HOST: '0.0.0.0',
+    };
+    expect(() => loadConfig(env as NodeJS.ProcessEnv)).toThrow(/Refusing to start/);
+  });
+
+  it('allows placeholder JWT_SECRET on loopback (laptop dev)', () => {
+    const env = {
+      ...baseEnv,
+      JWT_SECRET: 'replace-me-with-a-real-secret-of-at-least-16-bytes',
+      HOST: '127.0.0.1',
+    };
+    expect(() => loadConfig(env as NodeJS.ProcessEnv)).not.toThrow();
+  });
 });

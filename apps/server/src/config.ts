@@ -36,6 +36,15 @@ const schema = z.object({
 
 export type Config = z.infer<typeof schema>;
 
+const PLACEHOLDER_SECRETS = new Set([
+  'replace-me-with-a-real-secret-of-at-least-16-bytes',
+  'changeme',
+  'secret',
+  'dev-secret',
+]);
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = schema.safeParse(env);
   if (!parsed.success) {
@@ -44,5 +53,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .join('\n');
     throw new Error(`Invalid configuration:\n${issues}`);
   }
-  return parsed.data;
+  const cfg = parsed.data;
+
+  // Refuse to bind a non-loopback interface with a placeholder JWT_SECRET.
+  // This is the difference between "vulnerable laptop dev" and "fully open
+  // admin endpoint on the public internet". A misconfigured deploy is the
+  // dominant failure mode; this trips it before it does damage.
+  if (PLACEHOLDER_SECRETS.has(cfg.JWT_SECRET) && !LOOPBACK_HOSTS.has(cfg.HOST)) {
+    throw new Error(
+      `Refusing to start: JWT_SECRET is a placeholder and HOST=${cfg.HOST} is not loopback.\n` +
+        `Set JWT_SECRET to a strong value (e.g. \`openssl rand -base64 48\`) before binding a public interface.`,
+    );
+  }
+
+  return cfg;
 }
