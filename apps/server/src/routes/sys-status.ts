@@ -1,5 +1,5 @@
 // System-status endpoint. Aggregates the signals an operator wants on a
-// single screen: upstream gateway health, BaaS uptime, Kafka tail status,
+// single screen: upstream gateway health, Console uptime, Kafka tail status,
 // connected-WS count. Cheap to call (≈100ms incl. one HTTP probe to the
 // gateway) so the UI can poll it every few seconds.
 
@@ -22,7 +22,7 @@ interface ComponentStatus {
 }
 
 interface SysStatusResponse {
-  baas: {
+  console: {
     uptime_seconds: number;
     started_at: string;
   };
@@ -55,14 +55,14 @@ export async function registerSysStatusRoute(app: any, deps: RouteDeps) {
   };
 
   app.get('/sys/status', { preHandler: requireAuth }, async (): Promise<SysStatusResponse> => {
-    const baasUptime = Math.floor((Date.now() - deps.startedAt.getTime()) / 1000);
+    const consoleUptime = Math.floor((Date.now() - deps.startedAt.getTime()) / 1000);
 
     const gatewayProbe = await probeGatewayHealth(deps.gateway);
     const kafkaState = probeKafka(deps.kafka);
 
     return {
-      baas: {
-        uptime_seconds: baasUptime,
+      console: {
+        uptime_seconds: consoleUptime,
         started_at: deps.startedAt.toISOString(),
       },
       gateway: gatewayProbe,

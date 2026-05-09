@@ -3,7 +3,7 @@
 //   2. compute solution in the browser (SHA-256 leading-zeros).
 //   3. /auth/login    → returns JWT.
 
-import { BAAS_BASE_URL as BASE } from '@/lib/baas-url';
+import { CONSOLE_BASE_URL as BASE } from '@/lib/console-url';
 
 interface ChallengeResponse {
   challenge: string;

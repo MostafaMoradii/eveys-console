@@ -71,7 +71,7 @@ export const transactionSummary = z
   .passthrough();
 export type TransactionSummary = z.infer<typeof transactionSummary>;
 
-// Live MeterValues sample. Produced server-side by the BaaS broker
+// Live MeterValues sample. Produced server-side by the Console broker
 // (one per `sampledValue` in the gateway's Kafka cp.meter event).
 export const meterSample = z.object({
   cp_id: z.string(),

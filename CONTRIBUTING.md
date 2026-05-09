@@ -25,7 +25,7 @@ licensed under the project's licence (Apache-2.0, see
 - Node ≥ 20.10
 - pnpm 9.15 (`corepack prepare pnpm@9.15.0 --activate`)
 - Docker (only needed when you actually want to run the gateway
-  side-by-side; not required for the BaaS or web)
+  side-by-side; not required for the Console or web)
 
 ## Getting started
 

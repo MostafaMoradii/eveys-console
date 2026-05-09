@@ -1,7 +1,7 @@
 // Operator-facing system status. Polled from SystemPage; cheap on the
 // server side (one HTTP probe to the gateway + in-memory state).
 
-import { BAAS_BASE_URL as BASE } from '@/lib/baas-url';
+import { CONSOLE_BASE_URL as BASE } from '@/lib/console-url';
 
 export interface ComponentStatus {
   ok: boolean;
@@ -10,7 +10,7 @@ export interface ComponentStatus {
 }
 
 export interface SysStatus {
-  baas: { uptime_seconds: number; started_at: string };
+  console: { uptime_seconds: number; started_at: string };
   gateway: ComponentStatus & {
     version?: string;
     components?: Record<string, string>;

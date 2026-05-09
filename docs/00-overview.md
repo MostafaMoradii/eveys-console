@@ -1,7 +1,7 @@
 # 00 — Overview
 
 > System-administration console for the OCPP gateway. A WebSocket-
-> backed BaaS plus a React UI, sign-in protected, that gives SRE / on-
+> backed Console plus a React UI, sign-in protected, that gives SRE / on-
 > call engineers a live view of the gateway's service state and a
 > drill-down into individual charge points and transactions.
 >
@@ -21,14 +21,14 @@
 4. The gateway's **event-envelope proto schema** for decoding the
    protobuf-encoded Kafka payloads.
 
-The gateway never knows the BaaS exists.
+The gateway never knows the Console exists.
 
 ## Two deployable artifacts
 
 ```
 eveys-console/
 ├── apps/
-│   ├── server/   the BaaS  — Node + Fastify + ws + kafkajs
+│   ├── server/   the Console  — Node + Fastify + ws + kafkajs
 │   └── web/      the UI    — React 18 + shadcn/ui (Tailwind + Radix) + TanStack Router
 └── packages/
     ├── protocol/   shared WS envelope (zod, both apps import)
@@ -47,7 +47,7 @@ commands also have to work on a phone — see
 
 | Path                           | Page                | Purpose                                                                                                                                                                                                                                                                                                                      |
 | ------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                            | System status       | Live grid of service health: BaaS uptime + WS connection count, Gateway probe + version, Postgres, Redis, Kafka tail. Polls `/sys/status` every 5 s.                                                                                                                                                                         |
+| `/`                            | System status       | Live grid of service health: Console uptime + WS connection count, Gateway probe + version, Postgres, Redis, Kafka tail. Polls `/sys/status` every 5 s.                                                                                                                                                                      |
 | `/inspect/charge-points`       | Charge points       | Live list of every charger known to the gateway. Table or grid view (toggleable). Server-side filters (`online`, `vendor`) and client-side filters (text search across `cp_id`/`vendor`/`model`/`serial`, status enum). Cursor-paginated (50/100/250/500). Per-row expand → connector-level status, error code, last change. |
 | `/inspect/charge-points/$cpId` | Charger detail      | Single charger, all its connectors. RemoteStart / RemoteStop / Soft Reset buttons.                                                                                                                                                                                                                                           |
 | `/inspect/transactions`        | Active transactions | Live list of in-flight transactions.                                                                                                                                                                                                                                                                                         |

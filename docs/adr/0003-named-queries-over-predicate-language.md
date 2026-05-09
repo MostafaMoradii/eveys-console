@@ -46,7 +46,7 @@ reviewable, secured by construction.
 
 - **Hasura-style predicate API**. Maximally flexible. Rejected at
   the v1 scale: the security review surface alone would dwarf the
-  rest of the BaaS, and we have ~5 named views to ship.
+  rest of the Console, and we have ~5 named views to ship.
 - **Generated subscriptions from the gateway's OpenAPI spec**.
   Auto-derive a `subscribe-to-{path}` for every GET endpoint.
   Rejected because subscriptions need delta semantics that the REST

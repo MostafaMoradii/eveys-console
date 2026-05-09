@@ -37,7 +37,7 @@ writing a new ADR and marking the old one `Superseded by ADR-MMMM`.
 
 | #                                                       | Title                                                                   | Status                            | Date       |
 | ------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------- | ---------- |
-| [0001](./0001-baas-shape-consume-gateway.md)            | Console as a BaaS that consumes the gateway, not modifies it            | Accepted                          | 2026-05-09 |
+| [0001](./0001-console-shape-consume-gateway.md)         | Console as a Console that consumes the gateway, not modifies it         | Accepted                          | 2026-05-09 |
 | [0002](./0002-websocket-over-sse-or-polling.md)         | WebSocket as the live transport (vs SSE or polling)                     | Accepted                          | 2026-05-09 |
 | [0003](./0003-named-queries-over-predicate-language.md) | Named queries instead of a predicate-based subscription language        | Accepted                          | 2026-05-09 |
 | [0004](./0004-shadcn-over-mantine.md)                   | UI on shadcn/ui (vs Mantine, MUI, etc.)                                 | Accepted                          | 2026-05-09 |

@@ -8,7 +8,7 @@
   `eveys-mobility/OCPP`) with:
   - REST reachable on `:8080`
   - `EVEYS_OCPP_REST_INBOUND_TOKENS` set to a real token (copy it into
-    the BaaS's `.env` as `GATEWAY_TOKEN`)
+    the Console's `.env` as `GATEWAY_TOKEN`)
   - `EVEYS_OCPP_REST_OPENAPI_ENABLED=true` so `pnpm gen:api-types` can
     pull the spec (or point at the committed spec file)
   - Kafka reachable on `:9092`
@@ -59,7 +59,7 @@ Paste the hash into `apps/server/.env`:
 CONSOLE_USERS=admin:$2a$10$abcd...,operator:$2a$10$efgh...
 ```
 
-Restart the BaaS so it re-reads `.env`. The login form on
+Restart the Console so it re-reads `.env`. The login form on
 `http://localhost:5180` accepts the new credentials immediately.
 
 ## Headless test fallback: mint-token
@@ -114,14 +114,14 @@ rarely happen.
 
 ## Common failure modes
 
-| Symptom                                                                        | Likely cause                                                                                                                                                                                                                        |
-| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ERR_PNPM_UNSUPPORTED_ENGINE` on install                                       | Node < 20.10 or pnpm not pinned via corepack. Re-run `corepack prepare pnpm@9.15.0 --activate`.                                                                                                                                     |
-| Server refuses to start with "Refusing to start: JWT_SECRET is a placeholder…" | Production guardrail. Set a real `JWT_SECRET` or bind to loopback (`HOST=127.0.0.1`).                                                                                                                                               |
-| Login fails with `login_disabled`                                              | `CONSOLE_USERS` is empty. Add at least one `username:bcrypthash` pair.                                                                                                                                                              |
-| Login fails with `invalid_credentials`                                         | Wrong password, or the bcrypt hash in `.env` doesn't match the password you typed. Re-hash.                                                                                                                                         |
-| Login fails with `pow_invalid`                                                 | Browser couldn't compute the proof-of-work in time, or the challenge expired (`AUTH_POW_TTL_SECONDS`, default 120). Refresh and retry.                                                                                              |
-| Pages stuck on "Loading…" forever                                              | Check the browser DevTools network tab. Most likely a cross-origin issue: the page is on a different host than the BaaS. Check that `VITE_BAAS_BASE_URL` (if set) matches the page's hostname.                                      |
-| Snapshot loads but no live updates                                             | The Kafka tail isn't reaching the broker. Check `KAFKA_BROKERS` and that the gateway is publishing. Look for `kafka.envelope_decode_failed` in the BaaS log — that means the gateway's `.proto` has drifted from the vendored copy. |
-| Subscriptions return `unauthenticated`                                         | Token expired (default TTL 8 h). Sign in again.                                                                                                                                                                                     |
-| `pnpm gen:api-types` fails to find the spec                                    | Set `GATEWAY_OPENAPI_SPEC=/abs/path/openapi.yaml`. The default discovers `../ocpp/docs/api/openapi.yaml`.                                                                                                                           |
+| Symptom                                                                        | Likely cause                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ERR_PNPM_UNSUPPORTED_ENGINE` on install                                       | Node < 20.10 or pnpm not pinned via corepack. Re-run `corepack prepare pnpm@9.15.0 --activate`.                                                                                                                                        |
+| Server refuses to start with "Refusing to start: JWT_SECRET is a placeholder…" | Production guardrail. Set a real `JWT_SECRET` or bind to loopback (`HOST=127.0.0.1`).                                                                                                                                                  |
+| Login fails with `login_disabled`                                              | `CONSOLE_USERS` is empty. Add at least one `username:bcrypthash` pair.                                                                                                                                                                 |
+| Login fails with `invalid_credentials`                                         | Wrong password, or the bcrypt hash in `.env` doesn't match the password you typed. Re-hash.                                                                                                                                            |
+| Login fails with `pow_invalid`                                                 | Browser couldn't compute the proof-of-work in time, or the challenge expired (`AUTH_POW_TTL_SECONDS`, default 120). Refresh and retry.                                                                                                 |
+| Pages stuck on "Loading…" forever                                              | Check the browser DevTools network tab. Most likely a cross-origin issue: the page is on a different host than the Console. Check that `VITE_BAAS_BASE_URL` (if set) matches the page's hostname.                                      |
+| Snapshot loads but no live updates                                             | The Kafka tail isn't reaching the broker. Check `KAFKA_BROKERS` and that the gateway is publishing. Look for `kafka.envelope_decode_failed` in the Console log — that means the gateway's `.proto` has drifted from the vendored copy. |
+| Subscriptions return `unauthenticated`                                         | Token expired (default TTL 8 h). Sign in again.                                                                                                                                                                                        |
+| `pnpm gen:api-types` fails to find the spec                                    | Set `GATEWAY_OPENAPI_SPEC=/abs/path/openapi.yaml`. The default discovers `../ocpp/docs/api/openapi.yaml`.                                                                                                                              |

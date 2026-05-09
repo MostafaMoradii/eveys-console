@@ -38,7 +38,7 @@ Forces:
 
 ## Decision
 
-**Self-hosted proof-of-work CAPTCHA.** The BaaS issues an HMAC-
+**Self-hosted proof-of-work CAPTCHA.** The Console issues an HMAC-
 signed challenge `{nonce, difficulty, issuedAt}` from
 `POST /auth/challenge`. The browser computes a `solution` such that
 SHA-256(challenge + ':' + solution) has at least `difficulty`

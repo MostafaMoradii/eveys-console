@@ -1,8 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { AlertCircle, Eye, EyeOff, Loader2, Search, Settings } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { fetchSysConfig, type ConfigEntry, type RestartImpact } from '@/api/config-client';
+import type { ConfigEntry, ConfigScope, RestartImpact, SysConfig } from '@/api/config-client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,21 +11,44 @@ import { Input } from '@/components/ui/input';
 import { useConsoleClient } from '@/lib/ws-context';
 import { cn } from '@/lib/utils';
 
-// SRE-facing read-only view of the BaaS configuration. Shows every key the
-// process loaded at boot, with description, current effective value, default,
-// where the value came from (env vs schema default), accepted range, whether
-// the operator can change it, and what needs to restart for a change to
-// apply. Sensitive values arrive already masked from the server.
+// Shared rendering for the Console-config and Gateway-config pages.
+// The two pages differ in (1) data source — fetchConsoleConfig vs
+// fetchGatewayConfig — and (2) which restart-impact filter buttons make
+// sense to show. Everything else is identical.
 
-export function SystemConfigPage() {
+export interface ConfigViewProps {
+  /** What scope this view represents. Drives the page heading and the
+   * "to apply a change" hint copy. */
+  scope: ConfigScope;
+  /** Plain title shown at the top of the page. */
+  title: string;
+  /** Cache key used for the underlying useQuery. */
+  queryKey: string;
+  /** Fetcher that returns the SysConfig response. The token comes from
+   * the auth context. */
+  fetcher: (token: string) => Promise<SysConfig>;
+  /** Restart-impact filter buttons to render (in order). 'all' should
+   * always be first. */
+  filters: Array<RestartImpact | 'all'>;
+}
+
+const FILTER_LABELS: Record<RestartImpact | 'all', string> = {
+  all: 'All',
+  none: 'Live',
+  console: 'Console',
+  gateway: 'Gateway',
+  both: 'Both',
+};
+
+export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigViewProps) {
   const { token } = useConsoleClient();
   const [search, setSearch] = useState('');
   const [restartFilter, setRestartFilter] = useState<RestartImpact | 'all'>('all');
   const [revealed, setRevealed] = useState(false);
 
-  const q = useQuery({
-    queryKey: ['sys-config'],
-    queryFn: () => fetchSysConfig(token!),
+  const q: UseQueryResult<SysConfig> = useQuery({
+    queryKey: [queryKey],
+    queryFn: () => fetcher(token!),
     enabled: !!token,
   });
 
@@ -59,39 +82,39 @@ export function SystemConfigPage() {
     );
   }
 
-  const sensitiveCount = entries.filter((e) => e.sensitive).length;
+  const sensitiveKeys = entries.filter((e) => e.sensitive).map((e) => e.key);
+  const sourceCopy = scope === 'gateway' ? 'gateway process' : 'Console server';
+  const sensitiveCopy =
+    scope === 'gateway'
+      ? 'These keys carry secret material and arrive masked from the gateway. The reveal toggle unmasks the placeholder text only — the underlying secret never leaves the gateway.'
+      : 'These keys carry secret material and arrive masked from the Console server. The reveal toggle unmasks the placeholder text only — the underlying secret never leaves the Console.';
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="flex items-center gap-2 text-xl font-semibold">
-            <Settings className="h-5 w-5" />
-            Configuration
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Read-only. Values were loaded at <span className="font-mono">{q.data.loaded_at}</span>.
-            To change a key, edit the relevant env var and restart the process indicated by its{' '}
-            <em>restart</em> column.
-          </p>
-        </div>
+      <div>
+        <h2 className="flex items-center gap-2 text-xl font-semibold">
+          <Settings className="h-5 w-5" />
+          {title}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Read-only. Values were loaded by the {sourceCopy} at{' '}
+          <span className="font-mono">{q.data.loaded_at}</span>. To change a key, edit the relevant
+          env var and restart the process indicated by its <em>restart</em> column.
+        </p>
       </div>
 
-      <Alert>
-        <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Sensitive values are masked</AlertTitle>
-        <AlertDescription>
-          {sensitiveCount} key{sensitiveCount === 1 ? '' : 's'} (
-          {sensitiveCount > 0
-            ? entries
-                .filter((e) => e.sensitive)
-                .map((e) => e.key)
-                .join(', ')
-            : 'none'}
-          ) carry secret material and arrive masked from the server. The reveal toggle unmasks the
-          placeholder text only — the underlying secret never leaves the BaaS.
-        </AlertDescription>
-      </Alert>
+      {sensitiveKeys.length > 0 ? (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>
+            {sensitiveKeys.length} sensitive key{sensitiveKeys.length === 1 ? '' : 's'} masked
+          </AlertTitle>
+          <AlertDescription>
+            <span className="font-mono text-xs">{sensitiveKeys.join(', ')}</span>
+            <span className="mt-1 block">{sensitiveCopy}</span>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
@@ -105,7 +128,7 @@ export function SystemConfigPage() {
             aria-label="Search configuration"
           />
         </div>
-        <RestartFilter value={restartFilter} onChange={setRestartFilter} />
+        <RestartFilter value={restartFilter} onChange={setRestartFilter} options={filters} />
         <Button
           variant="outline"
           size="sm"
@@ -143,7 +166,7 @@ function ConfigCard({ entry, revealed }: { entry: ConfigEntry; revealed: boolean
   const display =
     entry.sensitive && entry.value
       ? revealed
-        ? entry.value // still '••••••••' from the server; the UI just stops hiding it visually
+        ? entry.value
         : '•'.repeat(8)
       : entry.value || '<empty>';
 
@@ -155,6 +178,11 @@ function ConfigCard({ entry, revealed }: { entry: ConfigEntry; revealed: boolean
           <div className="flex flex-wrap items-center gap-1.5">
             <SourcePill source={entry.source} />
             <RestartPill restart={entry.restart} />
+            {entry.category ? (
+              <Badge variant="outline" className="text-[10px]">
+                {entry.category}
+              </Badge>
+            ) : null}
             {entry.sensitive ? <Badge variant="destructive">sensitive</Badge> : null}
             {!entry.mutable ? <Badge variant="secondary">read-only</Badge> : null}
           </div>
@@ -162,6 +190,11 @@ function ConfigCard({ entry, revealed }: { entry: ConfigEntry; revealed: boolean
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
         <p className="text-muted-foreground">{entry.description}</p>
+        {entry.impact ? (
+          <p className="rounded border-l-2 border-muted bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <span className="font-semibold uppercase tracking-wider">Impact</span> · {entry.impact}
+          </p>
+        ) : null}
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <KV label="Current value">
@@ -217,13 +250,13 @@ function RestartPill({ restart }: { restart: RestartImpact }) {
       </Badge>
     );
   }
-  const tone = restart === 'baas' ? 'warning' : restart === 'gateway' ? 'warning' : 'destructive';
+  const tone = restart === 'both' ? 'destructive' : 'warning';
   const label =
-    restart === 'baas'
-      ? 'restart: BaaS'
+    restart === 'console'
+      ? 'restart: Console'
       : restart === 'gateway'
         ? 'restart: gateway'
-        : 'restart: BaaS + gateway';
+        : 'restart: Console + gateway';
   return (
     <Badge variant={tone} className="text-[10px]">
       {label}
@@ -234,32 +267,27 @@ function RestartPill({ restart }: { restart: RestartImpact }) {
 function RestartFilter({
   value,
   onChange,
+  options,
 }: {
   value: RestartImpact | 'all';
   onChange: (v: RestartImpact | 'all') => void;
+  options: Array<RestartImpact | 'all'>;
 }) {
-  const options: Array<{ v: RestartImpact | 'all'; label: string }> = [
-    { v: 'all', label: 'All' },
-    { v: 'baas', label: 'BaaS' },
-    { v: 'gateway', label: 'Gateway' },
-    { v: 'both', label: 'Both' },
-    { v: 'none', label: 'Live' },
-  ];
   return (
     <div
       className="flex flex-wrap items-center gap-1"
       role="group"
       aria-label="Filter by restart impact"
     >
-      {options.map((o) => (
+      {options.map((opt) => (
         <Button
-          key={o.v}
-          variant={value === o.v ? 'default' : 'outline'}
+          key={opt}
+          variant={value === opt ? 'default' : 'outline'}
           size="sm"
-          onClick={() => onChange(o.v)}
-          aria-pressed={value === o.v}
+          onClick={() => onChange(opt)}
+          aria-pressed={value === opt}
         >
-          {o.label}
+          {FILTER_LABELS[opt]}
         </Button>
       ))}
     </div>

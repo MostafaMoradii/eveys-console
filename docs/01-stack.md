@@ -41,7 +41,7 @@ find node_modules/.pnpm -name package.json \
 
 | Component  | Version | License    | Role                                                                                                      |
 | ---------- | ------- | ---------- | --------------------------------------------------------------------------------------------------------- |
-| Node.js    | ≥ 20.10 | MIT        | Runtime for the BaaS server and the build tooling.                                                        |
+| Node.js    | ≥ 20.10 | MIT        | Runtime for the Console server and the build tooling.                                                     |
 | TypeScript | 5.7     | Apache-2.0 | Source language for both apps and shared packages. Strict mode with `exactOptionalPropertyTypes` enabled. |
 | pnpm       | 9.15    | MIT        | Package manager and workspace tool. Pinned via Corepack.                                                  |
 
