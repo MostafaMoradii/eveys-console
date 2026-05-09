@@ -42,7 +42,10 @@ interface SysStatusResponse {
 // Loose `app` type to compose with any FastifyInstance.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function registerSysStatusRoute(app: any, deps: RouteDeps) {
-  const requireAuth = async (req: { jwtVerify: () => Promise<unknown> }, reply: { code: (n: number) => { send: (b: unknown) => unknown } }) => {
+  const requireAuth = async (
+    req: { jwtVerify: () => Promise<unknown> },
+    reply: { code: (n: number) => { send: (b: unknown) => unknown } },
+  ) => {
     try {
       await req.jwtVerify();
     } catch {
@@ -51,33 +54,27 @@ export async function registerSysStatusRoute(app: any, deps: RouteDeps) {
     return undefined;
   };
 
-  app.get(
-    '/sys/status',
-    { preHandler: requireAuth },
-    async (): Promise<SysStatusResponse> => {
-      const baasUptime = Math.floor((Date.now() - deps.startedAt.getTime()) / 1000);
+  app.get('/sys/status', { preHandler: requireAuth }, async (): Promise<SysStatusResponse> => {
+    const baasUptime = Math.floor((Date.now() - deps.startedAt.getTime()) / 1000);
 
-      const gatewayProbe = await probeGatewayHealth(deps.gateway);
-      const kafkaState = probeKafka(deps.kafka);
+    const gatewayProbe = await probeGatewayHealth(deps.gateway);
+    const kafkaState = probeKafka(deps.kafka);
 
-      return {
-        baas: {
-          uptime_seconds: baasUptime,
-          started_at: deps.startedAt.toISOString(),
-        },
-        gateway: gatewayProbe,
-        kafka: kafkaState,
-        connections: {
-          websockets: deps.broker.connectionCount(),
-        },
-      };
-    },
-  );
+    return {
+      baas: {
+        uptime_seconds: baasUptime,
+        started_at: deps.startedAt.toISOString(),
+      },
+      gateway: gatewayProbe,
+      kafka: kafkaState,
+      connections: {
+        websockets: deps.broker.connectionCount(),
+      },
+    };
+  });
 }
 
-async function probeGatewayHealth(
-  gateway: GatewayClient,
-): Promise<SysStatusResponse['gateway']> {
+async function probeGatewayHealth(gateway: GatewayClient): Promise<SysStatusResponse['gateway']> {
   const t0 = Date.now();
   try {
     const body = (await gateway.health()) as {

@@ -15,11 +15,11 @@ and (c) the concrete plan to close the gap.
 
 Three breakpoints, mapped to Tailwind defaults:
 
-| Breakpoint | Tailwind prefix | Width | Audience |
-|---|---|---|---|
-| Phone | (none) | < 640 px | On-call, away from desk. Read-mostly + a few RPCs. |
-| Tablet | `sm:` to `md:` | 640–1023 px | Operator with a tablet. Read + write. |
-| Desktop | `lg:` and up | ≥ 1024 px | Primary use case. Everything. |
+| Breakpoint | Tailwind prefix | Width       | Audience                                           |
+| ---------- | --------------- | ----------- | -------------------------------------------------- |
+| Phone      | (none)          | < 640 px    | On-call, away from desk. Read-mostly + a few RPCs. |
+| Tablet     | `sm:` to `md:`  | 640–1023 px | Operator with a tablet. Read + write.              |
+| Desktop    | `lg:` and up    | ≥ 1024 px   | Primary use case. Everything.                      |
 
 **Phone goals (must-have):**
 
@@ -112,7 +112,7 @@ small.
 ### Phase M-3 — Mobile-first FleetPage
 
 - **Default to grid view on phones** (override the user's saved
-  view-mode pref *for this session* when below `sm`; respect it on
+  view-mode pref _for this session_ when below `sm`; respect it on
   resize back up). The grid is already responsive; the table is
   the problem.
 - Filter bar:
@@ -180,7 +180,7 @@ doesn't strictly gate any of them.
 
 ## Test posture
 
-- Add Playwright (or Cypress) once one of the M-* phases lands;
+- Add Playwright (or Cypress) once one of the M-\* phases lands;
   cover the three breakpoints (360, 768, 1280) on each page.
 - Until then: manual QA against the breakpoints in DevTools, and
   one real-device pass per phase before declaring it done.

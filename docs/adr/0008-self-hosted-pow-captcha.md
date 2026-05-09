@@ -55,7 +55,7 @@ limit on `/auth/login`.
   third-party scripts that need privacy review and add a CDN
   dependency. The threat model doesn't justify the cost.
 - **Per-IP rate limit alone**. Implemented in addition to PoW
-  (5/min default). Rejected as the *only* defence because attackers
+  (5/min default). Rejected as the _only_ defence because attackers
   with residential proxies trivially work around it.
 - **Argon2 / bcrypt as the work function**. Stronger per-attempt
   cost but requires a server-side state store (the work parameters

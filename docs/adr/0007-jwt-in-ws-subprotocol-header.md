@@ -32,7 +32,7 @@ Constraints:
   yet; the browser at `localhost:5180` connects to the BaaS at
   `localhost:8090`. Cookies on cross-origin WS upgrades require
   CORS-like negotiations browsers don't do.
-- We want auth checked *before* allocating per-connection state, not
+- We want auth checked _before_ allocating per-connection state, not
   after the WS is open.
 
 ## Decision
@@ -89,8 +89,8 @@ messages are exchanged.
 
 - **Token theft via XSS.** The console mitigates by being a small,
   no-third-party-script app and serving its own bundle. shadcn/ui
-  + Tailwind components don't pull external script tags. Long
-  term: cookie auth.
+  - Tailwind components don't pull external script tags. Long
+    term: cookie auth.
 
 ### Reversibility
 

@@ -17,6 +17,7 @@ const outFile = resolve(outDir, 'openapi.ts');
 
 const candidates = [
   process.env.GATEWAY_OPENAPI_SPEC,
+  resolve(pkgRoot, 'openapi.yaml'),
   resolve(pkgRoot, '../../../ocpp/docs/api/openapi.yaml'),
   resolve(pkgRoot, '../../../../ocpp/docs/api/openapi.yaml'),
 ].filter(Boolean);

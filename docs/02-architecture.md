@@ -90,6 +90,7 @@ where `payload` is the decoded oneof branch.
 
 **REST proxy** (`apps/server/src/rest/gateway-client.ts`). Typed
 client for the gateway's `/api/v1/...`. Used by:
+
 - Snapshot fetches in resolvers.
 - The WS layer's RPC dispatch (RemoteStart, RemoteStop, Reset, …).
 - The `charge-points` and `charge-point` resolvers' delta path —
@@ -136,13 +137,13 @@ ignores stale duplicates.
 
 ## Five named queries
 
-| Name | Snapshot source | Delta source | Notes |
-|---|---|---|---|
-| `charge-points` | `GET /api/v1/charge-points` | `cp.boot`, `cp.status` | Resolver re-fetches `GET /charge-points/{cp_id}` per event for a complete row. Params: `online`, `vendor`, `limit`, `cursor` — all forwarded to the gateway. The snapshot envelope carries `next_cursor` (nullable) so the client can advance forward. Mismatching events emit a `remove` delta so subscribers can drop the row from the loaded page. |
-| `charge-point` | `GET /api/v1/charge-points/:cp_id` | `cp.boot`, `cp.status` (filtered by `cp_id`) | Same re-fetch pattern. Singleton; deltas replace the whole entity. |
-| `transactions-active` | `GET /api/v1/transactions?active=true` | `tx.started` | Maps the protobuf payload's camelCase fields to the wire shape (`transaction_id`, `cp_id`, `id_tag`, `meter_start_wh`, `started_reported_at`, …). |
-| `meter-history` | (empty in v1) | `cp.meter` (filtered by `cp_id`) | One Kafka event fans out to N deltas, one per `sampledValues[]` entry. Enum suffix stripped (e.g. `UNIT_WH` → `WH`). |
-| `status-history` | (empty in v1) | `cp.status` (filtered by `cp_id`) | Empty `error_code`/`info` strings normalised to `null`. |
+| Name                  | Snapshot source                        | Delta source                                 | Notes                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------- | -------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `charge-points`       | `GET /api/v1/charge-points`            | `cp.boot`, `cp.status`                       | Resolver re-fetches `GET /charge-points/{cp_id}` per event for a complete row. Params: `online`, `vendor`, `limit`, `cursor` — all forwarded to the gateway. The snapshot envelope carries `next_cursor` (nullable) so the client can advance forward. Mismatching events emit a `remove` delta so subscribers can drop the row from the loaded page. |
+| `charge-point`        | `GET /api/v1/charge-points/:cp_id`     | `cp.boot`, `cp.status` (filtered by `cp_id`) | Same re-fetch pattern. Singleton; deltas replace the whole entity.                                                                                                                                                                                                                                                                                    |
+| `transactions-active` | `GET /api/v1/transactions?active=true` | `tx.started`                                 | Maps the protobuf payload's camelCase fields to the wire shape (`transaction_id`, `cp_id`, `id_tag`, `meter_start_wh`, `started_reported_at`, …).                                                                                                                                                                                                     |
+| `meter-history`       | (empty in v1)                          | `cp.meter` (filtered by `cp_id`)             | One Kafka event fans out to N deltas, one per `sampledValues[]` entry. Enum suffix stripped (e.g. `UNIT_WH` → `WH`).                                                                                                                                                                                                                                  |
+| `status-history`      | (empty in v1)                          | `cp.status` (filtered by `cp_id`)            | Empty `error_code`/`info` strings normalised to `null`.                                                                                                                                                                                                                                                                                               |
 
 Adding a new query = one resolver in `queries.ts` + one entry in the
 protocol's `QueryName` enum + corresponding `SnapshotForQuery` /
@@ -153,8 +154,13 @@ protocol's `QueryName` enum + corresponding `SnapshotForQuery` /
 Commands ride the same WebSocket as subscriptions. The client sends:
 
 ```json
-{ "v": 1, "id": "r-7", "type": "rpc", "method": "remote-start",
-  "params": { "cp_id": "CP_42", "id_tag": "OPERATOR" } }
+{
+  "v": 1,
+  "id": "r-7",
+  "type": "rpc",
+  "method": "remote-start",
+  "params": { "cp_id": "CP_42", "id_tag": "OPERATOR" }
+}
 ```
 
 The server routes by `method`, calls the gateway's REST, returns
@@ -173,8 +179,9 @@ once at the gateway (the BaaS's bearer token).
 ## Multi-pod posture
 
 Today: single-pod. Multi-pod requires:
+
 - Each pod tails Kafka in the same consumer group → only one pod
-  receives each partition's events. Subscriptions on *other* pods
+  receives each partition's events. Subscriptions on _other_ pods
   miss them. Fix: switch to one consumer group **per pod**, so every
   pod sees every event. Per-pod CPU cost grows with topic volume.
 - WS sticky routing isn't needed (subscriptions are pod-local).
@@ -185,10 +192,10 @@ This is documented but not implemented. Single-pod is fine for v1.
 
 ## Failure modes
 
-| What goes wrong | What happens | Mitigation |
-|---|---|---|
-| Gateway down | Snapshot fetches fail. WS subscriptions return `error: upstream_unavailable`. Active subs get no deltas. | UI shows the error; operator retries. |
-| Kafka down | No deltas. Snapshots still work. | UI shows snapshots only; flag the staleness in the connection-status badge once we wire it. |
-| BaaS pod restart | Every WS drops. Clients reconnect, re-subscribe, re-snapshot. ~1 s of pause. | Acceptable for v1. |
-| Bad JWT | WS closes with code 4401. | Client clears token, prompts for re-login. |
-| Slow consumer | A noisy charger floods `cp.meter`. | TODO — per-connection rate limit + meter-sample coalescing. Not implemented. |
+| What goes wrong  | What happens                                                                                             | Mitigation                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Gateway down     | Snapshot fetches fail. WS subscriptions return `error: upstream_unavailable`. Active subs get no deltas. | UI shows the error; operator retries.                                                       |
+| Kafka down       | No deltas. Snapshots still work.                                                                         | UI shows snapshots only; flag the staleness in the connection-status badge once we wire it. |
+| BaaS pod restart | Every WS drops. Clients reconnect, re-subscribe, re-snapshot. ~1 s of pause.                             | Acceptable for v1.                                                                          |
+| Bad JWT          | WS closes with code 4401.                                                                                | Client clears token, prompts for re-login.                                                  |
+| Slow consumer    | A noisy charger floods `cp.meter`.                                                                       | TODO — per-connection rate limit + meter-sample coalescing. Not implemented.                |

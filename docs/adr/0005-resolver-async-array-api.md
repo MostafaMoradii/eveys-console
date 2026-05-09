@@ -18,7 +18,7 @@ Two real workloads break that shape:
 1. One OCPP `MeterValues` event carries `sampledValues[]` with N
    measurements. The natural mapping is one delta per sample, not
    one delta per event.
-2. The `charge-points` and `charge-point` resolvers need the *full*
+2. The `charge-points` and `charge-point` resolvers need the _full_
    `ChargePointSummary` row, but the gateway's Kafka payload
    (`cp.boot` / `cp.status`) only carries a slice. The resolver
    needs to re-fetch the full row from the gateway's REST — async.

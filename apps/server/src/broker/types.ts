@@ -1,4 +1,9 @@
-import type { DeltaForQuery, QueryName, QueryParams, SnapshotForQuery } from '@eveys-console/protocol';
+import type {
+  DeltaForQuery,
+  QueryName,
+  QueryParams,
+  SnapshotForQuery,
+} from '@eveys-console/protocol';
 
 export interface Subscription {
   id: string;

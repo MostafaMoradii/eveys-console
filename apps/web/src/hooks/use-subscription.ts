@@ -17,10 +17,10 @@ export interface SubscriptionState<S, D> {
   cursor: string | null;
 }
 
-export function useSubscription<
-  S extends SnapshotForQuery,
-  D extends DeltaForQuery,
->(query: QueryName, params: QueryParams): SubscriptionState<S, D> {
+export function useSubscription<S extends SnapshotForQuery, D extends DeltaForQuery>(
+  query: QueryName,
+  params: QueryParams,
+): SubscriptionState<S, D> {
   const { client, status } = useConsoleClient();
   const [state, setState] = useState<SubscriptionState<S, D>>({
     loading: true,

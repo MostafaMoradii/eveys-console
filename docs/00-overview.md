@@ -45,12 +45,12 @@ device is desktop; the on-call read path and a small set of
 commands also have to work on a phone — see
 [`08-mobile.md`](./08-mobile.md).
 
-| Path | Page | Purpose |
-|---|---|---|
-| `/` | System status | Live grid of service health: BaaS uptime + WS connection count, Gateway probe + version, Postgres, Redis, Kafka tail. Polls `/sys/status` every 5 s. |
-| `/inspect/charge-points` | Charge points | Live list of every charger known to the gateway. Table or grid view (toggleable). Server-side filters (`online`, `vendor`) and client-side filters (text search across `cp_id`/`vendor`/`model`/`serial`, status enum). Cursor-paginated (50/100/250/500). Per-row expand → connector-level status, error code, last change. |
-| `/inspect/charge-points/$cpId` | Charger detail | Single charger, all its connectors. RemoteStart / RemoteStop / Soft Reset buttons. |
-| `/inspect/transactions` | Active transactions | Live list of in-flight transactions. |
+| Path                           | Page                | Purpose                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                            | System status       | Live grid of service health: BaaS uptime + WS connection count, Gateway probe + version, Postgres, Redis, Kafka tail. Polls `/sys/status` every 5 s.                                                                                                                                                                         |
+| `/inspect/charge-points`       | Charge points       | Live list of every charger known to the gateway. Table or grid view (toggleable). Server-side filters (`online`, `vendor`) and client-side filters (text search across `cp_id`/`vendor`/`model`/`serial`, status enum). Cursor-paginated (50/100/250/500). Per-row expand → connector-level status, error code, last change. |
+| `/inspect/charge-points/$cpId` | Charger detail      | Single charger, all its connectors. RemoteStart / RemoteStop / Soft Reset buttons.                                                                                                                                                                                                                                           |
+| `/inspect/transactions`        | Active transactions | Live list of in-flight transactions.                                                                                                                                                                                                                                                                                         |
 
 The login page (`/`) renders before any of the above when there's no
 JWT in storage.

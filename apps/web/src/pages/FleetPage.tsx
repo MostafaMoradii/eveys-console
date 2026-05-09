@@ -22,13 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import {
   Table,
   TableBody,
@@ -111,9 +105,7 @@ export function FleetPage() {
     if (!sub.snapshot || sub.snapshot.kind !== 'charge-points') {
       return { allRows: [], nextCursor: null };
     }
-    const byId = new Map<string, ChargePointSummary>(
-      sub.snapshot.rows.map((r) => [r.cp_id, r]),
-    );
+    const byId = new Map<string, ChargePointSummary>(sub.snapshot.rows.map((r) => [r.cp_id, r]));
     if (sub.lastDelta && sub.lastDelta.kind === 'charge-points') {
       const d = sub.lastDelta;
       if (d.op === 'upsert' && d.row) byId.set(d.row.cp_id, d.row);
@@ -121,18 +113,14 @@ export function FleetPage() {
     }
     return {
       allRows: Array.from(byId.values()).sort((a, b) => a.cp_id.localeCompare(b.cp_id)),
-      nextCursor:
-        'next_cursor' in sub.snapshot ? (sub.snapshot.next_cursor ?? null) : null,
+      nextCursor: 'next_cursor' in sub.snapshot ? (sub.snapshot.next_cursor ?? null) : null,
     };
   }, [sub.snapshot, sub.lastDelta]);
 
   // Vendor list for the autocomplete (datalist) — sourced from the
   // current page so it doesn't require a separate distinct query.
   const knownVendors = useMemo(
-    () =>
-      Array.from(
-        new Set(allRows.map((r) => r.vendor).filter((v): v is string => !!v)),
-      ).sort(),
+    () => Array.from(new Set(allRows.map((r) => r.vendor).filter((v): v is string => !!v))).sort(),
     [allRows],
   );
 
@@ -253,12 +241,7 @@ function FilterBar(props: FilterBarProps) {
       <div className="flex items-center gap-2">
         <Sheet>
           <SheetTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 gap-2"
-              aria-label="Open filters"
-            >
+            <Button variant="outline" size="sm" className="h-9 gap-2" aria-label="Open filters">
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Filters
               {activeCount > 0 ? (
@@ -362,9 +345,7 @@ function FilterFields({
       <FilterField label="Status" hint="loaded page" stretch={stretch}>
         <Select
           value={statusFilter}
-          onChange={(e) =>
-            onStatusChange(e.currentTarget.value as (typeof STATUSES)[number])
-          }
+          onChange={(e) => onStatusChange(e.currentTarget.value as (typeof STATUSES)[number])}
           className={cn(stretch ? 'w-full' : 'w-[160px]')}
         >
           {STATUSES.map((s) => (
@@ -393,9 +374,7 @@ function FilterField({
     <div className={cn('flex flex-col gap-1', stretch && 'w-full')}>
       <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
-        {hint ? (
-          <span className="ml-1 normal-case text-muted-foreground/60">· {hint}</span>
-        ) : null}
+        {hint ? <span className="ml-1 normal-case text-muted-foreground/60">· {hint}</span> : null}
       </span>
       {children}
     </div>
@@ -634,11 +613,7 @@ function ConnectorsSummary({ connectors }: { connectors: ChargePointSummary['con
   );
 }
 
-function ConnectorDot({
-  connector,
-}: {
-  connector: ChargePointSummary['connectors'][number];
-}) {
+function ConnectorDot({ connector }: { connector: ChargePointSummary['connectors'][number] }) {
   const tone: 'destructive' | 'success' | 'warning' | 'info' | 'muted' = (() => {
     if (connector.error_code && connector.error_code !== 'NoError') return 'destructive';
     switch (connector.status) {

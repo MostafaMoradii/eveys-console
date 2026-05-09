@@ -11,7 +11,11 @@ const schema = z.object({
   JWT_SECRET: z.string().min(16),
   JWT_AUDIENCE: z.string().default('eveys-console'),
   JWT_ISSUER: z.string().default('eveys-console'),
-  JWT_TTL_SECONDS: z.coerce.number().int().positive().default(8 * 3600),
+  JWT_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(8 * 3600),
 
   // Login users. CSV of `username:bcrypthash` pairs. Empty disables login
   // entirely (the WS still accepts pre-minted JWTs — useful for headless
@@ -40,7 +44,12 @@ const schema = z.object({
   // Kafka tail
   KAFKA_BROKERS: z
     .string()
-    .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean))
+    .transform((s) =>
+      s
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean),
+    )
     .pipe(z.array(z.string()).min(1)),
   KAFKA_CLIENT_ID: z.string().default('eveys-console-baas'),
   KAFKA_GROUP_ID: z.string().default('eveys-console-baas'),

@@ -20,7 +20,10 @@ if (existsSync(envPath)) {
     const eq = trimmed.indexOf('=');
     if (eq === -1) continue;
     const k = trimmed.slice(0, eq).trim();
-    const v = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+    const v = trimmed
+      .slice(eq + 1)
+      .trim()
+      .replace(/^["']|["']$/g, '');
     if (env[k] === undefined) env[k] = v;
   }
 }
@@ -48,8 +51,7 @@ const payload = {
   exp: now + ttlSeconds,
 };
 
-const b64url = (input) =>
-  Buffer.from(JSON.stringify(input)).toString('base64url');
+const b64url = (input) => Buffer.from(JSON.stringify(input)).toString('base64url');
 const signingInput = `${b64url(header)}.${b64url(payload)}`;
 const signature = createHmac('sha256', secret).update(signingInput).digest('base64url');
 process.stdout.write(`${signingInput}.${signature}`);

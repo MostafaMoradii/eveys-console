@@ -96,10 +96,7 @@ export class Broker {
               try {
                 conn.deliver(sub.id, delta);
               } catch (err) {
-                this.log.warn(
-                  { err, connectionId: conn.connectionId },
-                  'broker.deliver_failed',
-                );
+                this.log.warn({ err, connectionId: conn.connectionId }, 'broker.deliver_failed');
               }
             }
           })

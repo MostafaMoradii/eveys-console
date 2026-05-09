@@ -19,7 +19,7 @@ state and stop or restart any charger. Treat it accordingly.
 ## Mandatory before any non-loopback deployment
 
 The server **refuses to start** if `JWT_SECRET` is a known placeholder
-*and* `HOST` is not loopback. The check lives in `apps/server/src/config.ts`.
+_and_ `HOST` is not loopback. The check lives in `apps/server/src/config.ts`.
 Set a strong secret (`openssl rand -base64 48`) before binding a
 public interface.
 
@@ -97,8 +97,8 @@ with code 4401.
   reverse proxy (Nginx, Envoy, Cloudflare) terminate TLS at the
   edge so the BaaS never sees plaintext clients.
 - The BaaS makes outbound HTTPS calls to the gateway with a static
-  bearer token (`GATEWAY_TOKEN`). The token must be a *service
-  token* unique to this BaaS, with the minimum gateway permissions
+  bearer token (`GATEWAY_TOKEN`). The token must be a _service
+  token_ unique to this BaaS, with the minimum gateway permissions
   it needs. Don't reuse operator tokens.
 
 ## Rate limiting and DoS
@@ -162,6 +162,7 @@ Mitigations to add before public deploy:
 ```
 
 Three checkpoints between attacker and damage:
+
 1. The reverse proxy enforces TLS, Origin, and rate limits.
 2. The BaaS verifies the JWT and (eventually) tenant ACLs.
 3. The gateway authenticates the BaaS's service token.
@@ -175,7 +176,7 @@ multi-tenancy issues mean:
   including ones in the middle of paid charging events.
 - Any logged-in operator can `Reset` any charger, breaking active
   sessions.
-- Audit logging is not implemented — there's no record of *which*
+- Audit logging is not implemented — there's no record of _which_
   operator issued a destructive command.
 
 Audit logging (every RPC call, with principal sub + cp_id +

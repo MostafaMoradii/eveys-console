@@ -39,9 +39,9 @@ describe('UserStore', () => {
 
   it('rejects duplicate usernames', async () => {
     const h = await bcryptHash('p', 4);
-    expect(
-      () => new UserStore({ CONSOLE_USERS: `alice:${h},alice:${h}` }),
-    ).toThrow(/duplicate username/);
+    expect(() => new UserStore({ CONSOLE_USERS: `alice:${h},alice:${h}` })).toThrow(
+      /duplicate username/,
+    );
   });
 });
 

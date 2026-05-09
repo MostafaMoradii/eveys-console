@@ -71,8 +71,8 @@ export function LoginPage() {
             <CardTitle>OCPP Gateway · System Console</CardTitle>
           </div>
           <p className="text-sm text-muted-foreground">
-            System-administration console for the gateway. Sign in to view
-            service status, configuration, and connected components.
+            System-administration console for the gateway. Sign in to view service status,
+            configuration, and connected components.
           </p>
         </CardHeader>
         <CardContent>
@@ -111,7 +111,11 @@ export function LoginPage() {
               </Alert>
             ) : null}
 
-            <Button type="submit" className="w-full" disabled={submitting || !username || !password}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={submitting || !username || !password}
+            >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {stage === 'idle' || stage === 'error' ? 'Sign in' : null}
               {stage === 'challenge' ? 'Fetching challenge…' : null}

@@ -51,9 +51,7 @@ export function SystemPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold">System status</h2>
-        <p className="text-sm text-muted-foreground">
-          Live; refreshes every 5 seconds.
-        </p>
+        <p className="text-sm text-muted-foreground">Live; refreshes every 5 seconds.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -185,7 +183,8 @@ function gatewayComponentEntries(s: SysStatus): [string, string][] {
 
 function iconForComponent(name: string) {
   const lower = name.toLowerCase();
-  if (lower.includes('postgres') || lower.includes('database')) return <Database className="h-4 w-4" />;
+  if (lower.includes('postgres') || lower.includes('database'))
+    return <Database className="h-4 w-4" />;
   if (lower.includes('redis')) return <HardDrive className="h-4 w-4" />;
   return <Activity className="h-4 w-4" />;
 }

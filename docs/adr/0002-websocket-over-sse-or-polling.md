@@ -41,7 +41,7 @@ heartbeats, and errors all share the same envelope. Schema versioned
   rates: too slow for `cp.status`, too fast for `cp.boot`, costs
   network on every interval forever.
 - **SSE** — half the complexity of WebSocket; native `EventSource`.
-  Rejected because the console *also* sends messages to the server
+  Rejected because the console _also_ sends messages to the server
   (subscribe, unsubscribe, RPC); SSE forces a parallel HTTP path
   for those, doubling the auth and reconnect logic.
 - **gRPC-Web with bidi streams** — typed, schema-first. Rejected

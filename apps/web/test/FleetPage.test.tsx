@@ -25,7 +25,11 @@ const subscriptionCalls: { query: string; params: Record<string, unknown> }[] = 
 type SubResult = {
   loading?: boolean;
   error?: string | null;
-  snapshot?: { kind: 'charge-points'; rows: ChargePointSummary[]; next_cursor?: string | null } | null;
+  snapshot?: {
+    kind: 'charge-points';
+    rows: ChargePointSummary[];
+    next_cursor?: string | null;
+  } | null;
   lastDelta?: unknown;
   cursor?: string | null;
 };
@@ -100,7 +104,10 @@ import { FleetPage } from '@/pages/FleetPage';
 
 // ---- fixtures ------------------------------------------------------------
 
-const baseRow = (cp_id: string, overrides: Partial<ChargePointSummary> = {}): ChargePointSummary => ({
+const baseRow = (
+  cp_id: string,
+  overrides: Partial<ChargePointSummary> = {},
+): ChargePointSummary => ({
   cp_id,
   online: true,
   pod_id: 'pod-1',
@@ -111,7 +118,9 @@ const baseRow = (cp_id: string, overrides: Partial<ChargePointSummary> = {}): Ch
   last_boot_at: '2026-05-09T10:00:00+00:00',
   last_heartbeat_at: '2026-05-09T11:00:00+00:00',
   last_status: 'Available',
-  connectors: [{ connector_id: 1, status: 'Available', error_code: 'NoError', last_changed_at: null }],
+  connectors: [
+    { connector_id: 1, status: 'Available', error_code: 'NoError', last_changed_at: null },
+  ],
   ...overrides,
 });
 
@@ -179,7 +188,9 @@ describe('FleetPage — snapshot rendering', () => {
     };
     render(<FleetPage />);
     const links = screen.getAllByTestId('router-link');
-    const cpLinks = links.filter((a) => a.getAttribute('href')?.startsWith('/inspect/charge-points/'));
+    const cpLinks = links.filter((a) =>
+      a.getAttribute('href')?.startsWith('/inspect/charge-points/'),
+    );
     expect(cpLinks.map((a) => a.textContent)).toEqual(['CP_A', 'CP_B', 'CP_C']);
     // Heading reflects the row count.
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/Charge points — 3/);
@@ -451,7 +462,12 @@ describe('FleetPage — table-row connector drill-down', () => {
           baseRow('CP_A', {
             connectors: [
               { connector_id: 1, status: 'Charging', error_code: 'NoError', last_changed_at: null },
-              { connector_id: 2, status: 'Faulted', error_code: 'GroundFailure', last_changed_at: null },
+              {
+                connector_id: 2,
+                status: 'Faulted',
+                error_code: 'GroundFailure',
+                last_changed_at: null,
+              },
             ],
           }),
         ],
@@ -500,4 +516,3 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
 });
-

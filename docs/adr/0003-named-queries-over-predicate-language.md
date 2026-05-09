@@ -12,7 +12,7 @@ X". Two API shapes are common for this:
 
 - **Predicate / query language** — clients send something like
   `subscribe charge_points where online=true and site=$x order by
-  last_heartbeat`. The server compiles the predicate into Kafka
+last_heartbeat`. The server compiles the predicate into Kafka
   filters + DB queries. This is the Hasura / Supabase Realtime /
   AppSync model.
 - **Named queries** — the server pre-defines a finite set of
