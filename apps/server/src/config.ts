@@ -51,8 +51,8 @@ const schema = z.object({
         .filter(Boolean),
     )
     .pipe(z.array(z.string()).min(1)),
-  KAFKA_CLIENT_ID: z.string().default('eveys-console-baas'),
-  KAFKA_GROUP_ID: z.string().default('eveys-console-baas'),
+  KAFKA_CLIENT_ID: z.string().default('eveys-console'),
+  KAFKA_GROUP_ID: z.string().default('eveys-console'),
   KAFKA_TOPICS_BOOT: z.string().default('cp.boot'),
   KAFKA_TOPICS_STATUS: z.string().default('cp.status'),
   KAFKA_TOPICS_METER: z.string().default('cp.meter'),

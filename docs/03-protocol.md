@@ -1,6 +1,6 @@
 # 03 — Protocol
 
-Two surfaces between the web app and the BaaS:
+Two surfaces between the web app and the Console:
 
 1. **REST** — login (`/auth/challenge`, `/auth/login`) and system
    status (`/sys/status`). Plain HTTP/JSON.
@@ -30,7 +30,7 @@ server → client  : 200 { token, expires_at }
 ```
 
 The challenge is an HMAC-signed payload `{nonce, difficulty,
-issuedAt}` (signed with `JWT_SECRET` so the BaaS doesn't need
+issuedAt}` (signed with `JWT_SECRET` so the Console doesn't need
 server-side state to verify the solution). The PoW threshold is
 `AUTH_POW_DIFFICULTY` (default 16, ≈50 ms in a real browser; bumps
 quickly into the 100s of ms at 18-20).
@@ -45,7 +45,7 @@ posture and the path to RS256 + JWKS.
 ```
 client → server  : GET /sys/status
                    Authorization: Bearer <jwt>
-server → client  : { baas: {uptime_seconds, started_at},
+server → client  : { console: {uptime_seconds, started_at},
                      gateway: {ok, version, components, latency_ms},
                      kafka: {ok, consumer_running, topics},
                      connections: {websockets} }

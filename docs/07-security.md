@@ -6,14 +6,14 @@
 > [ADR-0008](./adr/0008-self-hosted-pow-captcha.md) (self-hosted PoW
 > CAPTCHA).
 
-This document is the threat model for the BaaS and the console UI.
+This document is the threat model for the Console and the console UI.
 The realtime console is an operator tool that exposes:
 
 - Read access to every charger in the fleet (snapshots + live deltas).
 - Write access to the gateway's command surface
   (`RemoteStart`, `RemoteStop`, `Reset`, …).
 
-A compromise of the BaaS therefore means an attacker can read fleet
+A compromise of the Console therefore means an attacker can read fleet
 state and stop or restart any charger. Treat it accordingly.
 
 ## Mandatory before any non-loopback deployment
@@ -72,7 +72,7 @@ with code 4401.
 - The `Principal.roles` field is parsed and attached to the
   connection context — but **no code path enforces role checks**.
 - Multi-tenancy is unwired. Every authenticated user sees every
-  charger; the BaaS does not filter by `tenant_id` or `cp_id` ACL
+  charger; the Console does not filter by `tenant_id` or `cp_id` ACL
   before fan-out.
 
 ### Status
@@ -95,10 +95,10 @@ with code 4401.
 
 - WebSocket frames are JSON over plaintext today. Behind a proper
   reverse proxy (Nginx, Envoy, Cloudflare) terminate TLS at the
-  edge so the BaaS never sees plaintext clients.
-- The BaaS makes outbound HTTPS calls to the gateway with a static
+  edge so the Console never sees plaintext clients.
+- The Console makes outbound HTTPS calls to the gateway with a static
   bearer token (`GATEWAY_TOKEN`). The token must be a _service
-  token_ unique to this BaaS, with the minimum gateway permissions
+  token_ unique to this Console, with the minimum gateway permissions
   it needs. Don't reuse operator tokens.
 
 ## Rate limiting and DoS
@@ -151,7 +151,7 @@ Mitigations to add before public deploy:
                      │ wss://, only allow-listed Origin
                      ▼
             ┌──────────────────┐
-            │  BaaS pod        │  bind :8090 on private network
+            │  Console pod        │  bind :8090 on private network
             │  (apps/server)   │  JWT_SECRET via secret manager
             └────────┬─────────┘
                      │
@@ -164,8 +164,8 @@ Mitigations to add before public deploy:
 Three checkpoints between attacker and damage:
 
 1. The reverse proxy enforces TLS, Origin, and rate limits.
-2. The BaaS verifies the JWT and (eventually) tenant ACLs.
-3. The gateway authenticates the BaaS's service token.
+2. The Console verifies the JWT and (eventually) tenant ACLs.
+3. The gateway authenticates the Console's service token.
 
 ## What still bites you on a private network
 

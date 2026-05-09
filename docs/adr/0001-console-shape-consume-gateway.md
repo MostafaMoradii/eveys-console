@@ -1,4 +1,4 @@
-# ADR-0001 — Console as a BaaS that consumes the gateway, not modifies it
+# ADR-0001 — Console as a separate service that consumes the gateway, not modifies it
 
 - **Status**: Accepted
 - **Date**: 2026-05-09
@@ -84,7 +84,7 @@ is a separate gateway PR with its own review.
 ### Reversibility
 
 Reversible at the seam. Switching to an embedded-in-gateway model
-would mean folding the BaaS routes into the gateway's FastAPI app
+would mean folding the Console routes into the gateway's FastAPI app
 and the React app into a static asset served by the gateway. Painful
 but bounded.
 

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { ConsoleClient, type ConnectionStatus } from '../api/ws-client';
-import { BAAS_WS_URL as WS_URL } from './baas-url';
+import { CONSOLE_WS_URL as WS_URL } from './console-url';
 
 const TOKEN_KEY = 'eveys-console.token';
 

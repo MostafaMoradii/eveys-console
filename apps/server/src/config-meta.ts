@@ -13,7 +13,7 @@ import type { Config } from './config.js';
 /** Whether changing this key in the deployment requires a process bounce. */
 export type RestartImpact =
   | 'none' // value is read every request; change takes effect immediately
-  | 'baas' // BaaS process must restart to pick up
+  | 'console' // Console process must restart to pick up
   | 'gateway' // change is on the gateway side; restart the gateway
   | 'both';
 
@@ -39,17 +39,17 @@ export interface KeyMeta {
 
 const META: Record<keyof Config, KeyMeta> = {
   HOST: {
-    description: 'Network interface the BaaS server binds to.',
+    description: 'Network interface the Console server binds to.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'IPv4/IPv6 address; "0.0.0.0" for all interfaces, "127.0.0.1" for loopback only.',
     default: '0.0.0.0',
     sensitive: false,
   },
   PORT: {
-    description: 'TCP port the BaaS server listens on.',
+    description: 'TCP port the Console server listens on.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: '1–65535',
     default: '8090',
     sensitive: false,
@@ -57,7 +57,7 @@ const META: Record<keyof Config, KeyMeta> = {
   LOG_LEVEL: {
     description: 'Minimum severity emitted by the structured logger.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'fatal | error | warn | info | debug | trace',
     default: 'info',
     sensitive: false,
@@ -65,7 +65,7 @@ const META: Record<keyof Config, KeyMeta> = {
   LOG_PRETTY: {
     description: 'Engage pino-pretty for human-readable logs (dev only).',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'true | false',
     default: 'false',
     sensitive: false,
@@ -75,7 +75,7 @@ const META: Record<keyof Config, KeyMeta> = {
     description:
       'HS256 signing secret for browser JWTs. Refuses to bind a non-loopback HOST when set to a known placeholder.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: '≥ 16 characters. Recommend `openssl rand -base64 48`.',
     default: '',
     sensitive: true,
@@ -83,7 +83,7 @@ const META: Record<keyof Config, KeyMeta> = {
   JWT_AUDIENCE: {
     description: 'Audience claim minted into login JWTs and required at verify time.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'free-form string',
     default: 'eveys-console',
     sensitive: false,
@@ -91,7 +91,7 @@ const META: Record<keyof Config, KeyMeta> = {
   JWT_ISSUER: {
     description: 'Issuer claim minted into login JWTs and required at verify time.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'free-form string',
     default: 'eveys-console',
     sensitive: false,
@@ -99,7 +99,7 @@ const META: Record<keyof Config, KeyMeta> = {
   JWT_TTL_SECONDS: {
     description: 'Lifetime of issued JWTs.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'positive integer (seconds)',
     default: '28800',
     sensitive: false,
@@ -109,7 +109,7 @@ const META: Record<keyof Config, KeyMeta> = {
     description:
       'Comma-separated `username:bcrypthash` pairs. Empty disables the login form (pre-minted JWTs still accepted).',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range:
       'CSV of `user:$2a$…` entries; generate hashes with `pnpm --filter @eveys-console/server hash-password`.',
     default: '',
@@ -120,7 +120,7 @@ const META: Record<keyof Config, KeyMeta> = {
     description:
       'Proof-of-work CAPTCHA difficulty (leading-zero bits required on the client hash). 16 ≈ 50 ms; 20 ≈ 1 s.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: '0–28',
     default: '16',
     sensitive: false,
@@ -128,7 +128,7 @@ const META: Record<keyof Config, KeyMeta> = {
   AUTH_POW_TTL_SECONDS: {
     description: 'How long a minted PoW challenge stays valid before the client must re-fetch.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'positive integer (seconds)',
     default: '120',
     sensitive: false,
@@ -136,7 +136,7 @@ const META: Record<keyof Config, KeyMeta> = {
   AUTH_LOGIN_MAX_PER_MIN: {
     description: 'Per-IP rate limit on POST /auth/login.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'positive integer (requests per minute)',
     default: '5',
     sensitive: false,
@@ -146,7 +146,7 @@ const META: Record<keyof Config, KeyMeta> = {
     description:
       'CSV of Origin headers permitted on the WS handshake and login routes. Empty disables Origin checking (laptop dev).',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range:
       'CSV of fully-qualified origins (e.g. `https://console.example.com,https://console.eu.example.com`)',
     default: '',
@@ -157,7 +157,7 @@ const META: Record<keyof Config, KeyMeta> = {
     description:
       'Base URL of the OCPP gateway REST API. Console uses this for snapshots and to forward RPCs.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'http(s)://host:port URL.',
     default: '',
     sensitive: false,
@@ -165,16 +165,16 @@ const META: Record<keyof Config, KeyMeta> = {
   GATEWAY_TOKEN: {
     description: 'Bearer token sent to the gateway on every REST call.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'opaque token issued by the gateway',
     default: '',
     sensitive: true,
   },
 
   KAFKA_BROKERS: {
-    description: 'CSV of Kafka bootstrap brokers the BaaS tails for live events.',
+    description: 'CSV of Kafka bootstrap brokers the Console tails for live events.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'CSV of host:port (e.g. `kafka-0:9092,kafka-1:9092,kafka-2:9092`)',
     default: '',
     sensitive: false,
@@ -182,18 +182,18 @@ const META: Record<keyof Config, KeyMeta> = {
   KAFKA_CLIENT_ID: {
     description: 'kafkajs `clientId` reported to the brokers.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'free-form string',
-    default: 'eveys-console-baas',
+    default: 'eveys-console',
     sensitive: false,
   },
   KAFKA_GROUP_ID: {
     description:
-      'Kafka consumer-group id. All BaaS pods share one group today; a per-pod model is on the multi-pod track.',
+      'Kafka consumer-group id. All Console pods share one group today; a per-pod model is on the multi-pod track.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'free-form string',
-    default: 'eveys-console-baas',
+    default: 'eveys-console',
     sensitive: false,
   },
   KAFKA_TOPICS_BOOT: {
@@ -232,7 +232,7 @@ const META: Record<keyof Config, KeyMeta> = {
   WS_MAX_SUBSCRIPTIONS_PER_CONN: {
     description: 'Cap on simultaneous subscriptions per WebSocket. Plumbed but not yet enforced.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'positive integer',
     default: '50',
     sensitive: false,
@@ -240,7 +240,7 @@ const META: Record<keyof Config, KeyMeta> = {
   WS_PING_INTERVAL_MS: {
     description: 'Server-side ping cadence on the WS connection. Detects half-open peers.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'positive integer (milliseconds)',
     default: '30000',
     sensitive: false,
@@ -248,7 +248,7 @@ const META: Record<keyof Config, KeyMeta> = {
   WS_IDLE_TIMEOUT_MS: {
     description: 'Idle disconnect threshold on the WS connection.',
     mutable: true,
-    restart: 'baas',
+    restart: 'console',
     range: 'positive integer (milliseconds)',
     default: '120000',
     sensitive: false,

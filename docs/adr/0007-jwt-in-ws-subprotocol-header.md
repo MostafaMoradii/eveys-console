@@ -29,7 +29,7 @@ Constraints:
 - The browser can't set `Authorization: Bearer ...` on a
   WebSocket. That's the deal-breaker for the obvious option.
 - We don't have a same-origin reverse proxy in front of the console
-  yet; the browser at `localhost:5180` connects to the BaaS at
+  yet; the browser at `localhost:5180` connects to the Console at
   `localhost:8090`. Cookies on cross-origin WS upgrades require
   CORS-like negotiations browsers don't do.
 - We want auth checked _before_ allocating per-connection state, not
@@ -56,7 +56,7 @@ messages are exchanged.
   of credentials in dumps.
 - **Cookie auth**. Rejected for v1 because we don't have a same-
   origin reverse proxy. The path forward is documented: when
-  Cloudflare/Nginx fronts both the web and the BaaS, switch to
+  Cloudflare/Nginx fronts both the web and the Console, switch to
   httpOnly cookie + CSRF token. See `docs/07-security.md`.
 - **Auth-on-first-message**. Rejected because the server still
   allocates a WS connection (a TCP socket, file descriptor, ws

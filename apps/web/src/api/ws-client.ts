@@ -1,4 +1,4 @@
-// Typed WS client for the BaaS. One connection per app instance; subscriptions
+// Typed WS client for the Console server. One connection per app instance; subscriptions
 // are multiplexed over it with stable IDs. Reconnect with backoff; outstanding
 // subscriptions are re-issued on reconnect; outstanding RPCs reject with
 // 'reconnect' so the caller can retry.

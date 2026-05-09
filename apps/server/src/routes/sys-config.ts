@@ -16,8 +16,8 @@ interface RouteDeps {
 export interface SysConfigResponse {
   entries: ConfigEntry[];
   /** Static for now; future iterations may surface gateway-side keys here too. */
-  scope: 'baas';
-  /** ISO-8601 timestamp at which the BaaS process loaded this config. */
+  scope: 'console';
+  /** ISO-8601 timestamp at which the Console process loaded this config. */
   loaded_at: string;
 }
 
@@ -40,7 +40,7 @@ export async function registerSysConfigRoute(app: any, deps: RouteDeps) {
   app.get('/sys/config', { preHandler: requireAuth }, async (): Promise<SysConfigResponse> => {
     return {
       entries: describeConfig(deps.config),
-      scope: 'baas',
+      scope: 'console',
       loaded_at: loadedAt,
     };
   });

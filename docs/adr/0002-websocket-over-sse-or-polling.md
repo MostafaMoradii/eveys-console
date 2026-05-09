@@ -46,7 +46,7 @@ heartbeats, and errors all share the same envelope. Schema versioned
   for those, doubling the auth and reconnect logic.
 - **gRPC-Web with bidi streams** — typed, schema-first. Rejected
   because gRPC-Web requires a translating proxy in front of the
-  BaaS, and the proxy adds operational weight far out of proportion
+  Console, and the proxy adds operational weight far out of proportion
   to the v1 user count.
 
 ## Consequences

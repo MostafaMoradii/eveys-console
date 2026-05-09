@@ -1,7 +1,7 @@
 # 02 — Architecture
 
 > Decisions captured as ADRs in [`docs/adr/`](./adr/). Most relevant
-> here: [ADR-0001](./adr/0001-baas-shape-consume-gateway.md)
+> here: [ADR-0001](./adr/0001-console-shape-consume-gateway.md)
 > (consume gateway, don't modify),
 > [ADR-0002](./adr/0002-websocket-over-sse-or-polling.md)
 > (WebSocket transport),
@@ -19,7 +19,7 @@
                             │  WS   /ws                      (subprotocol-bearer JWT)
                             ▼
             ┌────────────────────────────────────┐
-            │  Realtime BaaS (apps/server)       │
+            │  Realtime Console (apps/server)       │
             │                                    │
             │  ┌────────┐                        │
             │  │  auth  │  POW + bcrypt + JWT    │
@@ -81,7 +81,7 @@ can fan out (e.g. one `cp.meter` report with N samples → N appends).
 The same module also owns the snapshot fetch.
 
 **Kafka tail** (`apps/server/src/kafka/tail.ts`). One consumer per
-BaaS process. Subscribes to `cp.boot`, `cp.status`, `cp.meter`,
+Console process. Subscribes to `cp.boot`, `cp.status`, `cp.meter`,
 `tx.started`. Each message is a protobuf `eveys.events.v1.EventEnvelope`;
 `event-decoder.ts` parses it via `protobufjs` against the vendored
 `.proto` at `apps/server/proto/events/v1/events.proto`. Listeners
@@ -100,7 +100,7 @@ client for the gateway's `/api/v1/...`. Used by:
 - The `/sys/status` route's gateway-health probe.
 
 **Sys-status route** (`apps/server/src/routes/sys-status.ts`).
-Aggregates BaaS uptime + WS connection count + gateway `/health`
+Aggregates Console uptime + WS connection count + gateway `/health`
 probe + Kafka tail state into one JSON-Schema'd response. Polled by
 the SystemPage every 5 s.
 
@@ -109,7 +109,7 @@ instance per app. Multiplexes subscriptions over a single WebSocket.
 Reconnect with exponential backoff; replays active subscriptions on
 reconnect; rejects in-flight RPCs with `'disconnected'`.
 
-**BaaS URL resolver** (`apps/web/src/lib/baas-url.ts`). Resolves the
+**Console URL resolver** (`apps/web/src/lib/console-url.ts`). Resolves the
 REST and WS URLs at runtime from `window.location.hostname` to avoid
 the `localhost`-vs-`127.0.0.1` cross-origin trap. Override per-deploy
 with `VITE_BAAS_BASE_URL` / `VITE_WS_URL`.
@@ -171,10 +171,10 @@ the gateway's response in:
   "result": { ... } }
 ```
 
-The browser never holds a gateway token. The BaaS holds it in
+The browser never holds a gateway token. The Console holds it in
 `GATEWAY_TOKEN` and forwards on the operator's behalf. Authorisation
 happens twice: once on the WS (the operator must have a valid JWT),
-once at the gateway (the BaaS's bearer token).
+once at the gateway (the Console's bearer token).
 
 ## Multi-pod posture
 
@@ -192,10 +192,10 @@ This is documented but not implemented. Single-pod is fine for v1.
 
 ## Failure modes
 
-| What goes wrong  | What happens                                                                                             | Mitigation                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Gateway down     | Snapshot fetches fail. WS subscriptions return `error: upstream_unavailable`. Active subs get no deltas. | UI shows the error; operator retries.                                                       |
-| Kafka down       | No deltas. Snapshots still work.                                                                         | UI shows snapshots only; flag the staleness in the connection-status badge once we wire it. |
-| BaaS pod restart | Every WS drops. Clients reconnect, re-subscribe, re-snapshot. ~1 s of pause.                             | Acceptable for v1.                                                                          |
-| Bad JWT          | WS closes with code 4401.                                                                                | Client clears token, prompts for re-login.                                                  |
-| Slow consumer    | A noisy charger floods `cp.meter`.                                                                       | TODO — per-connection rate limit + meter-sample coalescing. Not implemented.                |
+| What goes wrong     | What happens                                                                                             | Mitigation                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Gateway down        | Snapshot fetches fail. WS subscriptions return `error: upstream_unavailable`. Active subs get no deltas. | UI shows the error; operator retries.                                                       |
+| Kafka down          | No deltas. Snapshots still work.                                                                         | UI shows snapshots only; flag the staleness in the connection-status badge once we wire it. |
+| Console pod restart | Every WS drops. Clients reconnect, re-subscribe, re-snapshot. ~1 s of pause.                             | Acceptable for v1.                                                                          |
+| Bad JWT             | WS closes with code 4401.                                                                                | Client clears token, prompts for re-login.                                                  |
+| Slow consumer       | A noisy charger floods `cp.meter`.                                                                       | TODO — per-connection rate limit + meter-sample coalescing. Not implemented.                |

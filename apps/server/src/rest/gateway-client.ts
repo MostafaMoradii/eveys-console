@@ -1,6 +1,6 @@
 // Thin typed client over the gateway's REST API.
 // The full surface is described by the OpenAPI types in @eveys-console/api-types;
-// here we only declare the calls the BaaS actually makes.
+// here we only declare the calls the Console actually makes.
 
 import { request } from 'undici';
 
@@ -41,6 +41,10 @@ export class GatewayClient {
 
   health() {
     return this.json<unknown>('/api/v1/health');
+  }
+
+  sysConfig() {
+    return this.json<unknown>('/api/v1/sys/config');
   }
 
   listChargePoints(

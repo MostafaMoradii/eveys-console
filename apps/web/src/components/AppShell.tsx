@@ -150,10 +150,16 @@ function NavContents({ path }: { path: string }) {
           active={path === '/'}
         />
         <NavItem
-          to="/sys/config"
-          label="Configuration"
+          to="/sys/console-config"
+          label="Console config"
           icon={<Settings className="h-4 w-4" />}
-          active={path.startsWith('/sys/config')}
+          active={path.startsWith('/sys/console-config')}
+        />
+        <NavItem
+          to="/sys/gateway-config"
+          label="Gateway config"
+          icon={<Settings className="h-4 w-4" />}
+          active={path.startsWith('/sys/gateway-config')}
         />
       </NavSection>
 

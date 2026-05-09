@@ -77,7 +77,7 @@ describe('describeConfig', () => {
       expect(entry.description.length).toBeGreaterThan(0);
       expect(entry.range.length).toBeGreaterThan(0);
       expect(typeof entry.mutable).toBe('boolean');
-      expect(['none', 'baas', 'gateway', 'both']).toContain(entry.restart);
+      expect(['none', 'console', 'gateway', 'both']).toContain(entry.restart);
     }
   });
 

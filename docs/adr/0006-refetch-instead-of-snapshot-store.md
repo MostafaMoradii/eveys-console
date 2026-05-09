@@ -17,7 +17,7 @@ Two ways to bridge the gap:
 1. **Re-fetch.** On every `cp.boot` / `cp.status` event, the resolver
    calls the gateway's `GET /api/v1/charge-points/{cp_id}` and uses
    the full response.
-2. **In-memory snapshot store.** The BaaS holds a `Map<cp_id, ChargePointSummary>`,
+2. **In-memory snapshot store.** The Console holds a `Map<cp_id, ChargePointSummary>`,
    seeds it once at boot via `GET /charge-points`, and updates it
    incrementally from the Kafka stream. Resolvers read from the
    map; no per-event round-trip.
@@ -55,7 +55,7 @@ Phase 3 swaps to the in-memory snapshot store when load justifies it.
 
 - Trivially correct. The full row always reflects the gateway's
   authoritative state.
-- No consistency window between the BaaS's view and the gateway's.
+- No consistency window between the Console's view and the gateway's.
 - The broker is genuinely stateless except for the per-connection
   subscription map.
 

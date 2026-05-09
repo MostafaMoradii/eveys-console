@@ -9,7 +9,7 @@ backed by the gateway's existing Kafka topics and REST API.
 
 The console targets SRE / on-call engineers operating the gateway —
 not end-customer fleet managers. The front page is a service-status
-grid (BaaS, Gateway, Postgres, Redis, Kafka). Charge-point and
+grid (Console, Gateway, Postgres, Redis, Kafka). Charge-point and
 transaction inspection live one level down under `/inspect`.
 
 The gateway is consumed unchanged; everything the console offers is
@@ -19,19 +19,19 @@ Apache-2.0.
 
 ## Surfaces
 
-| Surface       | Bind                            | Direction      | Purpose                                                                                   |
-| ------------- | ------------------------------- | -------------- | ----------------------------------------------------------------------------------------- |
-| WebSocket     | `:8090/ws`                      | browser → BaaS | Subscriptions + RPCs in one connection. Subprotocol: `eveys-console-v1` + `bearer.<jwt>`. |
-| REST (auth)   | `:8090/auth/{challenge,login}`  | browser → BaaS | Proof-of-work CAPTCHA + username/password login. Returns a short-lived JWT.               |
-| REST (status) | `:8090/sys/status`              | browser → BaaS | Aggregated service health (gateway probe + Kafka + WS connection count). JWT-protected.   |
-| Health        | `:8090/healthz`, `:8090/readyz` | k8s → BaaS     | Liveness / readiness probes. Unauthenticated.                                             |
-| Web           | `:5180` (dev)                   | browser        | React + shadcn/ui (Tailwind + Radix) + TanStack Router.                                   |
+| Surface       | Bind                            | Direction         | Purpose                                                                                   |
+| ------------- | ------------------------------- | ----------------- | ----------------------------------------------------------------------------------------- |
+| WebSocket     | `:8090/ws`                      | browser → Console | Subscriptions + RPCs in one connection. Subprotocol: `eveys-console-v1` + `bearer.<jwt>`. |
+| REST (auth)   | `:8090/auth/{challenge,login}`  | browser → Console | Proof-of-work CAPTCHA + username/password login. Returns a short-lived JWT.               |
+| REST (status) | `:8090/sys/status`              | browser → Console | Aggregated service health (gateway probe + Kafka + WS connection count). JWT-protected.   |
+| Health        | `:8090/healthz`, `:8090/readyz` | k8s → Console     | Liveness / readiness probes. Unauthenticated.                                             |
+| Web           | `:5180` (dev)                   | browser           | React + shadcn/ui (Tailwind + Radix) + TanStack Router.                                   |
 
 ## Repo layout
 
 ```
 apps/
-├── server/                       Node + Fastify + ws + kafkajs BaaS
+├── server/                       Node + Fastify + ws + kafkajs Console server
 │   ├── proto/events/v1/          vendored gateway event schema
 │   ├── scripts/                  mint-dev-token, hash-password
 │   └── src/
@@ -46,7 +46,7 @@ apps/
         ├── api/                  typed clients (auth-client, sys-client, ws-client)
         ├── components/           AppShell, ThemeToggle, ui/ shadcn primitives
         ├── hooks/                useSubscription
-        ├── lib/                  WS context, theme context, baas-url resolver
+        ├── lib/                  WS context, theme context, console-url resolver
         ├── pages/                LoginPage, SystemPage (/), Fleet/Charger/Transactions (/inspect)
         └── routeTree.ts          manual TanStack route tree
 
@@ -115,7 +115,7 @@ The decoder lives in `apps/server/src/kafka/event-decoder.ts`.
 ```bash
 pnpm format        # prettier
 pnpm typecheck     # tsc --noEmit across all packages
-pnpm test          # vitest, all packages (~67 tests)
+pnpm test          # vitest, all packages (~69 tests)
 pnpm build         # tsc + vite build, both apps
 ```
 

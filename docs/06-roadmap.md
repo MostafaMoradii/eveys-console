@@ -127,7 +127,7 @@ sub-phase is shippable on its own.
 - [ ] JWT verification via JWKS (RS256). Plug into a real IdP.
       Strip the `mint-token` and `hash-password` scripts from the
       production image.
-- [ ] Multi-tenant: BaaS enforces `cp_id → tenant_id` on every event
+- [ ] Multi-tenant: Console enforces `cp_id → tenant_id` on every event
       before fan-out. Backed by a small in-memory map seeded from a
       side service or env config.
 - [ ] Role enforcement: `Principal.roles` is populated but not
@@ -139,7 +139,7 @@ sub-phase is shippable on its own.
       config but not enforced) + meter-sample coalescing for noisy
       chargers.
 - [ ] Meter-history snapshot path: paginated read from a ClickHouse
-      view (gateway must expose one — or BaaS opens its own ClickHouse
+      view (gateway must expose one — or Console opens its own ClickHouse
       connection in read-only).
 - [ ] Audit log for every RPC: principal sub + cp_id + method +
       outcome, append-only.
@@ -155,7 +155,7 @@ sub-phase is shippable on its own.
 - [ ] In-memory snapshot store (replaces the per-event `getChargePoint`
       re-fetch in the charge-points / charge-point resolvers).
 - [ ] Pod-aware metrics (Prometheus on `:9100`).
-- [ ] Trace context propagation (OpenTelemetry across browser → BaaS
+- [ ] Trace context propagation (OpenTelemetry across browser → Console
       → gateway).
 
 ## Out of scope, ever

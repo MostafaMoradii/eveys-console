@@ -57,11 +57,11 @@ export function SystemPage() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <ComponentCard
           icon={<Server className="h-4 w-4" />}
-          title="Console BaaS"
+          title="Console server"
           status={{ ok: true }}
           stats={[
-            ['uptime', formatUptime(s.baas.uptime_seconds)],
-            ['started', formatDate(s.baas.started_at)],
+            ['uptime', formatUptime(s.console.uptime_seconds)],
+            ['started', formatDate(s.console.started_at)],
             ['websockets', String(s.connections.websockets)],
           ]}
         />

@@ -1,4 +1,4 @@
-// Kafka tail. One consumer group per BaaS deployment; horizontal scaling is
+// Kafka tail. One consumer group per Console deployment; horizontal scaling is
 // limited by the topics' partition counts (cp_id-keyed). Fan-out to per-conn
 // subscriptions is handled by the broker.
 
