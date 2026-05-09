@@ -43,9 +43,7 @@ export function ConsoleClientProvider({ children }: { children: ReactNode }) {
     setTokenState(t);
   };
 
-  return (
-    <ctx.Provider value={{ client, status, token, setToken }}>{children}</ctx.Provider>
-  );
+  return <ctx.Provider value={{ client, status, token, setToken }}>{children}</ctx.Provider>;
 }
 
 export function useConsoleClient(): ConsoleClientContextValue {

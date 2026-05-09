@@ -75,11 +75,7 @@ async function flushAsync(): Promise<void> {
 
 describe('Broker — subscribe and snapshot', () => {
   it('returns a snapshot for a charge-point subscription', async () => {
-    const broker = new Broker(
-      new FakeKafka() as unknown as KafkaTail,
-      fakeGateway(),
-      silentLog,
-    );
+    const broker = new Broker(new FakeKafka() as unknown as KafkaTail, fakeGateway(), silentLog);
     broker.start();
     broker.registerConnection('c1', vi.fn());
 
@@ -408,11 +404,7 @@ describe('Broker — meter-history deltas', () => {
       timestamp: new Date(),
       payload: {
         connectorId: 1,
-        sampledValues: [
-          { value: 'not-a-number' },
-          { value: '42' },
-          { value: null },
-        ],
+        sampledValues: [{ value: 'not-a-number' }, { value: '42' }, { value: null }],
       },
     });
     await flushAsync();

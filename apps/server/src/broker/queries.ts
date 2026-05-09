@@ -34,11 +34,7 @@ interface QueryResolver {
   // filtered out entirely by params, or trigger a re-fetch
   // (cp.boot/cp.status → re-read GET /charge-points/:cp_id from the
   // gateway).
-  deltasFromEvent(
-    params: QueryParams,
-    event: KafkaEvent,
-    gateway: GatewayClient,
-  ): Promise<Delta[]>;
+  deltasFromEvent(params: QueryParams, event: KafkaEvent, gateway: GatewayClient): Promise<Delta[]>;
 }
 
 const chargePoints: QueryResolver = {

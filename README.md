@@ -16,13 +16,13 @@ Apache-2.0.
 
 ## Surfaces
 
-| Surface | Bind | Direction | Purpose |
-|---|---|---|---|
-| WebSocket | `:8090/ws` | browser → BaaS | Subscriptions + RPCs in one connection. Subprotocol: `eveys-console-v1` + `bearer.<jwt>`. |
-| REST (auth) | `:8090/auth/{challenge,login}` | browser → BaaS | Proof-of-work CAPTCHA + username/password login. Returns a short-lived JWT. |
-| REST (status) | `:8090/sys/status` | browser → BaaS | Aggregated service health (gateway probe + Kafka + WS connection count). JWT-protected. |
-| Health | `:8090/healthz`, `:8090/readyz` | k8s → BaaS | Liveness / readiness probes. Unauthenticated. |
-| Web | `:5180` (dev) | browser | React + shadcn/ui (Tailwind + Radix) + TanStack Router. |
+| Surface       | Bind                            | Direction      | Purpose                                                                                   |
+| ------------- | ------------------------------- | -------------- | ----------------------------------------------------------------------------------------- |
+| WebSocket     | `:8090/ws`                      | browser → BaaS | Subscriptions + RPCs in one connection. Subprotocol: `eveys-console-v1` + `bearer.<jwt>`. |
+| REST (auth)   | `:8090/auth/{challenge,login}`  | browser → BaaS | Proof-of-work CAPTCHA + username/password login. Returns a short-lived JWT.               |
+| REST (status) | `:8090/sys/status`              | browser → BaaS | Aggregated service health (gateway probe + Kafka + WS connection count). JWT-protected.   |
+| Health        | `:8090/healthz`, `:8090/readyz` | k8s → BaaS     | Liveness / readiness probes. Unauthenticated.                                             |
+| Web           | `:5180` (dev)                   | browser        | React + shadcn/ui (Tailwind + Radix) + TanStack Router.                                   |
 
 ## Repo layout
 

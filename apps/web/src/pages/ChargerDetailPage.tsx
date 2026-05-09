@@ -105,9 +105,7 @@ function Header({ cp }: { cp: ChargePointSummary }) {
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={cp.online ? 'success' : 'muted'}>
-          {cp.online ? 'online' : 'offline'}
-        </Badge>
+        <Badge variant={cp.online ? 'success' : 'muted'}>{cp.online ? 'online' : 'offline'}</Badge>
         <Badge variant="secondary" className="font-mono text-xs">
           last_status: {cp.last_status ?? '—'}
         </Badge>
@@ -217,9 +215,7 @@ function ConnectorTable({ connectors }: { connectors: Connector[] }) {
 
 function ConnectorCards({ connectors }: { connectors: Connector[] }) {
   if (connectors.length === 0) {
-    return (
-      <p className="px-4 pb-4 text-sm text-muted-foreground">No connectors reported.</p>
-    );
+    return <p className="px-4 pb-4 text-sm text-muted-foreground">No connectors reported.</p>;
   }
   // Vertical stack of mini-cards; each shows the same fields the
   // table does, but in a single-column layout that fits 360 px wide.

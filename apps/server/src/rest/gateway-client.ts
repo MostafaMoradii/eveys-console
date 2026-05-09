@@ -78,10 +78,10 @@ export class GatewayClient {
   }
 
   reset(cpId: string, body: Record<string, unknown>) {
-    return this.json<unknown>(
-      `/api/v1/charge-points/${encodeURIComponent(cpId)}/commands/reset`,
-      { method: 'POST', body },
-    );
+    return this.json<unknown>(`/api/v1/charge-points/${encodeURIComponent(cpId)}/commands/reset`, {
+      method: 'POST',
+      body,
+    });
   }
 }
 

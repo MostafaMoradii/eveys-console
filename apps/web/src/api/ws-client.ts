@@ -127,10 +127,7 @@ export class ConsoleClient {
 
   private openSocket() {
     this.setStatus('connecting');
-    const socket = new WebSocket(this.opts.url, [
-      'eveys-console-v1',
-      `bearer.${this.opts.token}`,
-    ]);
+    const socket = new WebSocket(this.opts.url, ['eveys-console-v1', `bearer.${this.opts.token}`]);
     this.socket = socket;
 
     socket.onopen = () => {

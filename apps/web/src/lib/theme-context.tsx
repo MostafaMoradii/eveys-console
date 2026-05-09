@@ -33,7 +33,11 @@ function applyDom(resolved: 'light' | 'dark') {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(() => readStored());
   const [resolved, setResolved] = useState<'light' | 'dark'>(() =>
-    readStored() === 'system' ? (systemPrefersDark() ? 'dark' : 'light') : (readStored() as 'light' | 'dark'),
+    readStored() === 'system'
+      ? systemPrefersDark()
+        ? 'dark'
+        : 'light'
+      : (readStored() as 'light' | 'dark'),
   );
 
   useEffect(() => {

@@ -43,7 +43,7 @@ documented here for the cases when they aren't.
   module, config loader, protocol envelope, live wire-shape
   fixtures, and the FleetPage component. Component-test infra on
   the web side: vitest + jsdom + `@testing-library/{react,dom,
-  user-event,jest-dom}`, with a small `test/setup.ts` that shims
+user-event,jest-dom}`, with a small `test/setup.ts` that shims
   `matchMedia` and `scrollIntoView` for jsdom.
 
 ## Logging

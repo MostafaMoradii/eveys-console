@@ -19,12 +19,12 @@
 @layer base {
   :root {
     /* Brand (constant across themes) */
-    --brand-orange: 14 87% 53%;       /* #F04E1F */
-    --brand-cloud: 0 0% 96%;          /* #F4F4F4 */
-    --brand-slate: 203 27% 14%;       /* #1A282F */
-    --brand-blue: 209 88% 51%;        /* #1080F0 */
-    --brand-green: 142 71% 45%;       /* #22C55E */
-    --brand-red: 343 88% 53%;         /* #F02050 */
+    --brand-orange: 14 87% 53%; /* #F04E1F */
+    --brand-cloud: 0 0% 96%; /* #F4F4F4 */
+    --brand-slate: 203 27% 14%; /* #1A282F */
+    --brand-blue: 209 88% 51%; /* #1080F0 */
+    --brand-green: 142 71% 45%; /* #22C55E */
+    --brand-red: 343 88% 53%; /* #F02050 */
 
     /* Light theme — default */
     --background: var(--brand-cloud);
@@ -60,9 +60,9 @@
      * their background is lighter than the page, not because they have
      * a bright outline. Use shadow / spacing for separation, not strokes.
      */
-    --background: 203 30% 10%;          /* slightly darker than brand-slate */
+    --background: 203 30% 10%; /* slightly darker than brand-slate */
     --foreground: 0 0% 92%;
-    --card: 203 27% 13%;                /* one notch up from background */
+    --card: 203 27% 13%; /* one notch up from background */
     --card-foreground: 0 0% 92%;
     --primary: var(--brand-orange);
     --primary-foreground: 0 0% 100%;
@@ -78,7 +78,7 @@
     --success-foreground: 0 0% 100%;
     --info: var(--brand-blue);
     --info-foreground: 0 0% 100%;
-    --border: 203 22% 17%;              /* matches muted — no glow */
+    --border: 203 22% 17%; /* matches muted — no glow */
     --input: 203 22% 17%;
     --ring: var(--brand-orange);
   }
@@ -88,7 +88,9 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: 'rlig' 1, 'calt' 1;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1;
   }
 }
 

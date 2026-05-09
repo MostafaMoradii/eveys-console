@@ -27,7 +27,10 @@ export interface PowChallenge {
 
 export class PowVerifier {
   constructor(
-    private readonly cfg: Pick<Config, 'JWT_SECRET' | 'AUTH_POW_DIFFICULTY' | 'AUTH_POW_TTL_SECONDS'>,
+    private readonly cfg: Pick<
+      Config,
+      'JWT_SECRET' | 'AUTH_POW_DIFFICULTY' | 'AUTH_POW_TTL_SECONDS'
+    >,
   ) {}
 
   issue(): PowChallenge {
@@ -46,7 +49,10 @@ export class PowVerifier {
   }
 
   // Returns null on success; an error code string on failure.
-  verify(challenge: string, solution: string): null | 'malformed' | 'bad_signature' | 'expired' | 'insufficient_work' {
+  verify(
+    challenge: string,
+    solution: string,
+  ): null | 'malformed' | 'bad_signature' | 'expired' | 'insufficient_work' {
     const idx = challenge.lastIndexOf('.');
     if (idx <= 0) return 'malformed';
     const body = challenge.slice(0, idx);
