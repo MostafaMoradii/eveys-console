@@ -11,7 +11,8 @@
     "start": "node dist/main.js",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "mint-token": "node scripts/mint-dev-token.mjs"
   },
   "dependencies": {
     "@eveys-console/api-types": "workspace:*",

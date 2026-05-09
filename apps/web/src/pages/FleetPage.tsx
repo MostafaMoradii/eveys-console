@@ -1,5 +1,6 @@
 import { Alert, Anchor, Badge, Group, Loader, Stack, Table, Text, Title } from '@mantine/core';
 import { Link } from '@tanstack/react-router';
+import { useMemo } from 'react';
 
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
@@ -8,6 +9,22 @@ import { useSubscription } from '../hooks/use-subscription';
 export function FleetPage() {
   const sub = useSubscription('charge-points', {});
 
+  // Apply the latest delta on top of the snapshot. For v1 we keep the whole
+  // table client-side and reduce on every render — fine up to a few thousand
+  // chargers. For larger fleets, switch to a useReducer that mutates a Map.
+  const rows = useMemo<ChargePointSummary[]>(() => {
+    if (!sub.snapshot || sub.snapshot.kind !== 'charge-points') return [];
+    const byId = new Map<string, ChargePointSummary>(
+      sub.snapshot.rows.map((r) => [r.cp_id, r]),
+    );
+    if (sub.lastDelta && sub.lastDelta.kind === 'charge-points') {
+      const d = sub.lastDelta;
+      if (d.op === 'upsert' && d.row) byId.set(d.row.cp_id, d.row);
+      if (d.op === 'remove' && d.cp_id) byId.delete(d.cp_id);
+    }
+    return Array.from(byId.values()).sort((a, b) => a.cp_id.localeCompare(b.cp_id));
+  }, [sub.snapshot, sub.lastDelta]);
+
   if (sub.error) {
     return (
       <Alert color="red" title="Couldn't load fleet">
@@ -15,15 +32,13 @@ export function FleetPage() {
       </Alert>
     );
   }
-  if (sub.loading || !sub.snapshot || sub.snapshot.kind !== 'charge-points') {
+  if (sub.loading || !sub.snapshot) {
     return (
       <Group>
         <Loader size="sm" /> <Text>Loading fleet…</Text>
       </Group>
     );
   }
-
-  const rows = sub.snapshot.rows;
 
   return (
     <Stack>

@@ -34,17 +34,42 @@ const chargePoints: QueryResolver = {
     const snapshot: SnapshotForQuery = { kind: 'charge-points', rows: data.charge_points };
     return { cursor, snapshot };
   },
-  deltaFromEvent(_params, event) {
+  deltaFromEvent(params, event) {
     if (event.topic !== 'cp.boot' && event.topic !== 'cp.status') return null;
     if (!event.cpId) return null;
-    // We don't reconstruct the full row here — the client refetches the
-    // affected entity if it needs the full snapshot shape. For v1, we emit a
-    // minimal "this cp_id changed; get updated detail if you care" by piggy-
-    // backing on the charge-point detail subscription. List subscribers see
-    // remove/upsert by cp_id only when membership semantics change (online
-    // toggle). Future: derive the full row from a Postgres-backed snapshot
-    // table the BaaS maintains.
-    return null;
+    // The gateway publishes the full ChargePointSummary on cp.boot / cp.status
+    // (per proto/events/v1/events.proto). We forward it as an upsert so
+    // FleetPage's table renders the new state immediately. If the row's
+    // membership conflicts with the active filter (e.g. the table is
+    // online=true and the event reports online=false), apply filter rules:
+    const row = event.payload as Partial<ChargePointSummary> | null;
+    if (!row || typeof row !== 'object' || typeof row.cp_id !== 'string') return null;
+
+    if (typeof params.online === 'boolean' && typeof row.online === 'boolean') {
+      if (row.online !== params.online) {
+        return {
+          cursor: event.cursor,
+          delta: { kind: 'charge-points', op: 'remove', cp_id: row.cp_id },
+        };
+      }
+    }
+    if (typeof params.vendor === 'string' && typeof row.vendor === 'string') {
+      if (row.vendor !== params.vendor) {
+        return {
+          cursor: event.cursor,
+          delta: { kind: 'charge-points', op: 'remove', cp_id: row.cp_id },
+        };
+      }
+    }
+
+    return {
+      cursor: event.cursor,
+      delta: {
+        kind: 'charge-points',
+        op: 'upsert',
+        row: row as ChargePointSummary,
+      },
+    };
   },
 };
 
