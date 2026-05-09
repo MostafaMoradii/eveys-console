@@ -1,17 +1,26 @@
 // Per-named-query resolvers. Each one knows:
 //   - how to fetch the snapshot from the gateway
 //   - which Kafka events affect a subscription with given params
-//   - how to render an event into a delta the client can apply
+//   - how to render an event into deltas the client can apply
 //
 // New named queries are added here; the protocol package's enum and
 // snapshotForQuery / deltaForQuery shapes are updated in lockstep.
+//
+// Wire format note: Kafka payloads coming in are protobuf-decoded via
+// `protobufjs`, which produces camelCase field names from the
+// snake_case .proto source. So the inner payload keys here are
+// `transactionId`, `connectorId`, `chargerReportedAt`, etc. The
+// protocol's wire shape is snake_case, so each resolver maps between
+// the two.
 
 import type {
   ChargePointSummary,
   DeltaForQuery,
+  MeterSample,
   QueryName,
   QueryParams,
   SnapshotForQuery,
+  StatusEvent,
 } from '@eveys-console/protocol';
 
 import type { GatewayClient } from '../rest/gateway-client.js';
@@ -20,7 +29,16 @@ import type { Delta, Snapshot } from './types.js';
 
 interface QueryResolver {
   snapshot(params: QueryParams, gateway: GatewayClient): Promise<Snapshot>;
-  deltaFromEvent(params: QueryParams, event: KafkaEvent): Delta | null;
+  // Returns zero, one, or many deltas. A single Kafka event can fan
+  // out (one MeterValues report with N samples → N appends), or be
+  // filtered out entirely by params, or trigger a re-fetch
+  // (cp.boot/cp.status → re-read GET /charge-points/:cp_id from the
+  // gateway).
+  deltasFromEvent(
+    params: QueryParams,
+    event: KafkaEvent,
+    gateway: GatewayClient,
+  ): Promise<Delta[]>;
 }
 
 const chargePoints: QueryResolver = {
@@ -34,42 +52,45 @@ const chargePoints: QueryResolver = {
     const snapshot: SnapshotForQuery = { kind: 'charge-points', rows: data.charge_points };
     return { cursor, snapshot };
   },
-  deltaFromEvent(params, event) {
-    if (event.topic !== 'cp.boot' && event.topic !== 'cp.status') return null;
-    if (!event.cpId) return null;
-    // The gateway publishes the full ChargePointSummary on cp.boot / cp.status
-    // (per proto/events/v1/events.proto). We forward it as an upsert so
-    // FleetPage's table renders the new state immediately. If the row's
-    // membership conflicts with the active filter (e.g. the table is
-    // online=true and the event reports online=false), apply filter rules:
-    const row = event.payload as Partial<ChargePointSummary> | null;
-    if (!row || typeof row !== 'object' || typeof row.cp_id !== 'string') return null;
+  async deltasFromEvent(params, event, gateway) {
+    if (event.topic !== 'cp.boot' && event.topic !== 'cp.status') return [];
+    if (!event.cpId) return [];
 
-    if (typeof params.online === 'boolean' && typeof row.online === 'boolean') {
-      if (row.online !== params.online) {
-        return {
-          cursor: event.cursor,
-          delta: { kind: 'charge-points', op: 'remove', cp_id: row.cp_id },
-        };
-      }
-    }
-    if (typeof params.vendor === 'string' && typeof row.vendor === 'string') {
-      if (row.vendor !== params.vendor) {
-        return {
-          cursor: event.cursor,
-          delta: { kind: 'charge-points', op: 'remove', cp_id: row.cp_id },
-        };
-      }
+    // The Kafka event payload only carries a small subset of the
+    // ChargePointSummary fields. Re-fetch the full row from the
+    // gateway so the UI can merge a complete record. Cost: one HTTP
+    // call per event. Acceptable while load is low; a future commit
+    // will replace this with an in-memory snapshot store fed by the
+    // same Kafka tail.
+    let row: ChargePointSummary;
+    try {
+      row = (await gateway.getChargePoint(event.cpId)) as ChargePointSummary;
+    } catch {
+      return [];
     }
 
-    return {
-      cursor: event.cursor,
-      delta: {
-        kind: 'charge-points',
-        op: 'upsert',
-        row: row as ChargePointSummary,
+    if (typeof params.online === 'boolean' && row.online !== params.online) {
+      return [
+        {
+          cursor: event.cursor,
+          delta: { kind: 'charge-points', op: 'remove', cp_id: row.cp_id },
+        },
+      ];
+    }
+    if (typeof params.vendor === 'string' && row.vendor !== params.vendor) {
+      return [
+        {
+          cursor: event.cursor,
+          delta: { kind: 'charge-points', op: 'remove', cp_id: row.cp_id },
+        },
+      ];
+    }
+    return [
+      {
+        cursor: event.cursor,
+        delta: { kind: 'charge-points', op: 'upsert', row },
       },
-    };
+    ];
   },
 };
 
@@ -80,16 +101,22 @@ const chargePoint: QueryResolver = {
     const cursor = `gw:cp:${cpId}:${Date.now()}`;
     return { cursor, snapshot: { kind: 'charge-point', row: data } };
   },
-  deltaFromEvent(params, event) {
+  async deltasFromEvent(params, event, gateway) {
     const cpId = stringParam(params, 'cp_id');
-    if (event.cpId !== cpId) return null;
-    if (event.topic !== 'cp.boot' && event.topic !== 'cp.status') return null;
-    // Client re-fetches detail on delta; v1 keeps the broker stateless. The
-    // delta carries a diff hint via the event payload so the UI can show
-    // "this charger's status just changed" without waiting for the refetch.
-    const row = event.payload as ChargePointSummary;
+    if (event.cpId !== cpId) return [];
+    if (event.topic !== 'cp.boot' && event.topic !== 'cp.status') return [];
+
+    // Same approach as the list resolver: re-fetch the full row from
+    // the gateway so the UI gets a complete update. This page is one
+    // charger so the cost is bounded.
+    let row: ChargePointSummary;
+    try {
+      row = (await gateway.getChargePoint(cpId)) as ChargePointSummary;
+    } catch {
+      return [];
+    }
     const delta: DeltaForQuery = { kind: 'charge-point', row };
-    return { cursor: event.cursor, delta };
+    return [{ cursor: event.cursor, delta }];
   },
 };
 
@@ -103,15 +130,10 @@ const transactionsActive: QueryResolver = {
       snapshot: { kind: 'transactions-active', rows: data.transactions as any[] },
     };
   },
-  deltaFromEvent(_params, event) {
-    if (event.topic !== 'tx.started') return null;
-    // protobufjs decodes proto3 snake_case field names to camelCase by
-    // default, so the inner payload keys here are transactionId,
-    // connectorId, idTag, meterStartWh, chargerReportedAt — not
-    // transaction_id etc. Map them to the wire shape the UI expects
-    // (TransactionSummary in @eveys-console/protocol).
+  async deltasFromEvent(_params, event) {
+    if (event.topic !== 'tx.started') return [];
     const p = event.payload as Record<string, unknown> | null;
-    if (!p || typeof p !== 'object') return null;
+    if (!p || typeof p !== 'object') return [];
     const row = {
       transaction_id: Number(p.transactionId ?? 0),
       cp_id: event.cpId ?? '',
@@ -124,10 +146,12 @@ const transactionsActive: QueryResolver = {
       active: true,
       last_seen_seq: 0,
     };
-    return {
-      cursor: event.cursor,
-      delta: { kind: 'transactions-active', op: 'upsert', row },
-    };
+    return [
+      {
+        cursor: event.cursor,
+        delta: { kind: 'transactions-active', op: 'upsert', row },
+      },
+    ];
   },
 };
 
@@ -140,15 +164,50 @@ const meterHistory: QueryResolver = {
       snapshot: { kind: 'meter-history', rows: [] },
     };
   },
-  deltaFromEvent(params, event) {
-    if (event.topic !== 'cp.meter') return null;
+  async deltasFromEvent(params, event) {
+    if (event.topic !== 'cp.meter') return [];
     const cpId = stringParam(params, 'cp_id');
-    if (event.cpId !== cpId) return null;
-    return {
-      cursor: event.cursor,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delta: { kind: 'meter-history', append: event.payload as any },
-    };
+    if (event.cpId !== cpId) return [];
+
+    // CpMeter payload (camelCase): connectorId, transactionId,
+    // sampledValues[], chargerReportedAt. One OCPP MeterValues report
+    // can carry many sampled values; emit one delta per value so each
+    // is independently appendable to the UI's chart.
+    const p = event.payload as Record<string, unknown> | null;
+    if (!p || typeof p !== 'object') return [];
+    const samplesRaw = p.sampledValues;
+    const samples = Array.isArray(samplesRaw) ? samplesRaw : [];
+    if (samples.length === 0) return [];
+
+    const connectorId = Number(p.connectorId ?? 0);
+    const transactionId = p.transactionId != null ? Number(p.transactionId) : null;
+    const recordedAt = String(p.chargerReportedAt ?? event.timestamp.toISOString());
+    const sourceCpId = event.cpId ?? cpId;
+
+    const out: Delta[] = [];
+    for (const sv of samples) {
+      if (!sv || typeof sv !== 'object') continue;
+      const s = sv as Record<string, unknown>;
+      const valueRaw = s.value;
+      if (valueRaw == null) continue;
+      const value = typeof valueRaw === 'number' ? valueRaw : Number(valueRaw);
+      if (!Number.isFinite(value)) continue;
+
+      const sample: MeterSample = {
+        cp_id: sourceCpId,
+        transaction_id: transactionId,
+        connector_id: connectorId,
+        measurand: enumToString(s.measurand) ?? 'Energy.Active.Import.Register',
+        value,
+        unit: enumToString(s.unit),
+        recorded_at: recordedAt,
+      };
+      out.push({
+        cursor: event.cursor,
+        delta: { kind: 'meter-history', append: sample },
+      });
+    }
+    return out;
   },
 };
 
@@ -159,15 +218,30 @@ const statusHistory: QueryResolver = {
       snapshot: { kind: 'status-history', rows: [] },
     };
   },
-  deltaFromEvent(params, event) {
-    if (event.topic !== 'cp.status') return null;
+  async deltasFromEvent(params, event) {
+    if (event.topic !== 'cp.status') return [];
     const cpId = stringParam(params, 'cp_id');
-    if (event.cpId !== cpId) return null;
-    return {
-      cursor: event.cursor,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delta: { kind: 'status-history', append: event.payload as any },
+    if (event.cpId !== cpId) return [];
+
+    // CpStatus payload (camelCase): connectorId, status, errorCode,
+    // info, vendorId, vendorErrorCode, chargerReportedAt.
+    const p = event.payload as Record<string, unknown> | null;
+    if (!p || typeof p !== 'object') return [];
+
+    const sample: StatusEvent = {
+      cp_id: event.cpId ?? cpId,
+      connector_id: Number(p.connectorId ?? 0),
+      status: String(p.status ?? ''),
+      error_code: nullableString(p.errorCode),
+      info: nullableString(p.info),
+      reported_at: String(p.chargerReportedAt ?? event.timestamp.toISOString()),
     };
+    return [
+      {
+        cursor: event.cursor,
+        delta: { kind: 'status-history', append: sample },
+      },
+    ];
   },
 };
 
@@ -189,4 +263,27 @@ function stringParam(params: QueryParams, key: string): string {
     throw new Error(`missing or invalid string param: ${key}`);
   }
   return v;
+}
+
+// Empty strings → null. proto strings can't be unset in proto3, so
+// "" is the wire representation of "absent" and the protocol's wire
+// shape uses nullable strings.
+function nullableString(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v !== 'string') return String(v);
+  if (v === '') return null;
+  return v;
+}
+
+// protobufjs decodes proto enums to their full string name (e.g.
+// "UNIT_WH", "MEASURAND_VOLTAGE"). The wire shape just wants the
+// user-readable suffix, so strip the type prefix. Filters out the
+// proto3 zero-value "*_UNSPECIFIED" so consumers get null rather
+// than a meaningless string.
+function enumToString(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v !== 'string') return null;
+  if (v === '' || v.endsWith('_UNSPECIFIED')) return null;
+  const idx = v.indexOf('_');
+  return idx >= 0 ? v.slice(idx + 1) : v;
 }

@@ -80,17 +80,40 @@ export class Broker {
   }
 
   private onKafkaEvent = (event: KafkaEvent) => {
+    // Each subscription can produce zero, one, or many deltas per
+    // event (e.g. one MeterValues report → N deltas, one per sample).
+    // Resolvers may be async (charge-points re-fetches the row from
+    // the gateway). Run them in parallel; ignore individual failures
+    // so one slow / failing resolver doesn't block deliveries to
+    // other subscriptions.
     for (const conn of this.connections.values()) {
       for (const sub of conn.subscriptions.values()) {
         const resolver = resolveQuery(sub.query);
-        const delta = resolver.deltaFromEvent(sub.params, event);
-        if (delta) {
-          try {
-            conn.deliver(sub.id, delta);
-          } catch (err) {
-            this.log.warn({ err, connectionId: conn.connectionId }, 'broker.deliver_failed');
-          }
-        }
+        void resolver
+          .deltasFromEvent(sub.params, event, this.gateway)
+          .then((deltas) => {
+            for (const delta of deltas) {
+              try {
+                conn.deliver(sub.id, delta);
+              } catch (err) {
+                this.log.warn(
+                  { err, connectionId: conn.connectionId },
+                  'broker.deliver_failed',
+                );
+              }
+            }
+          })
+          .catch((err: unknown) => {
+            this.log.warn(
+              {
+                err,
+                connectionId: conn.connectionId,
+                subscriptionId: sub.id,
+                topic: event.topic,
+              },
+              'broker.resolver_failed',
+            );
+          });
       }
     }
   };
