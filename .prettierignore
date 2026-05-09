@@ -1,0 +1,8 @@
+node_modules
+dist
+build
+out
+coverage
+**/*.generated.ts
+packages/api-types/src/generated
+pnpm-lock.yaml

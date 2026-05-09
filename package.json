@@ -1,0 +1,26 @@
+{
+  "name": "eveys-console",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Realtime operator console for the OCPP gateway",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "gen:api-types": "pnpm --filter @eveys-console/api-types generate"
+  },
+  "devDependencies": {
+    "prettier": "3.4.2",
+    "typescript": "5.7.2"
+  },
+  "pnpm": {}
+}
