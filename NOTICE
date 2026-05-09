@@ -1,0 +1,113 @@
+eveys-console
+Copyright 2026 Eveys Mobility
+
+This product is licensed under the Apache License, Version 2.0 (the
+"License"). You may not use this product except in compliance with
+the License. A copy of the License is provided in the LICENSE file
+in this distribution and is also available at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing
+permissions and limitations under the License.
+
+================================================================
+THIRD-PARTY SOFTWARE
+================================================================
+
+This product bundles, links against, or otherwise depends on a
+number of open-source components. Each component retains its own
+copyright and is governed by the license under which it was
+released. Full upstream license texts are preserved in the
+"node_modules" directory of any source distribution and inside
+the produced container images.
+
+Aggregated license inventory of the production dependency graph
+(244 packages at the time of writing):
+
+    Apache-2.0      (6)
+    BSD-3-Clause    (16)
+    ISC             (15)
+    MIT             (206)
+    0BSD            (1)
+
+The project ships no copyleft (GPL/LGPL/AGPL) and no source-
+available-only (SSPL/RSAL/BUSL/ELv2) components.
+
+The full per-package license inventory can be reproduced from a
+fresh install with:
+
+    pnpm install
+    pnpm licenses list --prod
+
+----------------------------------------------------------------
+Apache-2.0 dependencies (subject to attribution under §4(d))
+----------------------------------------------------------------
+
+The following bundled components are distributed under the Apache
+License, Version 2.0. None of them ships a separate NOTICE file
+upstream, so no third-party NOTICE text is reproduced here. Each
+component's LICENSE file is preserved under "node_modules" in
+source distributions and inside the produced container images.
+
+  - class-variance-authority   (Joe Bell)
+  - didyoumean                 (Dave Porter)
+  - ecdsa-sig-formatter        (Auth0, Inc.)
+  - fast-jwt                   (NearForm Ltd.)
+  - long                       (dcodeIO and contributors)
+  - ts-interface-checker       (Grist Labs)
+
+----------------------------------------------------------------
+BSD-3-Clause dependencies
+----------------------------------------------------------------
+
+  - protobufjs and the @protobufjs/* family       (dcodeIO)
+  - fast-uri                                      (Vincent Le Goff)
+  - ieee754                                       (Feross Aboukhadijeh, Romain Beauxis, et al.)
+  - light-my-request                              (Fastify contributors)
+  - secure-json-parse                             (Fastify contributors)
+  - source-map-js                                 (Mozilla and 7 contributors)
+
+----------------------------------------------------------------
+MIT, ISC, and 0BSD dependencies
+----------------------------------------------------------------
+
+This product also bundles a large number of components released
+under the MIT, ISC, or 0BSD licenses. These licenses require
+preservation of the original copyright notice and license text;
+both are preserved in each component's directory under
+"node_modules". Notable examples include, but are not limited to:
+
+    Fastify             (Tomas Della Vedova, Matteo Collina, et al.)
+    React               (Meta Platforms, Inc.)
+    Vite                (Evan You)
+    TanStack Router     (Tanner Linsley)
+    TanStack Query      (Tanner Linsley)
+    Tailwind CSS        (Tailwind Labs, Inc.)
+    Radix UI            (WorkOS)
+    shadcn/ui           (shadcn) — copied source, not a runtime dep
+    kafkajs             (Tulio Ornelas)
+    ws                  (Einar Otto Stangvik)
+    pino                (Matteo Collina, et al.)
+    bcryptjs            (Daniel Wirtz)
+    zod                 (Colin McDonnell)
+    undici              (Node.js contributors)
+    lucide-react        (Lucide contributors) — ISC
+
+================================================================
+TRADEMARKS
+================================================================
+
+"OCPP" is a registered trademark of the Open Charge Alliance. This
+product is independent and is not endorsed by, affiliated with, or
+sponsored by the Open Charge Alliance.
+
+"Eveys" and the Eveys wordmark are trademarks of Eveys Mobility.
+
+All other trademarks are the property of their respective owners.
+Use of any third-party trademark or product name in this NOTICE or
+elsewhere in the project is for identification purposes only and
+does not imply endorsement.
