@@ -82,10 +82,15 @@ sub-phase is shippable on its own.
       on a second. New `useIsBelow(breakpoint)` helper in
       `lib/use-breakpoint.ts` (matchMedia-based, reactive). Bundle
       +0.6 KB gz.
-- [ ] **M-4** — Mobile-first ChargerDetailPage. Stacked commands
-      (RemoteStop + Reset only on phone; RemoteStart hidden behind
-      a "More" disclosure to reduce misclick risk); connector table
-      → card list below `sm`. (~0.25 day)
+- [x] **M-4** — Mobile-first ChargerDetailPage. Header wraps
+      (cp_id breaks across lines if needed, status badges below the
+      title). Commands stack full-width below `sm`; only RemoteStop
+      and Soft Reset shown by default. RemoteStart sits behind a
+      "More commands" disclosure (icon + label, `aria-expanded`) so
+      a touch misclick can't accidentally start a session on
+      someone's car. Connectors render as a table at `sm+` and as
+      a divided card list below — same fields, single-column. Bundle
+      +0.4 KB gz.
 - [ ] **M-5** — Mobile-first TransactionsPage. 5-column table →
       card list below `sm`. (~0.25 day)
 - [ ] **M-6** — Touch + accessibility polish: 44 × 44 hit targets,
