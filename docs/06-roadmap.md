@@ -42,10 +42,19 @@ aspirations.
 - [x] Snapshot envelope carries `next_cursor` for the
       `charge-points` query (protocol package + server resolver +
       web client).
-- [ ] First component test on the web side (FleetPage with a fake
-      ConsoleClient). The page now has enough state to be worth
-      testing — view toggle, filter pipeline, pagination cursor
-      stack, delta application.
+- [x] First component test on the web side. `apps/web/test/FleetPage.test.tsx`
+      (19 tests) covers loading / error / empty states, snapshot
+      rendering, view toggle (table ↔ grid), the phone force-grid
+      override, client-side search and status filters,
+      server-side filter passthrough into subscription params,
+      cursor-stack pagination + page-size reset, upsert / remove
+      delta application against the snapshot, and connector
+      drill-down. Web testing infra now in place: vitest +
+      jsdom + @testing-library/react/dom/user-event + jest-dom
+      matchers; `vitest.config.ts` separate from `vite.config.ts`
+      because vitest pulls vite@5 as a peer while the workspace
+      runs vite@6 (otherwise the `Plugin` type collides at
+      typecheck).
 - [ ] Connection-status banner: show "stale" when Kafka tail lags or
       gateway snapshot is older than N seconds.
 - [ ] WS client: dedupe entities by `(id, last_modified_at)` instead
