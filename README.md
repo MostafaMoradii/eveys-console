@@ -1,5 +1,6 @@
 # eveys-console
 
+[![CI](https://github.com/MostafaMoradii/eveys-console/actions/workflows/ci.yml/badge.svg)](https://github.com/MostafaMoradii/eveys-console/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 
 System-administration console for the OCPP gateway. Sign-in
