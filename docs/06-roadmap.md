@@ -60,8 +60,11 @@ The on-call read path has to work on a phone. Plan, breakpoints,
 and current gaps in [`08-mobile.md`](./08-mobile.md). Each
 sub-phase is shippable on its own.
 
-- [ ] **M-1** — AppShell mobile drawer. Sidebar collapses to a
-      hamburger sheet below `lg`; persistent above. (~0.5 day)
+- [x] **M-1** — AppShell mobile drawer. Sidebar collapses to a
+      hamburger sheet below `lg`; persistent above. Auto-closes on
+      route change. Built on `@radix-ui/react-dialog` (already in
+      deps); shadcn-style `<Sheet>` primitive added under
+      `components/ui/sheet.tsx`. Bundle +9 KB gz.
 - [ ] **M-2** — Header compaction below `sm`: title shrinks to icon
       only, sign-out becomes icon-only with `aria-label`,
       ws-status pill becomes a dot. (~0.25 day)
