@@ -115,7 +115,7 @@ The decoder lives in `apps/server/src/kafka/event-decoder.ts`.
 ```bash
 pnpm format        # prettier
 pnpm typecheck     # tsc --noEmit across all packages
-pnpm test          # vitest, all packages (~68 tests)
+pnpm test          # vitest, all packages (~83 tests)
 pnpm build         # tsc + vite build, both apps
 ```
 
