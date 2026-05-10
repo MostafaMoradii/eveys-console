@@ -90,6 +90,20 @@ export class GatewayClient {
     return this.json<unknown>(`/api/v1/transactions?active=true`);
   }
 
+  listChargePointTransactions(
+    cpId: string,
+    params: { active?: boolean; limit?: number; cursor?: string } = {},
+  ) {
+    const qs = new URLSearchParams();
+    if (params.active !== undefined) qs.set('active', String(params.active));
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params.cursor) qs.set('cursor', params.cursor);
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return this.json<unknown>(
+      `/api/v1/charge-points/${encodeURIComponent(cpId)}/transactions${suffix}`,
+    );
+  }
+
   // ---- Per-transaction detail + meter-values time-series ----------------
   // The active-transaction list flows through the WS broker as a snapshot.
   // The single-transaction detail page does NOT have a broker query — it

@@ -15,6 +15,7 @@ import type { ChargePointSummary } from '@eveys-console/protocol';
 
 import { CommandsDrawer } from '@/components/CommandsDrawer';
 import { DiagnosticsHistory } from '@/components/DiagnosticsHistory';
+import { TransactionsHistory } from '@/components/TransactionsHistory';
 import { canRemoteStart, canRemoteStop, canReset } from '@/lib/charger-state';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -105,6 +106,8 @@ export function ChargerDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      <TransactionsHistory cpId={cp.cp_id} />
 
       <DiagnosticsHistory cpId={cp.cp_id} />
     </div>
