@@ -152,14 +152,60 @@ export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigV
           No keys match the current filter.
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-3">
-          {filtered.map((entry) => (
-            <ConfigCard key={entry.key} entry={entry} revealed={revealed} />
-          ))}
-        </div>
+        <GroupedEntries entries={filtered} revealed={revealed} />
       )}
     </div>
   );
+}
+
+// Group entries by `category` and render each group under a heading.
+// The grouping is purely visual; ordering preserves the order categories
+// first appear in the entry list (so the operator's familiar layout
+// from the upstream metadata is preserved instead of alphabetised).
+function GroupedEntries({ entries, revealed }: { entries: ConfigEntry[]; revealed: boolean }) {
+  const groups: { category: string; entries: ConfigEntry[] }[] = [];
+  const indexByCategory = new Map<string, number>();
+  for (const entry of entries) {
+    const cat = entry.category || 'other';
+    let idx = indexByCategory.get(cat);
+    if (idx === undefined) {
+      idx = groups.length;
+      indexByCategory.set(cat, idx);
+      groups.push({ category: cat, entries: [] });
+    }
+    groups[idx]!.entries.push(entry);
+  }
+
+  return (
+    <div className="space-y-6">
+      {groups.map((group) => (
+        <section key={group.category} aria-labelledby={`config-group-${group.category}`}>
+          <h3
+            id={`config-group-${group.category}`}
+            className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+          >
+            {humanizeCategory(group.category)}{' '}
+            <span className="ml-1 font-normal normal-case">({group.entries.length})</span>
+          </h3>
+          <div className="grid grid-cols-1 gap-3">
+            {group.entries.map((entry) => (
+              <ConfigCard key={entry.key} entry={entry} revealed={revealed} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+// Cosmetic-only: turn snake_case category names into Title Case for
+// the group heading. Underscores → spaces.
+function humanizeCategory(raw: string): string {
+  if (!raw) return 'Other';
+  return raw
+    .split('_')
+    .map((word) => (word.length === 0 ? word : word[0]!.toUpperCase() + word.slice(1)))
+    .join(' ');
 }
 
 function ConfigCard({ entry, revealed }: { entry: ConfigEntry; revealed: boolean }) {
@@ -178,11 +224,6 @@ function ConfigCard({ entry, revealed }: { entry: ConfigEntry; revealed: boolean
           <div className="flex flex-wrap items-center gap-1.5">
             <SourcePill source={entry.source} />
             <RestartPill restart={entry.restart} />
-            {entry.category ? (
-              <Badge variant="outline" className="text-[10px]">
-                {entry.category}
-              </Badge>
-            ) : null}
             {entry.sensitive ? <Badge variant="destructive">sensitive</Badge> : null}
             {!entry.mutable ? <Badge variant="secondary">read-only</Badge> : null}
           </div>
