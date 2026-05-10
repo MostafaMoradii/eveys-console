@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { formatRelativeTime, formatUptime } from '@/lib/time';
+import { formatDurationMinutes, formatRelativeTime, formatUptime } from '@/lib/time';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -57,5 +57,31 @@ describe('formatUptime', () => {
   it('renders multi-day as Xd Yh, omitting hours when 0', () => {
     expect(formatUptime('2026-05-07T08:00:00.000Z')).toBe('3d 4h');
     expect(formatUptime('2026-05-07T12:00:00.000Z')).toBe('3d');
+  });
+});
+
+describe('formatDurationMinutes', () => {
+  it('returns em-dash for non-finite or negative input', () => {
+    expect(formatDurationMinutes(Number.NaN)).toBe('—');
+    expect(formatDurationMinutes(-1)).toBe('—');
+    expect(formatDurationMinutes(Number.POSITIVE_INFINITY)).toBe('—');
+  });
+
+  it('renders sub-minute as seconds', () => {
+    expect(formatDurationMinutes(45_000)).toBe('45s');
+  });
+
+  it('renders sub-hour as a single minute count', () => {
+    expect(formatDurationMinutes(12 * 60_000)).toBe('12m');
+  });
+
+  it('renders sub-day as Xh Ym, omitting minutes when 0', () => {
+    expect(formatDurationMinutes(2 * 3_600_000 + 14 * 60_000)).toBe('2h 14m');
+    expect(formatDurationMinutes(3 * 3_600_000)).toBe('3h');
+  });
+
+  it('renders multi-day as Xd Yh, omitting hours when 0', () => {
+    expect(formatDurationMinutes(3 * 86_400_000 + 4 * 3_600_000)).toBe('3d 4h');
+    expect(formatDurationMinutes(3 * 86_400_000)).toBe('3d');
   });
 });
