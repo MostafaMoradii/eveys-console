@@ -32,8 +32,8 @@ export function ConsoleShell() {
     status === 'open' ? 'success' : status === 'connecting' ? 'warning' : 'destructive';
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="flex h-14 items-center justify-between border-b bg-background px-4">
+    <div className="flex h-screen flex-col">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-4">
         <div className="flex items-center gap-2">
           {/* Hamburger trigger — visible below `lg`. The persistent
               sidebar takes over at `lg+`. */}
@@ -87,16 +87,18 @@ export function ConsoleShell() {
         </div>
       </header>
 
-      <div className="flex flex-1">
+      <div className="flex min-h-0 flex-1">
         {/* Persistent sidebar — hidden below `lg`; the Sheet covers
             navigation there. flex-column so the gear sits at the
-            bottom via mt-auto. */}
-        <nav className="hidden w-56 flex-col border-r bg-background p-2 lg:flex">
+            bottom via mt-auto. h-full + the parent's min-h-0 keeps
+            the sidebar pinned to the viewport regardless of how
+            tall the main content scrolls. */}
+        <nav className="hidden h-full w-56 shrink-0 flex-col border-r bg-background p-2 lg:flex">
           <NavContents path={path} />
           <SidebarFooter path={path} />
         </nav>
 
-        <main className="flex-1 p-6">
+        <main className="min-h-0 flex-1 overflow-y-auto p-6">
           <Outlet />
         </main>
       </div>
