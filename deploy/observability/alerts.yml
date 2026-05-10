@@ -1,23 +1,26 @@
 groups:
   - name: eveys-console
     rules:
+      # 5m, not 1m, so a single missed scrape (Prometheus rolling
+      # out, momentary network blip on the host, GC pause on the
+      # target) doesn't flip the rule to firing.
       - alert: ConsoleDown
         expr: up{job="eveys-console"} == 0
-        for: 1m
+        for: 5m
         labels:
           severity: warning
         annotations:
           summary: 'Console scrape failing'
-          description: 'Prometheus has not scraped the Console for 1 minute.'
+          description: 'Prometheus has not scraped the Console for 5 minutes.'
 
       - alert: GatewayDown
         expr: up{job="eveys-gateway"} == 0
-        for: 1m
+        for: 5m
         labels:
           severity: warning
         annotations:
           summary: 'Gateway scrape failing'
-          description: 'Prometheus has not scraped the OCPP gateway for 1 minute.'
+          description: 'Prometheus has not scraped the OCPP gateway for 5 minutes.'
 
       - alert: WSAuthFailureSpike
         expr: rate(eveys_console_ws_close_total{code="4401"}[5m]) > 0.5
