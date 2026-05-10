@@ -92,6 +92,7 @@ primitives those components rely on.
 | `@radix-ui/react-slot`     | 1.1     | MIT        | `<Slot>` primitive for the `asChild` pattern.                                 |
 | `@radix-ui/react-dialog`   | 1.1     | MIT        | Modal primitive.                                                              |
 | `@radix-ui/react-toast`    | 1.2     | MIT        | Toast primitive used by the toaster component.                                |
+| `@radix-ui/react-tabs`     | 1.1     | MIT        | Tabs primitive used by the merged Configuration page.                         |
 | `lucide-react`             | 0.469   | ISC        | Icon set.                                                                     |
 | TanStack Router            | 1.94    | MIT        | Type-safe routing. The route tree is declared manually in `src/routeTree.ts`. |
 | TanStack Query             | 5.62    | MIT        | Reserved for non-WebSocket data fetching.                                     |

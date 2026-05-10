@@ -6,9 +6,8 @@ import { createRootRoute, createRoute } from '@tanstack/react-router';
 
 import { ConsoleShell } from './components/AppShell';
 import { ChargerDetailPage } from './pages/ChargerDetailPage';
-import { ConsoleConfigPage } from './pages/ConsoleConfigPage';
 import { FleetPage } from './pages/FleetPage';
-import { GatewayConfigPage } from './pages/GatewayConfigPage';
+import { SystemConfigPage } from './pages/SystemConfigPage';
 import { SystemPage } from './pages/SystemPage';
 import { TransactionsPage } from './pages/TransactionsPage';
 
@@ -38,16 +37,10 @@ const transactionsRoute = createRoute({
   component: TransactionsPage,
 });
 
-const consoleConfigRoute = createRoute({
+const sysConfigRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/sys/console-config',
-  component: ConsoleConfigPage,
-});
-
-const gatewayConfigRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/sys/gateway-config',
-  component: GatewayConfigPage,
+  path: '/sys/config',
+  component: SystemConfigPage,
 });
 
 export const routeTree = rootRoute.addChildren([
@@ -55,6 +48,5 @@ export const routeTree = rootRoute.addChildren([
   inspectChargePointsRoute,
   chargerDetailRoute,
   transactionsRoute,
-  consoleConfigRoute,
-  gatewayConfigRoute,
+  sysConfigRoute,
 ]);
