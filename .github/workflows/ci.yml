@@ -24,6 +24,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm gen:api-types
+      # Workspace packages publish via `main: ./dist/index.js` so the
+      # apps' typecheck needs the built artefacts to resolve them.
+      - run: pnpm --filter "./packages/*" build
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
