@@ -6,11 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  ConsoleClient,
-  WS_AUTH_REJECTED_CODE,
-  type ConnectionStatus,
-} from '@/api/ws-client';
+import { ConsoleClient, WS_AUTH_REJECTED_CODE, type ConnectionStatus } from '@/api/ws-client';
 
 interface FakeSocket {
   url: string;
