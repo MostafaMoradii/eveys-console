@@ -110,6 +110,11 @@ function Header({ cp }: { cp: ChargePointSummary }) {
         <Badge variant="secondary" className="font-mono text-xs">
           last_status: {cp.last_status ?? '—'}
         </Badge>
+        {cp.pod_id ? (
+          <Badge variant="secondary" className="font-mono text-xs" title={cp.pod_id}>
+            pod: {cp.pod_id.length > 12 ? `${cp.pod_id.slice(0, 12)}…` : cp.pod_id}
+          </Badge>
+        ) : null}
       </div>
     </div>
   );
