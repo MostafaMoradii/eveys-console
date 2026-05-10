@@ -13,6 +13,16 @@ import {
 import { useEffect, useState } from 'react';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,6 +47,11 @@ export function ConsoleShell() {
   useEffect(() => {
     setDrawerOpen(false);
   }, [path]);
+
+  // Confirmation gate for sign-out — the action is a single-click,
+  // session-ending operation; an accidental click drops the
+  // operator's WS subscriptions and in-flight commands.
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
   const statusVariant =
     status === 'open' ? 'success' : status === 'connecting' ? 'warning' : 'destructive';
@@ -83,17 +98,43 @@ export function ConsoleShell() {
           <ConnectionStatusIndicator status={status} variant={statusVariant} />
           <ThemeToggle />
           {/* Sign-out: full pill with icon+label at `sm+`, icon-only
-              below. The aria-label keeps it accessible either way. */}
+              below. The aria-label keeps it accessible either way.
+              Click opens an AlertDialog rather than ending the
+              session directly. */}
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setToken(null)}
+            onClick={() => setSignOutOpen(true)}
             className="gap-1 px-2 sm:px-3"
             aria-label="Sign out"
+            data-testid="signout-button"
           >
             <LogOut className="h-3.5 w-3.5" />
             <span className="hidden text-xs sm:inline">Sign out</span>
           </Button>
+          <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+            <AlertDialogContent data-testid="signout-dialog">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Sign out?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Active subscriptions and in-progress commands will be cancelled. You&apos;ll be
+                  returned to the login screen.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    setSignOutOpen(false);
+                    setToken(null);
+                  }}
+                  data-testid="signout-confirm"
+                >
+                  Sign out
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </header>
 
