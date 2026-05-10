@@ -9,6 +9,7 @@ import { ChargerDetailPage } from './pages/ChargerDetailPage';
 import { FleetPage } from './pages/FleetPage';
 import { SystemConfigPage } from './pages/SystemConfigPage';
 import { SystemPage } from './pages/SystemPage';
+import { TransactionDetailPage } from './pages/TransactionDetailPage';
 import { TransactionsPage } from './pages/TransactionsPage';
 
 export const rootRoute = createRootRoute({ component: ConsoleShell });
@@ -37,6 +38,12 @@ const transactionsRoute = createRoute({
   component: TransactionsPage,
 });
 
+const transactionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/inspect/transactions/$txId',
+  component: TransactionDetailPage,
+});
+
 const sysConfigRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sys/config',
@@ -48,5 +55,6 @@ export const routeTree = rootRoute.addChildren([
   inspectChargePointsRoute,
   chargerDetailRoute,
   transactionsRoute,
+  transactionDetailRoute,
   sysConfigRoute,
 ]);

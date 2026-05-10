@@ -90,6 +90,37 @@ export class GatewayClient {
     return this.json<unknown>(`/api/v1/transactions?active=true`);
   }
 
+  // ---- Per-transaction detail + meter-values time-series ----------------
+  // The active-transaction list flows through the WS broker as a snapshot.
+  // The single-transaction detail page does NOT have a broker query — it
+  // polls these two endpoints via REST. See the proxy routes in
+  // routes/sys-transactions.ts.
+
+  getTransaction(txId: number) {
+    return this.json<unknown>(`/api/v1/transactions/${encodeURIComponent(String(txId))}`);
+  }
+
+  listMeterValues(
+    cpId: string,
+    params: {
+      from: string;
+      to: string;
+      measurand?: string;
+      connector_id?: number;
+      limit?: number;
+    },
+  ) {
+    const qs = new URLSearchParams();
+    qs.set('from', params.from);
+    qs.set('to', params.to);
+    if (params.measurand) qs.set('measurand', params.measurand);
+    if (params.connector_id !== undefined) qs.set('connector_id', String(params.connector_id));
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    return this.json<unknown>(
+      `/api/v1/charge-points/${encodeURIComponent(cpId)}/meter-values?${qs.toString()}`,
+    );
+  }
+
   // ---- OCPP commands -----------------------------------------------------
   // Each method maps to one of the gateway's
   // `POST /api/v1/charge-points/{cp_id}/commands/{slug}` endpoints. The body

@@ -46,6 +46,7 @@ import { registerSysConfigRoute } from './routes/sys-config.js';
 import { registerSysGatewayAdminConfigRoute } from './routes/sys-gateway-admin-config.js';
 import { registerSysGatewayConfigRoute } from './routes/sys-gateway-config.js';
 import { registerSysStatusRoute } from './routes/sys-status.js';
+import { registerSysTransactionsRoute } from './routes/sys-transactions.js';
 import { registerWsRoute } from './routes/ws.js';
 import { DiagnosticsStore } from './store/diagnostics-store.js';
 
@@ -105,6 +106,7 @@ async function main() {
   await registerSysConfigRoute(app, { config });
   await registerSysGatewayConfigRoute(app, { gateway });
   await registerSysGatewayAdminConfigRoute(app, { gateway });
+  await registerSysTransactionsRoute(app, { gateway });
   await registerDiagnosticsRoutes(app, { store: diagnosticsStore });
   await registerWsRoute(app, { broker, gateway });
 
