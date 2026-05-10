@@ -17,6 +17,7 @@ import {
 
 import { expectAudienceAndIssuer } from '../auth/jwt.js';
 import type { Broker } from '../broker/broker.js';
+import { recordWsClose, recordWsConnection, recordWsMessage } from '../metrics/registry.js';
 import type { GatewayClient } from '../rest/gateway-client.js';
 
 const WS_SUBPROTOCOL = 'eveys-console-v1';
@@ -41,6 +42,7 @@ export async function registerWsRoute(
       log.warn('ws.subprotocol_missing');
       send(socket, errMsg('invalid_message', 'missing eveys-console-v1 subprotocol'));
       socket.close(1002);
+      recordWsClose(1002);
       return;
     }
     const tokenProtocol = requestedProtocols.find((p: string) => p.startsWith('bearer.'));
@@ -54,11 +56,13 @@ export async function registerWsRoute(
       log.warn({ err }, 'ws.auth_failed');
       send(socket, errMsg('unauthenticated', 'invalid or expired token'));
       socket.close(4401);
+      recordWsClose(4401);
       return;
     }
 
     const connectionId = randomUUID();
     log.info({ connectionId, sub: principal.sub }, 'ws.opened');
+    recordWsConnection(1);
 
     deps.broker.registerConnection(connectionId, (subscriptionId, delta) => {
       send(socket, {
@@ -86,6 +90,7 @@ export async function registerWsRoute(
     let messageCount = 0;
     socket.on('message', async (raw: Buffer) => {
       messageCount++;
+      recordWsMessage('in');
       let msg: ClientMessage;
       try {
         const json = JSON.parse(raw.toString());
@@ -111,6 +116,8 @@ export async function registerWsRoute(
       clearInterval(heartbeat);
       deps.broker.removeConnection(connectionId);
       log.info({ connectionId, code, reason: reason.toString(), messageCount }, 'ws.closed');
+      recordWsConnection(-1);
+      recordWsClose(code);
     });
 
     async function dispatch(msg: ClientMessage) {
@@ -218,6 +225,7 @@ export async function registerWsRoute(
 
 function send(socket: { send: (s: string) => void }, msg: ServerMessage) {
   socket.send(JSON.stringify(msg));
+  recordWsMessage('out');
 }
 
 function errMsg(

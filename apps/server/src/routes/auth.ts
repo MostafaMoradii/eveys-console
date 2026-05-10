@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { PowVerifier } from '../auth/pow.js';
 import type { UserStore } from '../auth/users.js';
 import type { Config } from '../config.js';
+import { recordAuthLogin, recordAuthPowSolve } from '../metrics/registry.js';
 
 const loginBody = z.object({
   username: z.string().min(1).max(128),
@@ -59,7 +60,11 @@ export async function registerAuthRoutes(app: any, deps: RouteDeps) {
       }
       const { username, password, challenge, solution } = parsed.data;
 
+      // Wrap the PoW verify so the histogram tracks where verification time
+      // actually goes — useful for catching difficulty miscalibrations.
+      const powStart = Date.now();
       const powErr = deps.pow.verify(challenge, solution);
+      recordAuthPowSolve((Date.now() - powStart) / 1000);
       if (powErr) {
         req.log.warn({ powErr, username }, 'auth.login.pow_failed');
         return reply.code(400).send({ error: 'pow_invalid', detail: powErr });
@@ -67,12 +72,14 @@ export async function registerAuthRoutes(app: any, deps: RouteDeps) {
 
       if (deps.users.size === 0) {
         req.log.error('auth.login.no_users_configured');
+        recordAuthLogin('disabled');
         return reply.code(503).send({ error: 'login_disabled' });
       }
 
       const user = await deps.users.verify(username, password);
       if (!user) {
         req.log.warn({ username }, 'auth.login.bad_credentials');
+        recordAuthLogin('invalid_credentials');
         return reply.code(401).send({ error: 'invalid_credentials' });
       }
 
@@ -92,6 +99,7 @@ export async function registerAuthRoutes(app: any, deps: RouteDeps) {
       );
 
       req.log.info({ username }, 'auth.login.success');
+      recordAuthLogin('success');
       return {
         token,
         expires_at: new Date(exp * 1000).toISOString(),
