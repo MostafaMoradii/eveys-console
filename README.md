@@ -169,7 +169,7 @@ multi-pod fan-in, object storage) is a separate iteration.
 ```bash
 pnpm format        # prettier
 pnpm typecheck     # tsc --noEmit across all packages
-pnpm test          # vitest, all packages (~283 tests)
+pnpm test          # vitest, all packages (~310 tests)
 pnpm build         # tsc + vite build, both apps
 ```
 

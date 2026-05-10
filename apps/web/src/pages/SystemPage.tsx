@@ -10,14 +10,17 @@ import {
   Network,
   Server,
 } from 'lucide-react';
+import { useMemo } from 'react';
 
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
 import { fetchSysStatus, type ComponentStatus, type SysStatus } from '@/api/sys-client';
+import { AlertsPanel } from '@/components/AlertsPanel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSubscription } from '@/hooks/use-subscription';
+import { computeAlerts } from '@/lib/alerts';
 import { countFaults } from '@/lib/fault';
 import { useConsoleClient } from '@/lib/ws-context';
 import { cn } from '@/lib/utils';
@@ -30,6 +33,23 @@ export function SystemPage() {
     refetchInterval: 5_000,
     enabled: !!token,
   });
+
+  // Subscribe to the same charge-points feed FleetPage uses so the
+  // alerts panel reflects whatever the operator would see if they
+  // switched to that page. The 500-row limit is the same one
+  // FaultsCard uses below — plenty of headroom for the fleets we
+  // ship to today.
+  const cpSub = useSubscription('charge-points', { limit: 500 });
+  const cpRows: ChargePointSummary[] =
+    cpSub.snapshot && cpSub.snapshot.kind === 'charge-points' ? cpSub.snapshot.rows : [];
+
+  // Re-derive alerts on every render. computeAlerts is pure and
+  // cheap; the useMemo is mostly so the AlertsPanel's reference
+  // stays stable across renders that don't change inputs.
+  const alerts = useMemo(
+    () => computeAlerts({ charge_points: cpRows, sys_status: q.data ?? null }),
+    [cpRows, q.data],
+  );
 
   if (q.isLoading) {
     return (
@@ -60,6 +80,8 @@ export function SystemPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <AlertsPanel alerts={alerts} loading={cpSub.loading} error={cpSub.error ?? null} />
+
         <ComponentCard
           icon={<Server className="h-4 w-4" />}
           title="Console server"
