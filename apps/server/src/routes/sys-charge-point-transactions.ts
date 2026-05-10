@@ -1,8 +1,14 @@
 // Proxies the gateway's `GET /api/v1/charge-points/{cp_id}/transactions`
-// so the browser only ever talks to the Console server. Same shape and
-// query params as the upstream — `active`, `limit`, `cursor` — passed
-// through verbatim. JWT-authed at the Console; the upstream call uses
-// the GATEWAY_TOKEN.
+// so the browser only ever talks to the Console server. Same query
+// params as the upstream — `active`, `limit`, `cursor` — passed through
+// verbatim. JWT-authed at the Console; the upstream call uses the
+// GATEWAY_TOKEN.
+//
+// Renames `{started,stopped}_reported_at` → `{started,stopped}_at` in the
+// response body. The gateway exposes the OCPP-claimed timestamp under the
+// fuller name; the Console UI (TransactionsHistory + StatisticsCard) was
+// typed against the shorter name. We do the rename here so the boundary
+// stays in one place and the upstream shape stays untouched.
 //
 // Mirrors the pattern used by the other gateway proxies (sys-gateway-config
 // etc.): unauth → 401, upstream error → status + envelope unchanged when
@@ -79,10 +85,67 @@ export async function registerSysChargePointTransactionsRoute(app: any, deps: Ro
       if (req.query?.cursor) params.cursor = req.query.cursor;
 
       try {
-        return await deps.gateway.listChargePointTransactions(cp_id, params);
+        const upstream = await deps.gateway.listChargePointTransactions(cp_id, params);
+        return mapTransactionsList(upstream);
       } catch (err) {
         return handleGatewayError(err, reply);
       }
     },
   );
+}
+
+interface UpstreamTransactionRow {
+  transaction_id: number;
+  cp_id: string;
+  connector_id: number;
+  id_tag: string;
+  meter_start_wh: number;
+  meter_stop_wh: number | null;
+  started_reported_at: string;
+  stopped_reported_at: string | null;
+  stop_reason: string | null;
+  [key: string]: unknown;
+}
+
+interface UpstreamTransactionsList {
+  transactions: UpstreamTransactionRow[];
+  next_cursor: string | null;
+  [key: string]: unknown;
+}
+
+/** Rename `started_reported_at` / `stopped_reported_at` to the names the
+ *  Console UI expects, and add the convenience `open` flag the gateway
+ *  doesn't compute. Pure function over the upstream JSON. */
+export function mapTransactionsList(upstream: unknown): {
+  transactions: Array<{
+    transaction_id: number;
+    cp_id: string;
+    connector_id: number;
+    id_tag: string;
+    meter_start_wh: number;
+    meter_stop_wh: number | null;
+    started_at: string;
+    stopped_at: string | null;
+    stop_reason: string | null;
+    open: boolean;
+  }>;
+  next_cursor: string | null;
+} {
+  const u = upstream as UpstreamTransactionsList;
+  const rows = Array.isArray(u?.transactions) ? u.transactions : [];
+  return {
+    transactions: rows.map((r) => ({
+      transaction_id: r.transaction_id,
+      cp_id: r.cp_id,
+      connector_id: r.connector_id,
+      id_tag: r.id_tag,
+      meter_start_wh: r.meter_start_wh,
+      meter_stop_wh: r.meter_stop_wh,
+      started_at: r.started_reported_at,
+      stopped_at: r.stopped_reported_at,
+      stop_reason: r.stop_reason,
+      open: r.stopped_reported_at === null,
+    })),
+    next_cursor: u?.next_cursor ?? null,
+  };
 }
