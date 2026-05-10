@@ -100,6 +100,15 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 Server on `:8090`, web on `:5180`.
 
+### Observability
+
+The compose ships an optional Prometheus + Alertmanager pair behind an
+`observability` profile so the default `up` stays lean. Bring them up
+with `docker compose -f deploy/docker-compose.yml --profile observability
+up -d` and reach Prometheus on `:9091` and Alertmanager on `:9093`. The
+starter scrape config targets the Console at `server:8090/metrics` and a
+gateway on the host at `host.docker.internal:9100/metrics`.
+
 ## Realtime model
 
 Each browser tab opens one WebSocket. Inside that connection it can:

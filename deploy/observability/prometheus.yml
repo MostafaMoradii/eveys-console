@@ -1,0 +1,30 @@
+# Prometheus scrape + alerting config for the dev observability profile.
+#
+# Note: Prometheus does NOT expand ${VAR} natively. The gateway target is
+# hardcoded to host.docker.internal:9100 here so a gateway running on the
+# host (the common dev case) is reachable from inside the compose
+# network. Production deployments override this file via a config-volume
+# mount; do not try to template it here.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: eveys-console
+    static_configs:
+      - targets: ['server:8090']
+    metrics_path: /metrics
+
+  - job_name: eveys-gateway
+    static_configs:
+      - targets: ['host.docker.internal:9100']
+    metrics_path: /metrics
