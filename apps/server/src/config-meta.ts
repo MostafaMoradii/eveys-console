@@ -25,6 +25,9 @@ export type ValueSource =
 
 export interface KeyMeta {
   description: string;
+  /** Grouping label for the config page (mirrors the gateway's
+   * json_schema_extra.category). Lowercase snake_case. */
+  category: string;
   /** Can an operator change this in deployment? `false` = build-time / fixed. */
   mutable: boolean;
   /** What needs to restart for a change to take effect. */
@@ -40,6 +43,7 @@ export interface KeyMeta {
 const META: Record<keyof Config, KeyMeta> = {
   HOST: {
     description: 'Network interface the Console server binds to.',
+    category: 'network',
     mutable: true,
     restart: 'console',
     range: 'IPv4/IPv6 address; "0.0.0.0" for all interfaces, "127.0.0.1" for loopback only.',
@@ -48,6 +52,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   PORT: {
     description: 'TCP port the Console server listens on.',
+    category: 'network',
     mutable: true,
     restart: 'console',
     range: '1–65535',
@@ -56,6 +61,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   LOG_LEVEL: {
     description: 'Minimum severity emitted by the structured logger.',
+    category: 'logging',
     mutable: true,
     restart: 'console',
     range: 'fatal | error | warn | info | debug | trace',
@@ -64,6 +70,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   LOG_PRETTY: {
     description: 'Engage pino-pretty for human-readable logs (dev only).',
+    category: 'logging',
     mutable: true,
     restart: 'console',
     range: 'true | false',
@@ -74,6 +81,7 @@ const META: Record<keyof Config, KeyMeta> = {
   JWT_SECRET: {
     description:
       'HS256 signing secret for browser JWTs. Refuses to bind a non-loopback HOST when set to a known placeholder.',
+    category: 'auth',
     mutable: true,
     restart: 'console',
     range: '≥ 16 characters. Recommend `openssl rand -base64 48`.',
@@ -82,6 +90,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   JWT_AUDIENCE: {
     description: 'Audience claim minted into login JWTs and required at verify time.',
+    category: 'auth',
     mutable: true,
     restart: 'console',
     range: 'free-form string',
@@ -90,6 +99,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   JWT_ISSUER: {
     description: 'Issuer claim minted into login JWTs and required at verify time.',
+    category: 'auth',
     mutable: true,
     restart: 'console',
     range: 'free-form string',
@@ -98,6 +108,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   JWT_TTL_SECONDS: {
     description: 'Lifetime of issued JWTs.',
+    category: 'auth',
     mutable: true,
     restart: 'console',
     range: 'positive integer (seconds)',
@@ -108,6 +119,7 @@ const META: Record<keyof Config, KeyMeta> = {
   CONSOLE_USERS: {
     description:
       'Comma-separated `username:bcrypthash` pairs. Empty disables the login form (pre-minted JWTs still accepted).',
+    category: 'auth',
     mutable: true,
     restart: 'console',
     range:
@@ -119,6 +131,7 @@ const META: Record<keyof Config, KeyMeta> = {
   AUTH_POW_DIFFICULTY: {
     description:
       'Proof-of-work CAPTCHA difficulty (leading-zero bits required on the client hash). 16 ≈ 50 ms; 20 ≈ 1 s.',
+    category: 'auth',
     mutable: true,
     restart: 'console',
     range: '0–28',
@@ -127,6 +140,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   AUTH_POW_TTL_SECONDS: {
     description: 'How long a minted PoW challenge stays valid before the client must re-fetch.',
+    category: 'auth',
     mutable: true,
     restart: 'console',
     range: 'positive integer (seconds)',
@@ -135,6 +149,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   AUTH_LOGIN_MAX_PER_MIN: {
     description: 'Per-IP rate limit on POST /auth/login.',
+    category: 'auth',
     mutable: true,
     restart: 'console',
     range: 'positive integer (requests per minute)',
@@ -145,6 +160,7 @@ const META: Record<keyof Config, KeyMeta> = {
   ALLOWED_ORIGINS: {
     description:
       'CSV of Origin headers permitted on the WS handshake and login routes. Empty disables Origin checking (laptop dev).',
+    category: 'auth',
     mutable: true,
     restart: 'console',
     range:
@@ -156,6 +172,7 @@ const META: Record<keyof Config, KeyMeta> = {
   GATEWAY_BASE_URL: {
     description:
       'Base URL of the OCPP gateway REST API. Console uses this for snapshots and to forward RPCs.',
+    category: 'gateway',
     mutable: true,
     restart: 'console',
     range: 'http(s)://host:port URL.',
@@ -164,6 +181,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   GATEWAY_TOKEN: {
     description: 'Bearer token sent to the gateway on every REST call.',
+    category: 'gateway',
     mutable: true,
     restart: 'console',
     range: 'opaque token issued by the gateway',
@@ -173,6 +191,7 @@ const META: Record<keyof Config, KeyMeta> = {
 
   KAFKA_BROKERS: {
     description: 'CSV of Kafka bootstrap brokers the Console tails for live events.',
+    category: 'kafka',
     mutable: true,
     restart: 'console',
     range: 'CSV of host:port (e.g. `kafka-0:9092,kafka-1:9092,kafka-2:9092`)',
@@ -181,6 +200,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   KAFKA_CLIENT_ID: {
     description: 'kafkajs `clientId` reported to the brokers.',
+    category: 'kafka',
     mutable: true,
     restart: 'console',
     range: 'free-form string',
@@ -190,6 +210,7 @@ const META: Record<keyof Config, KeyMeta> = {
   KAFKA_GROUP_ID: {
     description:
       'Kafka consumer-group id. All Console pods share one group today; a per-pod model is on the multi-pod track.',
+    category: 'kafka',
     mutable: true,
     restart: 'console',
     range: 'free-form string',
@@ -199,6 +220,7 @@ const META: Record<keyof Config, KeyMeta> = {
   KAFKA_TOPICS_BOOT: {
     description:
       'Topic the Console tails for BootNotification events. Must match the topic the gateway publishes to (gateway-side: kafka_topic_cp_boot).',
+    category: 'kafka',
     mutable: true,
     restart: 'console',
     range: 'topic name',
@@ -208,6 +230,7 @@ const META: Record<keyof Config, KeyMeta> = {
   KAFKA_TOPICS_STATUS: {
     description:
       'Topic the Console tails for StatusNotification events. Must match the topic the gateway publishes to (gateway-side: kafka_topic_cp_status).',
+    category: 'kafka',
     mutable: true,
     restart: 'console',
     range: 'topic name',
@@ -217,6 +240,7 @@ const META: Record<keyof Config, KeyMeta> = {
   KAFKA_TOPICS_METER: {
     description:
       'Topic the Console tails for MeterValues samples. Must match the topic the gateway publishes to (gateway-side: kafka_topic_cp_meter).',
+    category: 'kafka',
     mutable: true,
     restart: 'console',
     range: 'topic name',
@@ -226,6 +250,7 @@ const META: Record<keyof Config, KeyMeta> = {
   KAFKA_TOPICS_TX_STARTED: {
     description:
       'Topic the Console tails for StartTransaction events. Must match the topic the gateway publishes to (gateway-side: kafka_topic_tx_started).',
+    category: 'kafka',
     mutable: true,
     restart: 'console',
     range: 'topic name',
@@ -235,6 +260,7 @@ const META: Record<keyof Config, KeyMeta> = {
 
   WS_MAX_SUBSCRIPTIONS_PER_CONN: {
     description: 'Cap on simultaneous subscriptions per WebSocket. Plumbed but not yet enforced.',
+    category: 'websocket',
     mutable: true,
     restart: 'console',
     range: 'positive integer',
@@ -243,6 +269,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   WS_PING_INTERVAL_MS: {
     description: 'Server-side ping cadence on the WS connection. Detects half-open peers.',
+    category: 'websocket',
     mutable: true,
     restart: 'console',
     range: 'positive integer (milliseconds)',
@@ -251,6 +278,7 @@ const META: Record<keyof Config, KeyMeta> = {
   },
   WS_IDLE_TIMEOUT_MS: {
     description: 'Idle disconnect threshold on the WS connection.',
+    category: 'websocket',
     mutable: true,
     restart: 'console',
     range: 'positive integer (milliseconds)',
@@ -268,6 +296,7 @@ export interface ConfigEntry {
   default: string;
   source: ValueSource;
   description: string;
+  category: string;
   mutable: boolean;
   restart: RestartImpact;
   range: string;
@@ -300,6 +329,7 @@ export function describeConfig(cfg: Config, env: NodeJS.ProcessEnv = process.env
       default: meta.default,
       source: env[key] !== undefined && env[key] !== '' ? 'env' : 'default',
       description: meta.description,
+      category: meta.category,
       mutable: meta.mutable,
       restart: meta.restart,
       range: meta.range,

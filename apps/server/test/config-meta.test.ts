@@ -70,11 +70,12 @@ describe('describeConfig', () => {
     expect(brokers!.value).toBe('broker1:9092,broker2:9092');
   });
 
-  it('every entry carries description / range / mutable / restart', () => {
+  it('every entry carries description / category / range / mutable / restart', () => {
     const cfg = loadConfig(baseEnv);
     const entries = describeConfig(cfg, baseEnv);
     for (const entry of entries) {
       expect(entry.description.length).toBeGreaterThan(0);
+      expect(entry.category.length).toBeGreaterThan(0);
       expect(entry.range.length).toBeGreaterThan(0);
       expect(typeof entry.mutable).toBe('boolean');
       expect(['none', 'console', 'gateway', 'both']).toContain(entry.restart);
@@ -89,5 +90,24 @@ describe('describeConfig', () => {
     for (const entry of topicKeys) {
       expect(entry.restart).toBe('console');
     }
+  });
+
+  it('groups keys into the expected categories', () => {
+    const cfg = loadConfig(baseEnv);
+    const entries = describeConfig(cfg, baseEnv);
+    const byKey = Object.fromEntries(entries.map((e) => [e.key, e.category]));
+
+    // Spot-check the expected category for each prefix family.
+    expect(byKey.HOST).toBe('network');
+    expect(byKey.PORT).toBe('network');
+    expect(byKey.LOG_LEVEL).toBe('logging');
+    expect(byKey.JWT_SECRET).toBe('auth');
+    expect(byKey.AUTH_POW_DIFFICULTY).toBe('auth');
+    expect(byKey.CONSOLE_USERS).toBe('auth');
+    expect(byKey.ALLOWED_ORIGINS).toBe('auth');
+    expect(byKey.GATEWAY_BASE_URL).toBe('gateway');
+    expect(byKey.KAFKA_BROKERS).toBe('kafka');
+    expect(byKey.KAFKA_TOPICS_BOOT).toBe('kafka');
+    expect(byKey.WS_PING_INTERVAL_MS).toBe('websocket');
   });
 });

@@ -49,11 +49,11 @@ function entry(over: Partial<ConfigEntry>): ConfigEntry {
     default: over.default ?? '8090',
     source: over.source ?? 'default',
     description: over.description ?? 'TCP port the Console listens on.',
+    category: over.category ?? 'network',
     mutable: over.mutable ?? true,
     restart: over.restart ?? 'console',
     range: over.range ?? '1–65535',
     ...(over.impact !== undefined ? { impact: over.impact } : {}),
-    ...(over.category !== undefined ? { category: over.category } : {}),
     ...(over.stability !== undefined ? { stability: over.stability } : {}),
   };
 }
@@ -73,7 +73,13 @@ const consoleConfig: SysConfig = {
   scope: 'console',
   loaded_at: '2026-05-10T00:00:00.000Z',
   entries: [
-    entry({ key: 'PORT', value: '8090', source: 'default', restart: 'console' }),
+    entry({
+      key: 'PORT',
+      value: '8090',
+      source: 'default',
+      restart: 'console',
+      category: 'network',
+    }),
     entry({
       key: 'JWT_SECRET',
       value: '••••••••',
@@ -82,6 +88,7 @@ const consoleConfig: SysConfig = {
       source: 'env',
       description: 'HS256 signing secret.',
       restart: 'console',
+      category: 'auth',
     }),
     entry({
       key: 'GATEWAY_BASE_URL',
@@ -90,6 +97,7 @@ const consoleConfig: SysConfig = {
       source: 'env',
       description: 'Upstream gateway URL.',
       restart: 'console',
+      category: 'gateway',
     }),
   ],
 };
@@ -223,7 +231,8 @@ describe('SystemConfigPage — Gateway tab', () => {
     await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
     await screen.findByText('rest_port');
 
-    expect(screen.getByText('rest_server')).toBeInTheDocument();
+    // Category now renders as a group heading (humanised), not a card badge.
+    expect(screen.getByRole('heading', { name: /rest server.*\(/i })).toBeInTheDocument();
     expect(screen.getByText(/production network policy/i)).toBeInTheDocument();
   });
 
@@ -250,6 +259,38 @@ describe('SystemConfigPage — Gateway tab', () => {
     await user.click(screen.getByRole('tab', { name: /^console$/i }));
     await screen.findByText(/console configuration/i);
     expect(window.location.search).not.toContain('tab=gateway');
+  });
+});
+
+describe('SystemConfigPage — category grouping', () => {
+  it('groups Console entries under category headings', async () => {
+    renderPage();
+    await screen.findByText('PORT');
+
+    // Three categories in the fixture: network, auth, gateway.
+    expect(screen.getByRole('heading', { name: /network.*\(/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /auth.*\(/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /gateway.*\(/i })).toBeInTheDocument();
+  });
+
+  it('renders the per-group entry count', async () => {
+    renderPage();
+    await screen.findByText('PORT');
+    // Each fixture group has one entry — heading text should end with "(1)".
+    const network = screen.getByRole('heading', { name: /^network.*\(1\)$/i });
+    expect(network).toBeInTheDocument();
+  });
+
+  it('humanises snake_case category names in headings', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('PORT');
+
+    await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
+    await screen.findByText('rest_port');
+    // 'rest_server' → 'Rest Server'; 'kafka_topics' → 'Kafka Topics'.
+    expect(screen.getByRole('heading', { name: /^rest server.*\(/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^kafka topics.*\(/i })).toBeInTheDocument();
   });
 });
 
