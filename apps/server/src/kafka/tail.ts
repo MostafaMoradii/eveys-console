@@ -7,6 +7,7 @@ import { Kafka, type Consumer, type EachMessagePayload } from 'kafkajs';
 import type { Config } from '../config.js';
 import { decodeEnvelope } from './event-decoder.js';
 import type { Logger } from '../logger.js';
+import { recordKafkaMessage } from '../metrics/registry.js';
 
 export interface KafkaEvent {
   topic: string;
@@ -74,6 +75,8 @@ export class KafkaTail {
 
   private handle = async ({ topic, partition, message }: EachMessagePayload) => {
     if (!message.value) return;
+    // Topic is one of the four configured KAFKA_TOPICS_* — bounded label set.
+    recordKafkaMessage(topic);
     // The gateway publishes protobuf-encoded `eveys.events.v1.EventEnvelope`
     // on every topic. Decode here so listeners receive the `payload` branch
     // of the oneof (cp_boot / cp_status / cp_meter / tx_started / …) as a

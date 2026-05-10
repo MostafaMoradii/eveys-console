@@ -6,6 +6,7 @@ import { request } from 'undici';
 
 import type { Logger } from '../logger.js';
 import type { Config } from '../config.js';
+import { recordGatewayRequest, type GatewayOp } from '../metrics/registry.js';
 
 export class GatewayClient {
   constructor(
@@ -14,6 +15,7 @@ export class GatewayClient {
   ) {}
 
   private async json<T>(
+    op: GatewayOp,
     path: string,
     init?: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'; body?: unknown },
   ): Promise<T> {
@@ -28,23 +30,31 @@ export class GatewayClient {
     const method = init?.method ?? 'GET';
     const reqOpts: Parameters<typeof request>[1] = { method, headers };
     if (init?.body !== undefined) reqOpts.body = JSON.stringify(init.body);
-    const res = await request(url, reqOpts);
-    const elapsed = Date.now() - start;
-    this.log.debug({ path, status: res.statusCode, elapsedMs: elapsed }, 'gateway.call');
+    // `op` is a closed enum (see GatewayOp) so the {op,status} label
+    // cartesian stays bounded; URL paths never become labels.
+    let status: number | 'error' = 'error';
+    try {
+      const res = await request(url, reqOpts);
+      status = res.statusCode;
+      const elapsed = Date.now() - start;
+      this.log.debug({ path, status: res.statusCode, elapsedMs: elapsed }, 'gateway.call');
 
-    if (res.statusCode >= 400) {
-      const text = await res.body.text();
-      throw new GatewayError(res.statusCode, text, path);
+      if (res.statusCode >= 400) {
+        const text = await res.body.text();
+        throw new GatewayError(res.statusCode, text, path);
+      }
+      return (await res.body.json()) as T;
+    } finally {
+      recordGatewayRequest(op, status, (Date.now() - start) / 1000);
     }
-    return (await res.body.json()) as T;
   }
 
   health() {
-    return this.json<unknown>('/api/v1/health');
+    return this.json<unknown>('health', '/api/v1/health');
   }
 
   sysConfig() {
-    return this.json<unknown>('/api/v1/sys/config');
+    return this.json<unknown>('sys_config', '/api/v1/sys/config');
   }
 
   // ---- Runtime overrides (admin-config) ---------------------------------
@@ -54,20 +64,22 @@ export class GatewayClient {
   // without a redeploy.
 
   adminConfig() {
-    return this.json<unknown>('/api/v1/admin/config');
+    return this.json<unknown>('admin_config', '/api/v1/admin/config');
   }
 
   patchAdminConfig(updates: Record<string, unknown>) {
-    return this.json<unknown>('/api/v1/admin/config', {
+    return this.json<unknown>('patch_admin_config', '/api/v1/admin/config', {
       method: 'PATCH',
       body: { updates },
     });
   }
 
   deleteAdminConfigOverride(key: string) {
-    return this.json<unknown>(`/api/v1/admin/config/overrides/${encodeURIComponent(key)}`, {
-      method: 'DELETE',
-    });
+    return this.json<unknown>(
+      'delete_admin_config_override',
+      `/api/v1/admin/config/overrides/${encodeURIComponent(key)}`,
+      { method: 'DELETE' },
+    );
   }
 
   listChargePoints(
@@ -79,15 +91,18 @@ export class GatewayClient {
     if (params.limit) qs.set('limit', String(params.limit));
     if (params.cursor) qs.set('cursor', params.cursor);
     const suffix = qs.toString() ? `?${qs}` : '';
-    return this.json<unknown>(`/api/v1/charge-points${suffix}`);
+    return this.json<unknown>('list_charge_points', `/api/v1/charge-points${suffix}`);
   }
 
   getChargePoint(cpId: string) {
-    return this.json<unknown>(`/api/v1/charge-points/${encodeURIComponent(cpId)}`);
+    return this.json<unknown>(
+      'get_charge_point',
+      `/api/v1/charge-points/${encodeURIComponent(cpId)}`,
+    );
   }
 
   listActiveTransactions() {
-    return this.json<unknown>(`/api/v1/transactions?active=true`);
+    return this.json<unknown>('list_active_transactions', `/api/v1/transactions?active=true`);
   }
 
   listChargePointTransactions(
@@ -100,6 +115,7 @@ export class GatewayClient {
     if (params.cursor) qs.set('cursor', params.cursor);
     const suffix = qs.toString() ? `?${qs}` : '';
     return this.json<unknown>(
+      'list_charge_point_transactions',
       `/api/v1/charge-points/${encodeURIComponent(cpId)}/transactions${suffix}`,
     );
   }
@@ -111,7 +127,10 @@ export class GatewayClient {
   // routes/sys-transactions.ts.
 
   getTransaction(txId: number) {
-    return this.json<unknown>(`/api/v1/transactions/${encodeURIComponent(String(txId))}`);
+    return this.json<unknown>(
+      'get_transaction',
+      `/api/v1/transactions/${encodeURIComponent(String(txId))}`,
+    );
   }
 
   listMeterValues(
@@ -131,6 +150,7 @@ export class GatewayClient {
     if (params.connector_id !== undefined) qs.set('connector_id', String(params.connector_id));
     if (params.limit !== undefined) qs.set('limit', String(params.limit));
     return this.json<unknown>(
+      'list_meter_values',
       `/api/v1/charge-points/${encodeURIComponent(cpId)}/meter-values?${qs.toString()}`,
     );
   }
@@ -140,51 +160,52 @@ export class GatewayClient {
   // `POST /api/v1/charge-points/{cp_id}/commands/{slug}` endpoints. The body
   // shapes are 1:1 with what the gateway expects; we don't translate.
 
-  private command(cpId: string, slug: string, body: Record<string, unknown>) {
+  private command(op: GatewayOp, cpId: string, slug: string, body: Record<string, unknown>) {
     return this.json<unknown>(
+      op,
       `/api/v1/charge-points/${encodeURIComponent(cpId)}/commands/${slug}`,
       { method: 'POST', body },
     );
   }
 
   remoteStart(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'remote-start', body);
+    return this.command('command_remote_start', cpId, 'remote-start', body);
   }
   remoteStop(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'remote-stop', body);
+    return this.command('command_remote_stop', cpId, 'remote-stop', body);
   }
   reset(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'reset', body);
+    return this.command('command_reset', cpId, 'reset', body);
   }
   triggerMessage(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'trigger-message', body);
+    return this.command('command_trigger_message', cpId, 'trigger-message', body);
   }
   unlockConnector(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'unlock-connector', body);
+    return this.command('command_unlock_connector', cpId, 'unlock-connector', body);
   }
   clearCache(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'clear-cache', body);
+    return this.command('command_clear_cache', cpId, 'clear-cache', body);
   }
   getConfiguration(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'get-configuration', body);
+    return this.command('command_get_configuration', cpId, 'get-configuration', body);
   }
   changeConfiguration(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'change-configuration', body);
+    return this.command('command_change_configuration', cpId, 'change-configuration', body);
   }
   reserveNow(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'reserve-now', body);
+    return this.command('command_reserve_now', cpId, 'reserve-now', body);
   }
   cancelReservation(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'cancel-reservation', body);
+    return this.command('command_cancel_reservation', cpId, 'cancel-reservation', body);
   }
   getDiagnostics(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'get-diagnostics', body);
+    return this.command('command_get_diagnostics', cpId, 'get-diagnostics', body);
   }
   getLog(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'get-log', body);
+    return this.command('command_get_log', cpId, 'get-log', body);
   }
   dataTransfer(cpId: string, body: Record<string, unknown>) {
-    return this.command(cpId, 'data-transfer', body);
+    return this.command('command_data_transfer', cpId, 'data-transfer', body);
   }
 }
 

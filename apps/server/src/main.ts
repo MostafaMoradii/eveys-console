@@ -42,6 +42,7 @@ import { GatewayClient } from './rest/gateway-client.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDiagnosticsRoutes } from './routes/diagnostics.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerMetricsRoute } from './routes/metrics.js';
 import { registerSysChargePointTransactionsRoute } from './routes/sys-charge-point-transactions.js';
 import { registerSysConfigRoute } from './routes/sys-config.js';
 import { registerSysGatewayAdminConfigRoute } from './routes/sys-gateway-admin-config.js';
@@ -102,6 +103,7 @@ async function main() {
 
   const startedAt = new Date();
   await registerHealthRoutes(app);
+  await registerMetricsRoute(app);
   await registerAuthRoutes(app, { pow, users });
   await registerSysStatusRoute(app, { broker, gateway, kafka, startedAt });
   await registerSysConfigRoute(app, { config });
