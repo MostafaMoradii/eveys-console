@@ -21,6 +21,10 @@ interface Props {
   tone?: 'default' | 'success' | 'warning' | 'danger';
   /** When set, the whole tile becomes a Link to this route. */
   to?: string;
+  /** Optional search-param object to attach to the link. Lets the
+   *  caller deep-link into a destination route's pre-filtered state
+   *  (e.g. the Faults tile lands on `/inspect/charge-points?faults=1`). */
+  search?: Record<string, unknown>;
   /** Test/inspection hook so SystemPage tests can grab the tile. */
   testId?: string;
 }
@@ -32,7 +36,7 @@ const TONE_CLASS: Record<NonNullable<Props['tone']>, string> = {
   danger: 'text-destructive',
 };
 
-export function MetricTile({ label, value, hint, tone = 'default', to, testId }: Props) {
+export function MetricTile({ label, value, hint, tone = 'default', to, search, testId }: Props) {
   const body = (
     <Card
       className={cn(
@@ -54,9 +58,20 @@ export function MetricTile({ label, value, hint, tone = 'default', to, testId }:
   );
 
   if (!to) return body;
+  // TanStack's Link is typed off the route tree. The MetricTile is a
+  // small primitive used across several destination routes; rather than
+  // bind it to a discriminated union of search shapes we cast through
+  // `any` here. The route's `validateSearch` still gates what the
+  // destination actually accepts.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const LinkAny = Link as any;
   return (
-    <Link to={to} className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <LinkAny
+      to={to}
+      {...(search ? { search } : {})}
+      className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       {body}
-    </Link>
+    </LinkAny>
   );
 }

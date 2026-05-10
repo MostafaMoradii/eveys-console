@@ -291,6 +291,20 @@ describe('SystemPage — headline metrics', () => {
     expect(within(tile).getByText('—')).toBeInTheDocument();
     expect(within(tile).getByText(/data not available/i)).toBeInTheDocument();
   });
+
+  it('faults tile links to the fleet view with the faults filter pre-engaged', async () => {
+    renderPage();
+    const tile = await screen.findByTestId('metric-faults');
+    const anchor = tile.closest('a');
+    expect(anchor).not.toBeNull();
+    expect(anchor?.getAttribute('href')).toBe('/inspect/charge-points');
+    // The router-Link mock spreads extra props as attributes on the
+    // anchor, so the `search={{ faults: true }}` prop lands as
+    // attribute "search" with its toString'd form. We assert presence
+    // rather than exact serialisation: TanStack handles the query-
+    // string encoding in production.
+    expect(anchor?.hasAttribute('search')).toBe(true);
+  });
 });
 
 describe('SystemPage — service status pills', () => {

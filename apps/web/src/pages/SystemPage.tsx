@@ -128,6 +128,7 @@ export function SystemPage() {
           }
           tone={faults.fault > 0 ? 'danger' : faults.advisory > 0 ? 'warning' : 'default'}
           to="/inspect/charge-points"
+          search={{ faults: true }}
         />
         <MetricTile
           testId="metric-energy"

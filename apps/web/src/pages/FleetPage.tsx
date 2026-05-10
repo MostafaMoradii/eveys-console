@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import {
   AlertTriangle,
   ChevronLeft,
@@ -84,7 +84,25 @@ export function FleetPage() {
   // Client-side filters — applied to the loaded page only.
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<(typeof STATUSES)[number]>('all');
-  const [faultsOnly, setFaultsOnly] = useState(false);
+
+  // `faultsOnly` mirrors the `?faults=1` search param so the
+  // SystemPage Faults tile can deep-link straight to a filtered view
+  // and the URL stays shareable. The toggle's onChange updates the
+  // URL; the URL is the source of truth on mount.
+  const navigate = useNavigate({ from: '/inspect/charge-points' });
+  const search$ = useSearch({ from: '/inspect/charge-points' }) as { faults?: boolean };
+  const faultsOnly = !!search$.faults;
+  const setFaultsOnly = (next: boolean) => {
+    void navigate({
+      search: (prev: Record<string, unknown>) => {
+        const out = { ...prev };
+        if (next) out.faults = true;
+        else delete out.faults;
+        return out;
+      },
+      replace: true,
+    });
+  };
 
   // Build subscription params. Re-subscribes when any of these change
   // (use-subscription stringifies params and uses that as a dep).
