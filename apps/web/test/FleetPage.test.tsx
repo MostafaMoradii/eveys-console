@@ -69,34 +69,71 @@ vi.mock('@/lib/ws-context', () => ({
 }));
 
 // Minimal router stub: <Link to="..." params={...}> renders <a> with
-// a stable testid + href. FleetPage only uses Link.
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({
-    to,
-    params,
-    children,
-    className,
-    title,
-  }: {
-    to: string;
-    params?: Record<string, unknown>;
-    children: React.ReactNode;
-    className?: string;
-    title?: string;
-  }) => {
-    let href = to;
-    if (params && typeof params === 'object') {
-      for (const [k, v] of Object.entries(params)) {
-        href = href.replace(`$${k}`, String(v));
+// a stable testid + href. `useSearch` returns a snapshot of a tiny
+// pub/sub store so navigate() updates trigger consumer re-renders
+// (real TanStack does this via its internal store; we mimic the
+// observable shape).
+const routerSearch: { faults?: boolean } = {};
+const navigateCalls: Array<Record<string, unknown>> = [];
+const searchListeners = new Set<() => void>();
+let searchSnapshot: { faults?: boolean } = {};
+function applySearchMutation(mutate: (current: { faults?: boolean }) => { faults?: boolean }) {
+  const next = mutate({ ...routerSearch });
+  for (const k of Object.keys(routerSearch)) delete routerSearch[k as keyof typeof routerSearch];
+  Object.assign(routerSearch, next);
+  searchSnapshot = { ...routerSearch };
+  for (const fn of searchListeners) fn();
+}
+
+vi.mock('@tanstack/react-router', async () => {
+  // We need useSyncExternalStore for the search-store mock. Pull it
+  // from React directly inside the factory so the mock is self-
+  // contained.
+  const { useSyncExternalStore } = await import('react');
+  return {
+    Link: ({
+      to,
+      params,
+      children,
+      className,
+      title,
+    }: {
+      to: string;
+      params?: Record<string, unknown>;
+      children: React.ReactNode;
+      className?: string;
+      title?: string;
+    }) => {
+      let href = to;
+      if (params && typeof params === 'object') {
+        for (const [k, v] of Object.entries(params)) {
+          href = href.replace(`$${k}`, String(v));
+        }
       }
-    }
-    return (
-      <a href={href} data-testid="router-link" className={className} title={title}>
-        {children}
-      </a>
-    );
-  },
-}));
+      return (
+        <a href={href} data-testid="router-link" className={className} title={title}>
+          {children}
+        </a>
+      );
+    },
+    useSearch: () =>
+      useSyncExternalStore(
+        (cb: () => void) => {
+          searchListeners.add(cb);
+          return () => searchListeners.delete(cb);
+        },
+        () => searchSnapshot,
+      ),
+    useNavigate: () => (opts: { search?: unknown; replace?: boolean }) => {
+      navigateCalls.push(opts as Record<string, unknown>);
+      if (typeof opts.search === 'function') {
+        applySearchMutation(opts.search as (current: { faults?: boolean }) => { faults?: boolean });
+      } else if (opts.search && typeof opts.search === 'object') {
+        applySearchMutation((cur) => ({ ...cur, ...(opts.search as Record<string, unknown>) }));
+      }
+    },
+  };
+});
 
 // ---- imports under test --------------------------------------------------
 
@@ -128,6 +165,10 @@ beforeEach(() => {
   subscriptionCalls.length = 0;
   nextSubResult = {};
   isPhone = false;
+  // Reset the URL/navigate stubs between tests.
+  for (const k of Object.keys(routerSearch)) delete routerSearch[k as keyof typeof routerSearch];
+  searchSnapshot = {};
+  navigateCalls.length = 0;
   // Each test gets a fresh localStorage for the view-mode pref.
   localStorage.clear();
 });
@@ -594,6 +635,70 @@ describe('FleetPage — links', () => {
     render(<FleetPage />);
     const link = screen.getByText('CP_TEST_ABC').closest('a')!;
     expect(link.getAttribute('href')).toBe('/inspect/charge-points/CP_TEST_ABC');
+  });
+});
+
+describe('FleetPage — ?faults=1 URL param', () => {
+  it('arrives with the Faults-only toggle pre-engaged when ?faults=1 is set', () => {
+    applySearchMutation(() => ({ faults: true }));
+    const rows: ChargePointSummary[] = [
+      baseRow('cp_a', {
+        last_status: 'Faulted',
+        connectors: [
+          {
+            connector_id: 1,
+            status: 'Faulted',
+            error_code: 'GroundFailure',
+            last_changed_at: null,
+          },
+        ],
+      }),
+      baseRow('cp_b'),
+    ];
+    nextSubResult = {
+      loading: false,
+      snapshot: { kind: 'charge-points', rows, next_cursor: null },
+      lastDelta: null,
+    };
+    render(<FleetPage />);
+    const toggle = screen.getByRole('button', { name: /faults only/i });
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    // Only the faulted row should be visible in the table.
+    expect(screen.queryByText('cp_a')).toBeTruthy();
+    expect(screen.queryByText('cp_b')).toBeFalsy();
+  });
+
+  it('toggling Faults-only off clears the ?faults search param', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    applySearchMutation(() => ({ faults: true }));
+    nextSubResult = {
+      loading: false,
+      snapshot: { kind: 'charge-points', rows: [baseRow('cp_a')], next_cursor: null },
+      lastDelta: null,
+    };
+    render(<FleetPage />);
+    const toggle = screen.getByRole('button', { name: /faults only/i });
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    await user.click(toggle);
+    expect(routerSearch.faults).toBeUndefined();
+    expect(navigateCalls.length).toBeGreaterThan(0);
+    expect(navigateCalls[navigateCalls.length - 1]?.replace).toBe(true);
+  });
+
+  it('clicking Faults-only when off sets ?faults=1', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const user = userEvent.setup();
+    nextSubResult = {
+      loading: false,
+      snapshot: { kind: 'charge-points', rows: [baseRow('cp_a')], next_cursor: null },
+      lastDelta: null,
+    };
+    render(<FleetPage />);
+    const toggle = screen.getByRole('button', { name: /faults only/i });
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    await user.click(toggle);
+    expect(routerSearch.faults).toBe(true);
   });
 });
 

@@ -21,10 +21,26 @@ const indexRoute = createRoute({
   component: SystemPage,
 });
 
+export interface InspectChargePointsSearch {
+  /** When true, the FleetPage loads with the "Faults only" toggle
+   *  pre-engaged. Used by the SystemPage's Faults metric tile so an
+   *  operator clicking it lands directly on the filtered view. */
+  faults?: boolean;
+}
+
 const inspectChargePointsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/inspect/charge-points',
   component: FleetPage,
+  validateSearch: (raw: Record<string, unknown>): InspectChargePointsSearch => {
+    const out: InspectChargePointsSearch = {};
+    // Accept truthy strings ("1", "true") and a real boolean so the
+    // route handles both navigation from a typed `<Link search={...}>`
+    // and pasted URLs.
+    const v = raw.faults;
+    if (v === true || v === '1' || v === 'true') out.faults = true;
+    return out;
+  },
 });
 
 const chargerDetailRoute = createRoute({
