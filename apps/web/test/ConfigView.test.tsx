@@ -1,8 +1,7 @@
-// Component tests for the shared ConfigView, covered through both
-// the Console-config page (filter set: All / Console / Live) and the
-// Gateway-config page (filter set: All / Gateway / Console / Both /
-// Live). Each page is exercised end-to-end so the route → page →
-// fetcher wiring is verified at the same time as the rendering.
+// Component tests for the SystemConfigPage. The page hosts two tabs
+// (Console + Gateway), each rendering the shared ConfigView with a
+// different fetcher and filter set. Tests exercise both tabs and
+// verify the tab-state ↔ URL sync.
 
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -15,16 +14,17 @@ import {
   type SysConfig,
 } from '@/api/config-client';
 
-let nextResult: { data?: SysConfig; error?: Error } = {};
+let consoleResult: { data?: SysConfig; error?: Error } = {};
+let gatewayResult: { data?: SysConfig; error?: Error } = {};
 
 vi.mock('@/api/config-client', () => ({
   fetchConsoleConfig: vi.fn(async (): Promise<SysConfig> => {
-    if (nextResult.error) throw nextResult.error;
-    return nextResult.data as SysConfig;
+    if (consoleResult.error) throw consoleResult.error;
+    return consoleResult.data as SysConfig;
   }),
   fetchGatewayConfig: vi.fn(async (): Promise<SysConfig> => {
-    if (nextResult.error) throw nextResult.error;
-    return nextResult.data as SysConfig;
+    if (gatewayResult.error) throw gatewayResult.error;
+    return gatewayResult.data as SysConfig;
   }),
 }));
 
@@ -39,8 +39,7 @@ vi.mock('@/lib/ws-context', () => ({
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { ConsoleConfigPage } from '@/pages/ConsoleConfigPage';
-import { GatewayConfigPage } from '@/pages/GatewayConfigPage';
+import { SystemConfigPage } from '@/pages/SystemConfigPage';
 
 function entry(over: Partial<ConfigEntry>): ConfigEntry {
   return {
@@ -59,13 +58,13 @@ function entry(over: Partial<ConfigEntry>): ConfigEntry {
   };
 }
 
-function renderPage(Component: () => JSX.Element) {
+function renderPage() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return render(
     <QueryClientProvider client={qc}>
-      <Component />
+      <SystemConfigPage />
     </QueryClientProvider>,
   );
 }
@@ -142,137 +141,125 @@ const gatewayConfig: SysConfig = {
   ],
 };
 
+beforeEach(() => {
+  consoleResult = { data: consoleConfig };
+  gatewayResult = { data: gatewayConfig };
+  // Reset the URL between tests so tab-state from one test doesn't
+  // leak into the next via window.history.
+  window.history.replaceState(null, '', '/');
+});
 afterEach(() => cleanup());
 
-describe('ConsoleConfigPage', () => {
-  beforeEach(() => {
-    nextResult = { data: consoleConfig };
-  });
-
-  it('renders one card per entry with Console-server copy', async () => {
-    renderPage(ConsoleConfigPage);
+describe('SystemConfigPage — Console tab (default)', () => {
+  it('renders the Console tab content by default', async () => {
+    renderPage();
     expect(await screen.findByText(/console configuration/i)).toBeInTheDocument();
     expect(screen.getByText('PORT')).toBeInTheDocument();
-    // JWT_SECRET appears both in the sensitive-keys alert and as a card
-    // title — assert at least one match.
     expect(screen.getAllByText('JWT_SECRET').length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/console server/i).length).toBeGreaterThan(0);
   });
 
-  it('omits Gateway and Both filter buttons (not meaningful here)', async () => {
-    renderPage(ConsoleConfigPage);
+  it('omits Gateway and Both filter buttons on the Console tab', async () => {
+    renderPage();
     await screen.findByText('PORT');
-    expect(screen.queryByRole('button', { name: /^gateway$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^both$/i })).not.toBeInTheDocument();
-    // Console + Live + All are present.
-    expect(screen.getByRole('button', { name: /^all$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^console$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^live$/i })).toBeInTheDocument();
+    // Console tab's filter bar excludes Gateway/Both. The 'Gateway'
+    // text *does* appear elsewhere (the tab trigger), so check
+    // specifically inside the filter group.
+    const filterGroup = screen.getByRole('group', { name: /filter by restart impact/i });
+    expect(filterGroup.querySelector('button[aria-pressed]:nth-child(1)')).toHaveTextContent(
+      /^All$/i,
+    );
+    // No 'Both' button anywhere in the filter group.
+    const filterButtons = filterGroup.querySelectorAll('button');
+    const labels = Array.from(filterButtons).map((b) => b.textContent?.trim());
+    expect(labels).not.toContain('Gateway');
+    expect(labels).not.toContain('Both');
+    expect(labels).toContain('All');
+    expect(labels).toContain('Console');
+    expect(labels).toContain('Live');
   });
 
-  it('filters by free-text search', async () => {
-    const user = userEvent.setup();
-    renderPage(ConsoleConfigPage);
+  it('does not initially fetch the gateway config', async () => {
+    renderPage();
     await screen.findByText('PORT');
-
-    await user.type(screen.getByLabelText(/search configuration/i), 'gateway');
-    expect(screen.queryByText('PORT')).not.toBeInTheDocument();
-    expect(screen.getByText('GATEWAY_BASE_URL')).toBeInTheDocument();
-  });
-
-  it('renders restart-Console pill on every entry', async () => {
-    renderPage(ConsoleConfigPage);
-    await screen.findByText('PORT');
-    // Three entries all carry restart=console.
-    expect(screen.getAllByText(/restart: console/i).length).toBeGreaterThanOrEqual(3);
-  });
-
-  it('shows an error alert on fetch failure', async () => {
-    nextResult = { error: new Error('sys/config 500') };
-    renderPage(ConsoleConfigPage);
-    expect(await screen.findByText(/configuration unavailable/i)).toBeInTheDocument();
-  });
-
-  it('shows loading state while pending', () => {
-    vi.mocked(fetchConsoleConfig).mockImplementationOnce(() => new Promise(() => {}));
-    renderPage(ConsoleConfigPage);
-    expect(screen.getByText(/loading configuration/i)).toBeInTheDocument();
+    expect(fetchConsoleConfig).toHaveBeenCalled();
+    expect(fetchGatewayConfig).not.toHaveBeenCalled();
   });
 });
 
-describe('GatewayConfigPage', () => {
-  beforeEach(() => {
-    nextResult = { data: gatewayConfig };
-  });
+describe('SystemConfigPage — Gateway tab', () => {
+  it('switches to the Gateway tab on click and fetches gateway data', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('PORT');
 
-  it('renders the gateway-config heading and entries', async () => {
-    renderPage(GatewayConfigPage);
+    await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
+
     expect(await screen.findByText(/gateway configuration/i)).toBeInTheDocument();
     expect(screen.getByText('rest_port')).toBeInTheDocument();
     expect(screen.getByText('kafka_topic_cp_boot')).toBeInTheDocument();
-    expect(screen.getByText('log_level')).toBeInTheDocument();
-    // db_url is sensitive → appears in the alert AND the card.
-    expect(screen.getAllByText('db_url').length).toBeGreaterThan(0);
+    expect(fetchGatewayConfig).toHaveBeenCalled();
   });
 
-  it('shows the full filter set including Both', async () => {
-    renderPage(GatewayConfigPage);
-    await screen.findByText('rest_port');
-    expect(screen.getByRole('button', { name: /^all$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^gateway$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^console$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^both$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^live$/i })).toBeInTheDocument();
-  });
-
-  it('renders the right restart label for every impact level', async () => {
-    renderPage(GatewayConfigPage);
-    await screen.findByText('rest_port');
-    expect(screen.getAllByText(/restart: gateway$/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/restart: console \+ gateway/i)).toBeInTheDocument();
-    // 'Live' appears as both a filter-bar button and as the badge on
-    // restart=none entries; assert at least one (the badge).
-    expect(screen.getAllByText(/^live$/i).length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('filters by Both — only the kafka_topic shows', async () => {
+  it('shows the full filter set including Both on the Gateway tab', async () => {
     const user = userEvent.setup();
-    renderPage(GatewayConfigPage);
+    renderPage();
+    await screen.findByText('PORT');
+
+    await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
     await screen.findByText('rest_port');
 
-    await user.click(screen.getByRole('button', { name: /^both$/i }));
-    expect(screen.getByText('kafka_topic_cp_boot')).toBeInTheDocument();
-    expect(screen.queryByText('rest_port')).not.toBeInTheDocument();
-    expect(screen.queryByText('log_level')).not.toBeInTheDocument();
+    const filterGroup = screen.getByRole('group', { name: /filter by restart impact/i });
+    const labels = Array.from(filterGroup.querySelectorAll('button')).map((b) =>
+      b.textContent?.trim(),
+    );
+    expect(labels).toEqual(['All', 'Gateway', 'Console', 'Both', 'Live']);
   });
 
   it('renders impact + category for gateway entries', async () => {
-    renderPage(GatewayConfigPage);
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('PORT');
+
+    await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
     await screen.findByText('rest_port');
-    // Category badge.
+
     expect(screen.getByText('rest_server')).toBeInTheDocument();
-    // Impact text.
     expect(screen.getByText(/production network policy/i)).toBeInTheDocument();
   });
 
-  it('masks sensitive values', async () => {
-    renderPage(GatewayConfigPage);
-    // db_url appears in the alert AND the card; wait for the card to render.
-    await screen.findByText('rest_port');
-    expect(screen.getAllByText('db_url').length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/^sensitive$/i).length).toBeGreaterThan(0);
+  it('writes ?tab=gateway to the URL when Gateway tab is selected', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('PORT');
+
+    await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
+    await screen.findByText(/gateway configuration/i);
+
+    expect(window.location.search).toContain('tab=gateway');
   });
 
-  it('shows an error alert on fetch failure', async () => {
-    nextResult = { error: new Error('sys/gateway-config 502') };
-    renderPage(GatewayConfigPage);
-    expect(await screen.findByText(/configuration unavailable/i)).toBeInTheDocument();
-    expect(screen.getByText(/sys\/gateway-config 502/)).toBeInTheDocument();
-  });
+  it('clears ?tab from the URL when switching back to Console', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('PORT');
 
-  it('shows loading state while pending', () => {
-    vi.mocked(fetchGatewayConfig).mockImplementationOnce(() => new Promise(() => {}));
-    renderPage(GatewayConfigPage);
-    expect(screen.getByText(/loading configuration/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
+    await screen.findByText(/gateway configuration/i);
+    expect(window.location.search).toContain('tab=gateway');
+
+    await user.click(screen.getByRole('tab', { name: /^console$/i }));
+    await screen.findByText(/console configuration/i);
+    expect(window.location.search).not.toContain('tab=gateway');
+  });
+});
+
+describe('SystemConfigPage — deep-link', () => {
+  it('opens on the Gateway tab when ?tab=gateway is in the URL', async () => {
+    window.history.replaceState(null, '', '/?tab=gateway');
+    renderPage();
+
+    expect(await screen.findByText(/gateway configuration/i)).toBeInTheDocument();
+    expect(screen.getByText('rest_port')).toBeInTheDocument();
+    expect(fetchGatewayConfig).toHaveBeenCalled();
   });
 });

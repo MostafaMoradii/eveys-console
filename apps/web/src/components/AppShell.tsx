@@ -48,7 +48,7 @@ export function ConsoleShell() {
                 <Menu className="h-4 w-4" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-64 p-0">
+            <SheetContent side="left" className="flex w-64 flex-col p-0">
               <SheetHeader className="border-b p-4">
                 <SheetTitle className="flex items-center gap-2 text-base">
                   <Bolt className="h-4 w-4 text-brand-orange" />
@@ -56,8 +56,9 @@ export function ConsoleShell() {
                 </SheetTitle>
                 <SheetDescription>System Console</SheetDescription>
               </SheetHeader>
-              <div className="p-2">
+              <div className="flex flex-1 flex-col p-2">
                 <NavContents path={path} />
+                <ConfigGearLink path={path} />
               </div>
             </SheetContent>
           </Sheet>
@@ -88,9 +89,11 @@ export function ConsoleShell() {
 
       <div className="flex flex-1">
         {/* Persistent sidebar — hidden below `lg`; the Sheet covers
-            navigation there. */}
-        <nav className="hidden w-56 border-r bg-background p-2 lg:block">
+            navigation there. flex-column so the gear sits at the
+            bottom via mt-auto. */}
+        <nav className="hidden w-56 flex-col border-r bg-background p-2 lg:flex">
           <NavContents path={path} />
+          <ConfigGearLink path={path} />
         </nav>
 
         <main className="flex-1 p-6">
@@ -149,18 +152,6 @@ function NavContents({ path }: { path: string }) {
           icon={<Activity className="h-4 w-4" />}
           active={path === '/'}
         />
-        <NavItem
-          to="/sys/console-config"
-          label="Console config"
-          icon={<Settings className="h-4 w-4" />}
-          active={path.startsWith('/sys/console-config')}
-        />
-        <NavItem
-          to="/sys/gateway-config"
-          label="Gateway config"
-          icon={<Settings className="h-4 w-4" />}
-          active={path.startsWith('/sys/gateway-config')}
-        />
       </NavSection>
 
       <NavSection title="Inspect">
@@ -211,5 +202,28 @@ function NavItem({ to, label, icon, active }: NavItemProps) {
       {icon}
       <span>{label}</span>
     </Link>
+  );
+}
+
+// Gear button anchored at the bottom of the sidebar (mt-auto pushes
+// it past the nav sections). Icon-only by design — the sidebar nav
+// stays focused on the operator's workflows; configuration is a
+// secondary surface.
+function ConfigGearLink({ path }: { path: string }) {
+  const active = path.startsWith('/sys/config');
+  return (
+    <div className="mt-auto pt-2">
+      <Link
+        to="/sys/config"
+        title="Configuration"
+        aria-label="Configuration"
+        className={cn(
+          'flex h-9 w-9 items-center justify-center rounded-md transition-colors',
+          active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/60',
+        )}
+      >
+        <Settings className="h-4 w-4" />
+      </Link>
+    </div>
   );
 }
