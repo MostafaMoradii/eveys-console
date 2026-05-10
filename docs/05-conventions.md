@@ -39,7 +39,7 @@ documented here for the cases when they aren't.
   framework demands it (e.g. Vite's HMR boundary).
 - **Test files**: colocated under `test/` per app/package, named
   `<unit>.test.ts` (or `.test.tsx` for components). No coverage
-  gate yet; ~283 tests today across the workspace — broker, auth
+  gate yet; ~310 tests today across the workspace — broker, auth
   module, config loader + meta, protocol envelope, live wire-shape
   fixtures, FleetPage and ConfigView (Console + Gateway) components,
   diagnostics receiver (store + routes + history panel),
@@ -48,7 +48,9 @@ documented here for the cases when they aren't.
   history (proxy route + history panel), per-charger statistics card
   (computeStats helper + tile rendering + window selector), OCPP 1.6
   conformance dictionary + page (profile grouping invariants, status
-  filter, profile chip toggle, search filter).
+  filter, profile chip toggle, search filter), and the SystemPage
+  active-alerts panel (computeAlerts derivation, AlertsPanel render,
+  SystemPage wiring).
   Component-test infra on
   the web side: vitest + jsdom + `@testing-library/{react,dom,
 user-event,jest-dom}`, with a small `test/setup.ts` that shims
