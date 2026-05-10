@@ -48,3 +48,85 @@ export async function fetchGatewayConfig(token: string): Promise<SysConfig> {
   if (!res.ok) throw new Error(`sys/gateway-config ${res.status}`);
   return (await res.json()) as SysConfig;
 }
+
+// ---- Gateway runtime overrides ------------------------------------------
+// Mirrors the gateway's `/api/v1/admin/config` surface, proxied through
+// the Console server so the browser never has to hold a gateway token.
+//
+// `allowlist` is the gateway's runtime-override allowlist (a map of
+// field-name → human description). Anything in here is safe to mutate at
+// runtime; everything else is read-only and requires a redeploy with a
+// new env var.
+//
+// `overrides` records the values currently set in the gateway's per-pod
+// override map. It is always a subset of `allowlist`. A key absent from
+// `overrides` means "reading the env value"; a key present means
+// "the value here is in effect, env value is the fallback after restart".
+
+export interface GatewayAdminConfig {
+  overrides: Record<string, unknown>;
+  allowlist: Record<string, string>;
+  scope: string;
+}
+
+export async function fetchGatewayAdminConfig(token: string): Promise<GatewayAdminConfig> {
+  const res = await fetch(`${BASE}/sys/gateway-admin-config`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`sys/gateway-admin-config ${res.status}`);
+  return (await res.json()) as GatewayAdminConfig;
+}
+
+// Sets one or more runtime overrides. Body shape mirrors the gateway:
+// `{updates: {field: value, ...}}`. We POST instead of PATCH on the
+// Console side to dodge a CORS preflight; the proxy translates to PATCH
+// upstream.
+export async function setGatewayAdminConfig(
+  token: string,
+  updates: Record<string, unknown>,
+): Promise<GatewayAdminConfig> {
+  const res = await fetch(`${BASE}/sys/gateway-admin-config`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ updates }),
+  });
+  if (!res.ok) {
+    let message = `sys/gateway-admin-config ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: { message?: string }; detail?: string };
+      if (body?.error?.message) message = body.error.message;
+      else if (body?.detail) message = body.detail;
+    } catch {
+      /* fall through to status-only message */
+    }
+    throw new Error(message);
+  }
+  return (await res.json()) as GatewayAdminConfig;
+}
+
+// Drops a specific override so the gateway falls back to its env value
+// for that key on the next read.
+export async function clearGatewayAdminOverride(
+  token: string,
+  key: string,
+): Promise<GatewayAdminConfig> {
+  const res = await fetch(`${BASE}/sys/gateway-admin-config/overrides/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    let message = `sys/gateway-admin-config/overrides ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: { message?: string }; detail?: string };
+      if (body?.error?.message) message = body.error.message;
+      else if (body?.detail) message = body.detail;
+    } catch {
+      /* fall through */
+    }
+    throw new Error(message);
+  }
+  return (await res.json()) as GatewayAdminConfig;
+}

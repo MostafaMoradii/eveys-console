@@ -1,20 +1,55 @@
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { AlertCircle, Eye, EyeOff, Loader2, Lock, Search, Settings } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
+import {
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Info,
+  Loader2,
+  Lock,
+  RotateCcw,
+  Save,
+  Search,
+  Settings,
+} from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
-import type { ConfigEntry, ConfigScope, RestartImpact, SysConfig } from '@/api/config-client';
+import {
+  clearGatewayAdminOverride,
+  fetchGatewayAdminConfig,
+  setGatewayAdminConfig,
+  type ConfigEntry,
+  type ConfigScope,
+  type GatewayAdminConfig,
+  type RestartImpact,
+  type SysConfig,
+} from '@/api/config-client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { useToast } from '@/components/ui/toaster';
 import { useConsoleClient } from '@/lib/ws-context';
 import { cn } from '@/lib/utils';
 
 // Shared rendering for the Console-config and Gateway-config pages.
 // The two pages differ in (1) data source — fetchConsoleConfig vs
 // fetchGatewayConfig — and (2) which restart-impact filter buttons make
-// sense to show. Everything else is identical.
+// sense to show. The Gateway tab additionally renders inline editors
+// for keys the gateway flags as runtime-mutable (the override allowlist
+// in `runtime_overrides.py`); everything else stays read-only with a
+// tooltip explaining why.
 
 export interface ConfigViewProps {
   /** What scope this view represents. Drives the page heading and the
@@ -40,6 +75,8 @@ const FILTER_LABELS: Record<RestartImpact | 'all', string> = {
   both: 'Both',
 };
 
+const LOG_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] as const;
+
 export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigViewProps) {
   const { token } = useConsoleClient();
   const [search, setSearch] = useState('');
@@ -51,6 +88,16 @@ export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigV
     queryKey: [queryKey],
     queryFn: () => fetcher(token!),
     enabled: !!token,
+  });
+
+  // Gateway-only: pull the runtime-override allowlist + current
+  // overrides. The Gateway tab needs both to render inline editors.
+  // The Console tab skips this query entirely (`enabled: false` when
+  // scope !== 'gateway'), so the network is identical to before.
+  const adminQ: UseQueryResult<GatewayAdminConfig> = useQuery({
+    queryKey: ['sys-gateway-admin-config'],
+    queryFn: () => fetchGatewayAdminConfig(token!),
+    enabled: scope === 'gateway' && !!token,
   });
 
   const entries = q.data?.entries ?? [];
@@ -99,11 +146,24 @@ export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigV
           {title}
         </h2>
         <p className="text-sm text-muted-foreground">
-          Read-only. Values were loaded by the {sourceCopy} at{' '}
+          Values were loaded by the {sourceCopy} at{' '}
           <span className="font-mono">{q.data.loaded_at}</span>. To change a key, edit the relevant
-          env var and restart the process indicated by its <em>restart</em> column.
+          env var and restart the process indicated by its <em>restart</em> column
+          {scope === 'gateway' ? ', or use the inline editor for runtime-mutable keys' : ''}.
         </p>
       </div>
+
+      {scope === 'gateway' ? (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>Runtime overrides are per-pod</AlertTitle>
+          <AlertDescription>
+            Inline edits write to the gateway's in-memory override map. They are not persisted: a
+            restart, redeploy, or rolling update reverts to the env value. Cluster-wide changes
+            still need an env-var update plus a gateway restart.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       {sensitiveKeys.length > 0 ? (
         <Alert>
@@ -163,7 +223,13 @@ export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigV
           No keys match the current filter.
         </p>
       ) : (
-        <GroupedEntries entries={filtered} revealed={revealed} />
+        <GroupedEntries
+          entries={filtered}
+          revealed={revealed}
+          scope={scope}
+          adminConfig={adminQ.data}
+          configQueryKey={queryKey}
+        />
       )}
     </div>
   );
@@ -173,7 +239,19 @@ export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigV
 // The grouping is purely visual; ordering preserves the order categories
 // first appear in the entry list (so the operator's familiar layout
 // from the upstream metadata is preserved instead of alphabetised).
-function GroupedEntries({ entries, revealed }: { entries: ConfigEntry[]; revealed: boolean }) {
+function GroupedEntries({
+  entries,
+  revealed,
+  scope,
+  adminConfig,
+  configQueryKey,
+}: {
+  entries: ConfigEntry[];
+  revealed: boolean;
+  scope: ConfigScope;
+  adminConfig: GatewayAdminConfig | undefined;
+  configQueryKey: string;
+}) {
   const groups: { category: string; entries: ConfigEntry[] }[] = [];
   const indexByCategory = new Map<string, number>();
   for (const entry of entries) {
@@ -200,7 +278,14 @@ function GroupedEntries({ entries, revealed }: { entries: ConfigEntry[]; reveale
           </h3>
           <div className="grid grid-cols-1 gap-3">
             {group.entries.map((entry) => (
-              <ConfigCard key={entry.key} entry={entry} revealed={revealed} />
+              <ConfigCard
+                key={entry.key}
+                entry={entry}
+                revealed={revealed}
+                scope={scope}
+                adminConfig={adminConfig}
+                configQueryKey={configQueryKey}
+              />
             ))}
           </div>
         </section>
@@ -244,13 +329,35 @@ function humanizeCategory(raw: string): string {
     .join(' ');
 }
 
-function ConfigCard({ entry, revealed }: { entry: ConfigEntry; revealed: boolean }) {
+function ConfigCard({
+  entry,
+  revealed,
+  scope,
+  adminConfig,
+  configQueryKey,
+}: {
+  entry: ConfigEntry;
+  revealed: boolean;
+  scope: ConfigScope;
+  adminConfig: GatewayAdminConfig | undefined;
+  configQueryKey: string;
+}) {
   const display =
     entry.sensitive && entry.value
       ? revealed
         ? entry.value
         : '•'.repeat(8)
       : entry.value || '<empty>';
+
+  const allowlist = adminConfig?.allowlist;
+  const isAllowlisted =
+    scope === 'gateway' &&
+    !!allowlist &&
+    Object.prototype.hasOwnProperty.call(allowlist, entry.key);
+  const allowlistDescription = isAllowlisted ? allowlist![entry.key] : undefined;
+  const overrides = adminConfig?.overrides;
+  const hasOverride =
+    isAllowlisted && !!overrides && Object.prototype.hasOwnProperty.call(overrides, entry.key);
 
   return (
     <Card>
@@ -260,6 +367,11 @@ function ConfigCard({ entry, revealed }: { entry: ConfigEntry; revealed: boolean
           <div className="flex flex-wrap items-center gap-1.5">
             <SourcePill source={entry.source} />
             <RestartPill restart={entry.restart} />
+            {hasOverride ? (
+              <Badge variant="warning" className="text-[10px]">
+                override
+              </Badge>
+            ) : null}
             {entry.sensitive ? <Badge variant="destructive">sensitive</Badge> : null}
             {!entry.mutable ? <Badge variant="secondary">read-only</Badge> : null}
           </div>
@@ -294,8 +406,397 @@ function ConfigCard({ entry, revealed }: { entry: ConfigEntry; revealed: boolean
             <span className="text-xs text-muted-foreground">{entry.range}</span>
           </KV>
         </div>
+
+        {scope === 'gateway' ? (
+          isAllowlisted ? (
+            <InlineEditor
+              entry={entry}
+              description={allowlistDescription ?? entry.description}
+              hasOverride={hasOverride}
+              configQueryKey={configQueryKey}
+            />
+          ) : (
+            <ReadOnlyTooltip />
+          )
+        ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+// Lock-with-tooltip block shown next to read-only gateway keys. The
+// tooltip explains the operator's recourse without sending them on a
+// hunt for the runtime_overrides.py file.
+function ReadOnlyTooltip() {
+  return (
+    <div className="flex items-center gap-2 pt-1">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled
+        aria-label="Not runtime-editable"
+        title="Not runtime-editable. To change this key the gateway team must add it to the override allowlist (runtime_overrides.py)."
+        className="cursor-not-allowed"
+      >
+        <Lock className="mr-1 h-3 w-3" /> Read-only
+      </Button>
+      <span className="text-xs text-muted-foreground">
+        Not runtime-editable. To change this key the gateway team must add it to the override
+        allowlist.
+      </span>
+    </div>
+  );
+}
+
+// Per-key inline editor. Three shapes:
+//   - boolean → toggle button gated by an AlertDialog confirmation
+//   - log_level → enum select with explicit Save
+//   - URL / string → text input with HTML5 url validation + Save
+// A "Reset to env" button appears whenever the key has an active
+// override, and fires the DELETE endpoint.
+function InlineEditor({
+  entry,
+  description,
+  hasOverride,
+  configQueryKey,
+}: {
+  entry: ConfigEntry;
+  description: string;
+  hasOverride: boolean;
+  configQueryKey: string;
+}) {
+  const editorKind = inferEditorKind(entry);
+  if (editorKind === 'bool') {
+    return (
+      <BoolEditor
+        entry={entry}
+        description={description}
+        hasOverride={hasOverride}
+        configQueryKey={configQueryKey}
+      />
+    );
+  }
+  if (editorKind === 'enum') {
+    return (
+      <EnumEditor
+        entry={entry}
+        options={LOG_LEVELS as unknown as string[]}
+        hasOverride={hasOverride}
+        configQueryKey={configQueryKey}
+      />
+    );
+  }
+  return (
+    <UrlEditor
+      entry={entry}
+      hasOverride={hasOverride}
+      configQueryKey={configQueryKey}
+      isUrl={editorKind === 'url'}
+    />
+  );
+}
+
+type EditorKind = 'bool' | 'enum' | 'url' | 'text';
+
+function inferEditorKind(entry: ConfigEntry): EditorKind {
+  if (entry.key === 'log_level') return 'enum';
+  if (entry.key.startsWith('webhook_enable_')) return 'bool';
+  if (entry.key === 'ws_rate_limit_enabled') return 'bool';
+  if (entry.key === 'backend_authorize_cache_enabled') return 'bool';
+  if (entry.key === 'webhook_base_url') return 'url';
+  if (entry.key.startsWith('webhook_url_')) return 'url';
+  // Heuristic fallback for unknown keys based on the rendered value.
+  const value = entry.value.toLowerCase();
+  if (value === 'true' || value === 'false') return 'bool';
+  if (value.startsWith('http://') || value.startsWith('https://')) return 'url';
+  return 'text';
+}
+
+// Common refetch-after-mutate side-effect. We have to invalidate both
+// the per-tab config (so the rendered value updates) and the
+// admin-config (so the override badge / reset button reflect truth).
+function useRefetchConfig(configQueryKey: string) {
+  const qc = useQueryClient();
+  return () => {
+    void qc.invalidateQueries({ queryKey: [configQueryKey] });
+    void qc.invalidateQueries({ queryKey: ['sys-gateway-admin-config'] });
+  };
+}
+
+function useApplyOverride(configQueryKey: string) {
+  const { token } = useConsoleClient();
+  const { toast } = useToast();
+  const refetch = useRefetchConfig(configQueryKey);
+
+  return useMutation({
+    mutationFn: ({ key, value }: { key: string; value: unknown }) =>
+      setGatewayAdminConfig(token!, { [key]: value }),
+    onSuccess: (_data, vars) => {
+      toast({
+        title: 'Override applied',
+        description: `Set ${vars.key} to ${formatValue(vars.value)} (per-pod). Restart reverts to env.`,
+      });
+      refetch();
+    },
+    onError: (err: unknown, vars) => {
+      toast({
+        variant: 'destructive',
+        title: `Couldn't update ${vars.key}`,
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
+    },
+  });
+}
+
+function useClearOverride(configQueryKey: string) {
+  const { token } = useConsoleClient();
+  const { toast } = useToast();
+  const refetch = useRefetchConfig(configQueryKey);
+
+  return useMutation({
+    mutationFn: ({ key }: { key: string }) => clearGatewayAdminOverride(token!, key),
+    onSuccess: (_data, vars) => {
+      toast({
+        title: 'Override cleared',
+        description: `${vars.key} reverted to env value.`,
+      });
+      refetch();
+    },
+    onError: (err: unknown, vars) => {
+      toast({
+        variant: 'destructive',
+        title: `Couldn't reset ${vars.key}`,
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
+    },
+  });
+}
+
+function formatValue(v: unknown): string {
+  if (typeof v === 'string') return v.length === 0 ? '<empty>' : v;
+  return JSON.stringify(v);
+}
+
+function BoolEditor({
+  entry,
+  description,
+  hasOverride,
+  configQueryKey,
+}: {
+  entry: ConfigEntry;
+  description: string;
+  hasOverride: boolean;
+  configQueryKey: string;
+}) {
+  const current = entry.value.toLowerCase() === 'true';
+  const apply = useApplyOverride(configQueryKey);
+  const reset = useClearOverride(configQueryKey);
+  const [pendingValue, setPendingValue] = useState<boolean | null>(null);
+
+  const open = pendingValue !== null;
+  const target = pendingValue ?? !current;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 pt-1">
+      <Button
+        type="button"
+        variant={current ? 'default' : 'outline'}
+        size="sm"
+        aria-pressed={current}
+        aria-label={`Toggle ${entry.key}`}
+        disabled={apply.isPending || reset.isPending}
+        onClick={() => setPendingValue(!current)}
+      >
+        {current ? 'Enabled' : 'Disabled'}
+      </Button>
+      <span className="text-xs text-muted-foreground">
+        Click to set to <span className="font-mono">{(!current).toString()}</span>
+      </span>
+      {hasOverride ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => reset.mutate({ key: entry.key })}
+          disabled={reset.isPending}
+          aria-label={`Reset ${entry.key} to env`}
+        >
+          {reset.isPending ? (
+            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+          ) : (
+            <RotateCcw className="mr-1 h-3 w-3" />
+          )}
+          Reset to env
+        </Button>
+      ) : null}
+
+      <AlertDialog open={open} onOpenChange={(o) => !o && setPendingValue(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Set <span className="font-mono">{entry.key}</span> to{' '}
+              <span className="font-mono">{target.toString()}</span>?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="block">
+                This change is per-pod and not persisted. A restart reverts to the env value (
+                <span className="font-mono">{entry.default || '<unset>'}</span>).
+              </span>
+              <span className="mt-2 block">
+                <span className="font-semibold">Affects:</span> {description}
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingValue(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                apply.mutate({ key: entry.key, value: target });
+                setPendingValue(null);
+              }}
+            >
+              Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function EnumEditor({
+  entry,
+  options,
+  hasOverride,
+  configQueryKey,
+}: {
+  entry: ConfigEntry;
+  options: string[];
+  hasOverride: boolean;
+  configQueryKey: string;
+}) {
+  const [value, setValue] = useState(entry.value);
+  useEffect(() => {
+    setValue(entry.value);
+  }, [entry.value]);
+  const apply = useApplyOverride(configQueryKey);
+  const reset = useClearOverride(configQueryKey);
+  const dirty = value !== entry.value;
+
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    apply.mutate({ key: entry.key, value });
+  };
+
+  return (
+    <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-2 pt-1">
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="font-semibold uppercase tracking-wider text-muted-foreground">Edit</span>
+        <Select
+          aria-label={`Edit ${entry.key}`}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        >
+          {options.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <Button type="submit" size="sm" disabled={!dirty || apply.isPending}>
+        {apply.isPending ? (
+          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+        ) : (
+          <Save className="mr-1 h-3 w-3" />
+        )}
+        Save
+      </Button>
+      {hasOverride ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => reset.mutate({ key: entry.key })}
+          disabled={reset.isPending}
+          aria-label={`Reset ${entry.key} to env`}
+        >
+          {reset.isPending ? (
+            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+          ) : (
+            <RotateCcw className="mr-1 h-3 w-3" />
+          )}
+          Reset to env
+        </Button>
+      ) : null}
+    </form>
+  );
+}
+
+function UrlEditor({
+  entry,
+  hasOverride,
+  configQueryKey,
+  isUrl,
+}: {
+  entry: ConfigEntry;
+  hasOverride: boolean;
+  configQueryKey: string;
+  isUrl: boolean;
+}) {
+  const [value, setValue] = useState(entry.value);
+  useEffect(() => {
+    setValue(entry.value);
+  }, [entry.value]);
+  const apply = useApplyOverride(configQueryKey);
+  const reset = useClearOverride(configQueryKey);
+  const dirty = value !== entry.value;
+
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    apply.mutate({ key: entry.key, value });
+  };
+
+  return (
+    <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-2 pt-1">
+      <label className="flex min-w-[16rem] flex-1 flex-col gap-1 text-xs">
+        <span className="font-semibold uppercase tracking-wider text-muted-foreground">Edit</span>
+        <Input
+          type={isUrl ? 'url' : 'text'}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          aria-label={`Edit ${entry.key}`}
+          placeholder={isUrl ? 'https://…' : ''}
+          className="font-mono"
+        />
+      </label>
+      <Button type="submit" size="sm" disabled={!dirty || apply.isPending}>
+        {apply.isPending ? (
+          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+        ) : (
+          <Save className="mr-1 h-3 w-3" />
+        )}
+        Save
+      </Button>
+      {hasOverride ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => reset.mutate({ key: entry.key })}
+          disabled={reset.isPending}
+          aria-label={`Reset ${entry.key} to env`}
+        >
+          {reset.isPending ? (
+            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+          ) : (
+            <RotateCcw className="mr-1 h-3 w-3" />
+          )}
+          Reset to env
+        </Button>
+      ) : null}
+    </form>
   );
 }
 

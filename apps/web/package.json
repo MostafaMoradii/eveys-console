@@ -15,6 +15,7 @@
   "dependencies": {
     "@eveys-console/api-types": "workspace:*",
     "@eveys-console/protocol": "workspace:*",
+    "@radix-ui/react-alert-dialog": "1.1.4",
     "@radix-ui/react-dialog": "1.1.4",
     "@radix-ui/react-slot": "1.1.1",
     "@radix-ui/react-tabs": "1.1",
