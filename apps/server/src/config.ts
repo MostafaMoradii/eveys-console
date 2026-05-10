@@ -62,6 +62,22 @@ const schema = z.object({
   WS_MAX_SUBSCRIPTIONS_PER_CONN: z.coerce.number().int().positive().default(50),
   WS_PING_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
   WS_IDLE_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+
+  // Diagnostics upload receiver. The Console mints a per-command upload
+  // URL the operator hands to the charger via GetDiagnostics / GetLog;
+  // the charger PUTs the resulting log file back here. v1 is single-pod,
+  // dev-only reachability — production ingress is a follow-up.
+  DIAGNOSTICS_DATA_DIR: z.string().default('./data'),
+  DIAGNOSTICS_UPLOAD_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+  DIAGNOSTICS_MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50 * 1024 * 1024),
+  /** Optional. When unset, the server fabricates `http://${HOST}:${PORT}`
+   *  at runtime — fine for laptop dev. Set this to the externally-reachable
+   *  base URL when running behind a reverse proxy. */
+  CONSOLE_PUBLIC_BASE_URL: z.string().optional(),
 });
 
 export type Config = z.infer<typeof schema>;

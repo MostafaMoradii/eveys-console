@@ -128,12 +128,39 @@ Wire payloads from Kafka are protobuf-encoded `EventEnvelope`s (the
 gateway's own schema, vendored at `apps/server/proto/events/v1/`).
 The decoder lives in `apps/server/src/kafka/event-decoder.ts`.
 
+## Diagnostics uploads
+
+OCPP `GetDiagnostics` and `GetLog` ask the charger to PUT its log file to a
+URL the operator supplies. Today the operator can either type any URL
+(legacy path; kept) or have the Console mint a one-shot URL bound to the
+command. When the latter is checked in the GetDiagnostics / GetLog form,
+the form first calls `POST /sys/diagnostics/issue` to mint a 32-byte token
+embedded in `…/uploads/diag/<token>`, then sends the OCPP command with that
+URL. The charger PUTs (or POSTs) the file back; the Console writes it to
+`data/uploads/<cp_id>/<request_id>` and records token, timestamps, byte
+count and SHA-256 in a SQLite metadata table at `data/console.sqlite`.
+
+The artefact appears under the device page's **Diagnostics history**
+card within one 5-second poll. From there, downloads stream back through
+the Console; delete drops the row and the file.
+
+Token rules: 32 random bytes (64 hex chars), one-shot, default TTL 1 hour
+(`DIAGNOSTICS_UPLOAD_TTL_SECONDS`). Pending tokens past their `expires_at`
+are rolled to `expired` lazily on every issue and upload — no cron needed.
+Body cap defaults to 50 MB (`DIAGNOSTICS_MAX_UPLOAD_BYTES`); enforced
+per-route, so other routes are unaffected.
+
+Reachability is dev-only today: chargers reach the Console via the same
+host:port the operator's browser does, so this works on a laptop or
+inside a docker-compose network. Production ingress (TLS, public DNS,
+multi-pod fan-in, object storage) is a separate iteration.
+
 ## Build, test, ship
 
 ```bash
 pnpm format        # prettier
 pnpm typecheck     # tsc --noEmit across all packages
-pnpm test          # vitest, all packages (~151 tests)
+pnpm test          # vitest, all packages (~197 tests)
 pnpm build         # tsc + vite build, both apps
 ```
 

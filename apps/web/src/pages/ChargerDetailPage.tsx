@@ -14,6 +14,7 @@ import { useState } from 'react';
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
 import { CommandsDrawer } from '@/components/CommandsDrawer';
+import { DiagnosticsHistory } from '@/components/DiagnosticsHistory';
 import { canRemoteStart, canRemoteStop, canReset } from '@/lib/charger-state';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -104,6 +105,8 @@ export function ChargerDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      <DiagnosticsHistory cpId={cp.cp_id} />
     </div>
   );
 }

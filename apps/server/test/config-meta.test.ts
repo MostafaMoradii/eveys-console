@@ -20,8 +20,13 @@ describe('describeConfig', () => {
     expect(keys).toContain('PORT');
     expect(keys).toContain('JWT_SECRET');
     expect(keys).toContain('KAFKA_BROKERS');
-    // Sanity-check that all 26 keys we have today are present.
-    expect(entries.length).toBe(Object.keys(cfg).length);
+    expect(keys).toContain('DIAGNOSTICS_DATA_DIR');
+    // Every metadata entry should be backed by a real schema key. The
+    // reverse — every schema key has a metadata entry — is enforced at
+    // typecheck time by the `Record<keyof Config, KeyMeta>` constraint
+    // in config-meta.ts. Use >= here because zod `optional()` keys may
+    // be absent from the parsed Config when unset (CONSOLE_PUBLIC_BASE_URL).
+    expect(entries.length).toBeGreaterThanOrEqual(Object.keys(cfg).length);
   });
 
   it('masks sensitive values when set', () => {

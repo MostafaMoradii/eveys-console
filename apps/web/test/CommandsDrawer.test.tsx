@@ -25,6 +25,11 @@ vi.mock('@/components/ui/toaster', async (orig) => {
   return { ...actual, useToast: () => ({ toast, dismiss: vi.fn(), toasts: [] }) };
 });
 
+const issueDiagnostics = vi.fn();
+vi.mock('@/api/diagnostics-client', () => ({
+  issueDiagnostics: (...args: unknown[]) => issueDiagnostics(...args),
+}));
+
 import { Button } from '@/components/ui/button';
 import { CommandsDrawer } from '@/components/CommandsDrawer';
 
@@ -32,6 +37,14 @@ beforeEach(() => {
   rpc.mockReset();
   rpc.mockResolvedValue({ status: 'Accepted' });
   toast.mockReset();
+  issueDiagnostics.mockReset();
+  issueDiagnostics.mockResolvedValue({
+    url: 'http://test/uploads/diag/abc',
+    token: 'a'.repeat(64),
+    request_id: 7,
+    command: 'GetDiagnostics',
+    expires_at: new Date(Date.now() + 3600_000).toISOString(),
+  });
 });
 afterEach(() => cleanup());
 
@@ -152,9 +165,12 @@ describe('CommandsDrawer', () => {
     });
   });
 
-  it('GetLog requires log_type + request_id + location', async () => {
+  it('GetLog requires log_type + request_id + location when auto-issue is OFF', async () => {
     const user = await openDrawer();
     const card = screen.getByText('GetLog').closest('form')!;
+    // Untick the auto-issue checkbox to exercise the legacy path.
+    const checkbox = within(card).getByLabelText(/Generate one-time upload URL/i);
+    await user.click(checkbox);
     // Default log_type = SecurityLog; missing request_id & location → no RPC.
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
     expect(rpc).not.toHaveBeenCalled();
@@ -171,6 +187,90 @@ describe('CommandsDrawer', () => {
       request_id: 42,
       location: 'https://logs/incoming',
     });
+    // The diagnostics-client issuer should not have been hit on this path.
+    expect(issueDiagnostics).not.toHaveBeenCalled();
+  });
+
+  it('GetDiagnostics with auto-issue ON mints a URL via /sys/diagnostics/issue then sends OCPP', async () => {
+    const user = await openDrawer();
+    const card = screen.getByText('GetDiagnostics').closest('form')!;
+    // The checkbox is checked by default; the location field is read-only.
+    const cb = within(card).getByLabelText(/Generate one-time upload URL/i) as HTMLInputElement;
+    expect(cb.checked).toBe(true);
+
+    await user.click(within(card).getByRole('button', { name: /^Send$/i }));
+
+    // The drawer calls the client wrapper which forwards a 4th arg
+    // (the optional explicit request_id) — undefined here for
+    // GetDiagnostics. Match that arity exactly.
+    expect(issueDiagnostics).toHaveBeenCalledWith(
+      'test-token',
+      'cp_test',
+      'GetDiagnostics',
+      undefined,
+    );
+    expect(rpc).toHaveBeenCalledWith('get-diagnostics', {
+      cp_id: 'cp_test',
+      location: 'http://test/uploads/diag/abc',
+    });
+  });
+
+  it('GetDiagnostics with auto-issue OFF preserves the legacy operator-typed URL path', async () => {
+    const user = await openDrawer();
+    const card = screen.getByText('GetDiagnostics').closest('form')!;
+    const cb = within(card).getByLabelText(/Generate one-time upload URL/i);
+    await user.click(cb); // uncheck
+
+    const url = within(card).getByPlaceholderText(/logs.example/);
+    await user.type(url, 'https://customer/upload');
+    await user.click(within(card).getByRole('button', { name: /^Send$/i }));
+
+    expect(issueDiagnostics).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith('get-diagnostics', {
+      cp_id: 'cp_test',
+      location: 'https://customer/upload',
+    });
+  });
+
+  it('GetLog with auto-issue ON injects the issued URL and request_id into the OCPP payload', async () => {
+    issueDiagnostics.mockResolvedValueOnce({
+      url: 'http://test/uploads/diag/zzz',
+      token: 'b'.repeat(64),
+      request_id: 99,
+      command: 'GetLog',
+      expires_at: new Date(Date.now() + 3600_000).toISOString(),
+    });
+    const user = await openDrawer();
+    const card = screen.getByText('GetLog').closest('form')!;
+    // Checkbox is checked by default; request_id and location are
+    // optional / read-only.
+    await user.click(within(card).getByRole('button', { name: /^Send$/i }));
+
+    expect(issueDiagnostics).toHaveBeenCalledWith('test-token', 'cp_test', 'GetLog', undefined);
+    expect(rpc).toHaveBeenCalledWith('get-log', {
+      cp_id: 'cp_test',
+      log_type: 'SecurityLog',
+      request_id: 99,
+      location: 'http://test/uploads/diag/zzz',
+    });
+  });
+
+  it('GetDiagnostics surfaces an issue failure via toast and skips the OCPP send', async () => {
+    issueDiagnostics.mockRejectedValueOnce(new Error('issue down'));
+    const user = await openDrawer();
+    const card = screen.getByText('GetDiagnostics').closest('form')!;
+    await user.click(within(card).getByRole('button', { name: /^Send$/i }));
+
+    expect(rpc).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variant: 'destructive',
+          title: 'GetDiagnostics',
+          description: expect.stringMatching(/issue down/),
+        }),
+      ),
+    );
   });
 
   it('shows a destructive toast when the RPC rejects', async () => {

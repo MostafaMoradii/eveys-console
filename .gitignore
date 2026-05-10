@@ -40,3 +40,8 @@ coverage/
 apps/web/dist/
 apps/server/dist/
 packages/api-types/src/generated/
+
+# Diagnostics receiver runtime state — SQLite metadata DB + uploaded
+# artefact bytes. Per-pod, dev-only today; never check it into git.
+data/
+apps/server/data/
