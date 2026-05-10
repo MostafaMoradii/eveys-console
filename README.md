@@ -128,6 +128,15 @@ Wire payloads from Kafka are protobuf-encoded `EventEnvelope`s (the
 gateway's own schema, vendored at `apps/server/proto/events/v1/`).
 The decoder lives in `apps/server/src/kafka/event-decoder.ts`.
 
+Per-transaction detail (`/inspect/transactions/$txId`) is REST-polled
+rather than WS-subscribed: the WS broker only carries the active-tx
+list query, and an operator opening one session detail isn't watching
+it for hours. The page calls the Console's `/sys/transactions/:txId`
+and `/sys/charge-points/:cpId/meter-values` proxies (server-side
+forwarders to the gateway), then renders kW-per-phase and cumulative
+kWh charts using Recharts. Open sessions refetch every 5 s; closed
+sessions render a fixed window.
+
 ## Diagnostics uploads
 
 OCPP `GetDiagnostics` and `GetLog` ask the charger to PUT its log file to a
@@ -160,7 +169,7 @@ multi-pod fan-in, object storage) is a separate iteration.
 ```bash
 pnpm format        # prettier
 pnpm typecheck     # tsc --noEmit across all packages
-pnpm test          # vitest, all packages (~197 tests)
+pnpm test          # vitest, all packages (~222 tests)
 pnpm build         # tsc + vite build, both apps
 ```
 

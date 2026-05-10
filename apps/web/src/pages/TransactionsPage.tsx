@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 
 import type { TransactionSummary } from '@eveys-console/protocol';
@@ -68,7 +69,15 @@ function TransactionsTable({ rows }: { rows: TransactionSummary[] }) {
         <TableBody>
           {rows.map((r) => (
             <TableRow key={r.transaction_id}>
-              <TableCell className="font-mono">{r.transaction_id}</TableCell>
+              <TableCell className="font-mono">
+                <Link
+                  to="/inspect/transactions/$txId"
+                  params={{ txId: String(r.transaction_id) } as never}
+                  className="underline-offset-2 hover:underline"
+                >
+                  {r.transaction_id}
+                </Link>
+              </TableCell>
               <TableCell className="font-mono text-xs">{r.cp_id}</TableCell>
               <TableCell className="font-mono text-xs">{r.id_tag}</TableCell>
               <TableCell className="text-xs text-muted-foreground">
@@ -93,9 +102,14 @@ function TransactionsCards({ rows }: { rows: TransactionSummary[] }) {
       {rows.map((r) => (
         <li key={r.transaction_id} className="space-y-1.5 px-4 py-3">
           <div className="flex items-center justify-between gap-2">
-            <Badge variant="secondary" className="font-mono">
-              tx {r.transaction_id}
-            </Badge>
+            <Link
+              to="/inspect/transactions/$txId"
+              params={{ txId: String(r.transaction_id) } as never}
+            >
+              <Badge variant="secondary" className="font-mono">
+                tx {r.transaction_id}
+              </Badge>
+            </Link>
             <span className="truncate font-mono text-xs text-foreground/80" title={r.cp_id}>
               {r.cp_id}
             </span>

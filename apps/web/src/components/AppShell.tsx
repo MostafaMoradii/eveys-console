@@ -167,7 +167,7 @@ function NavContents({ path }: { path: string }) {
           to="/inspect/transactions"
           label="Transactions"
           icon={<Receipt className="h-4 w-4" />}
-          active={path === '/inspect/transactions'}
+          active={path.startsWith('/inspect/transactions')}
         />
       </NavSection>
     </>
