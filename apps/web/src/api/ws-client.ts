@@ -19,10 +19,19 @@ export interface ConsoleClientOpts {
   url: string;
   token: string;
   onStatus?: (status: ConnectionStatus) => void;
+  /** Fired exactly once when the server closes the connection with the
+   *  custom 4401 code (the WS route's `unauthenticated` reason). The
+   *  AppShell uses this to clear the stored token so the user lands on
+   *  the login page instead of a silent reconnect loop. */
+  onAuthRejected?: () => void;
   log?: (msg: string, ctx?: Record<string, unknown>) => void;
 }
 
 export type ConnectionStatus = 'connecting' | 'open' | 'closed';
+
+/** Server-side close code emitted when JWT verification fails on
+ *  handshake. Defined in `apps/server/src/routes/ws.ts`. */
+export const WS_AUTH_REJECTED_CODE = 4401;
 
 export type SubscriptionHandlers = {
   onSnapshot: (snapshot: SnapshotForQuery, cursor: string) => void;
@@ -184,6 +193,13 @@ export class ConsoleClient {
       this.setStatus('closed');
       this.opts.log?.('ws.close', { code: ev.code, reason: ev.reason });
       this.failPendingRpcsOnDisconnect();
+      // 4401 = server rejected the JWT. Reconnecting with the same
+      // token is pointless — let the app clear it and bounce to login.
+      if (ev.code === WS_AUTH_REJECTED_CODE) {
+        this.explicitlyClosed = true;
+        this.opts.onAuthRejected?.();
+        return;
+      }
       if (!this.explicitlyClosed) this.scheduleReconnect();
     };
 
