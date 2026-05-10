@@ -1,5 +1,15 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
-import { Activity, Bolt, LogOut, Menu, Plug, Receipt, Settings, Sparkles } from 'lucide-react';
+import {
+  Activity,
+  Bolt,
+  BookOpen,
+  LogOut,
+  Menu,
+  Plug,
+  Receipt,
+  Settings,
+  Sparkles,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -218,20 +228,38 @@ function NavItem({ to, label, icon, active }: NavItemProps) {
 const RELEASES_URL = 'https://github.com/MostafaMoradii/eveys-console/releases';
 
 function SidebarFooter({ path }: { path: string }) {
-  const active = path.startsWith('/sys/config');
+  const configActive = path.startsWith('/sys/config');
+  const conformanceActive = path.startsWith('/sys/ocpp-conformance');
   return (
     <div className="mt-auto flex items-center justify-between gap-2 border-t pt-2">
-      <Link
-        to="/sys/config"
-        title="Configuration"
-        aria-label="Configuration"
-        className={cn(
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors',
-          active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/60',
-        )}
-      >
-        <Settings className="h-4 w-4" />
-      </Link>
+      <div className="flex items-center gap-1">
+        <Link
+          to="/sys/config"
+          title="Configuration"
+          aria-label="Configuration"
+          className={cn(
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors',
+            configActive
+              ? 'bg-accent text-accent-foreground'
+              : 'text-muted-foreground hover:bg-accent/60',
+          )}
+        >
+          <Settings className="h-4 w-4" />
+        </Link>
+        <Link
+          to="/sys/ocpp-conformance"
+          title="OCPP conformance"
+          aria-label="OCPP conformance"
+          className={cn(
+            'flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors',
+            conformanceActive
+              ? 'bg-accent text-accent-foreground'
+              : 'text-muted-foreground hover:bg-accent/60',
+          )}
+        >
+          <BookOpen className="h-4 w-4" />
+        </Link>
+      </div>
       <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
         <a
           href={RELEASES_URL}
