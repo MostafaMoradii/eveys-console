@@ -14,6 +14,7 @@ import { useState } from 'react';
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
 import { CommandsDrawer } from '@/components/CommandsDrawer';
+import { canRemoteStart, canRemoteStop, canReset } from '@/lib/charger-state';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -225,11 +226,20 @@ function Commands({ cp, runRpc, isPhone }: CommandsProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const showRemoteStart = !isPhone || moreOpen;
 
+  // Button availability is derived from connector state — no point
+  // letting the operator send RemoteStop when nothing is charging,
+  // or RemoteStart when every connector is already in a session.
+  const stopAv = canRemoteStop(cp);
+  const startAv = canRemoteStart(cp);
+  const resetAv = canReset(cp);
+
   return (
     <div className={cn('flex gap-2', isPhone ? 'flex-col' : 'flex-wrap')}>
       <Button
         variant="destructive"
         onClick={() => runRpc('remote-stop', { cp_id: cp.cp_id, transaction_id: 0 })}
+        disabled={!stopAv.enabled}
+        title={stopAv.reason}
         className={isPhone ? 'w-full' : undefined}
       >
         <Square className="h-4 w-4" /> RemoteStop
@@ -237,6 +247,8 @@ function Commands({ cp, runRpc, isPhone }: CommandsProps) {
       <Button
         variant="outline"
         onClick={() => runRpc('reset', { cp_id: cp.cp_id, type: 'Soft' })}
+        disabled={!resetAv.enabled}
+        title={resetAv.reason}
         className={isPhone ? 'w-full' : undefined}
       >
         <RotateCcw className="h-4 w-4" /> Soft Reset
@@ -244,6 +256,8 @@ function Commands({ cp, runRpc, isPhone }: CommandsProps) {
       {showRemoteStart ? (
         <Button
           onClick={() => runRpc('remote-start', { cp_id: cp.cp_id, id_tag: 'OPERATOR' })}
+          disabled={!startAv.enabled}
+          title={startAv.reason}
           className={isPhone ? 'w-full' : undefined}
         >
           <Play className="h-4 w-4" /> RemoteStart
