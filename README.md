@@ -109,6 +109,15 @@ up -d` and reach Prometheus on `:9091` and Alertmanager on `:9093`. The
 starter scrape config targets the Console at `server:8090/metrics` and a
 gateway on the host at `host.docker.internal:9100/metrics`.
 
+SystemPage shows a **Firing alerts** panel that polls Alertmanager
+through the Console (`/sys/alerts/firing`, JWT-gated) every 30 s. It
+sits above the existing client-derived alerts panel, so the operator
+sees both sources side-by-side: the durable Alertmanager view that
+survives a closed tab, and the live tab-only derivation from
+charge-point state. Without the observability profile (or with
+`ALERTMANAGER_URL` unset), the panel renders an "Alertmanager not
+configured" hint instead of erroring.
+
 ## Realtime model
 
 Each browser tab opens one WebSocket. Inside that connection it can:

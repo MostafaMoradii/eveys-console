@@ -58,6 +58,25 @@ vi.mock('@/lib/ws-context', () => ({
   }),
 }));
 
+// Stub the firing-alerts hook so the SystemPage tests don't trigger
+// a fetch; the panel itself is exercised in FiringAlertsPanel.test.tsx
+// and the hook in use-firing-alerts.test.tsx.
+let firingStub: {
+  alerts: Array<{
+    id: string;
+    severity: 'critical' | 'warning' | 'info';
+    title: string;
+    detail: string;
+  }>;
+  unavailable: boolean;
+  loading: boolean;
+  error: Error | null;
+} = { alerts: [], unavailable: false, loading: false, error: null };
+
+vi.mock('@/hooks/use-firing-alerts', () => ({
+  useFiringAlerts: () => firingStub,
+}));
+
 // Stub the router's <Link> so the cp-link inside AlertsPanel and the
 // tiles render as plain anchors.
 vi.mock('@tanstack/react-router', () => ({
@@ -163,6 +182,7 @@ beforeEach(() => {
   sysQueryError = null;
   cpSubStub = { snapshot: { kind: 'charge-points', rows: [] } };
   txSubStub = { snapshot: { kind: 'transactions-active', rows: [] } };
+  firingStub = { alerts: [], unavailable: false, loading: false, error: null };
   vi.setSystemTime(new Date('2026-05-10T12:00:00.000Z'));
 });
 
@@ -187,6 +207,41 @@ describe('SystemPage — alerts strip', () => {
     const metrics = await screen.findByTestId('metrics-row');
     // compareDocumentPosition: 4 = panel precedes metrics.
     expect(panel.compareDocumentPosition(metrics)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('places the FiringAlertsPanel above the (client-derived) AlertsPanel', async () => {
+    cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
+    renderPage();
+    const firing = await screen.findByTestId('firing-alerts-panel');
+    const derived = await screen.findByTestId('alerts-panel');
+    expect(firing.compareDocumentPosition(derived)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('passes firing alerts through to the FiringAlertsPanel', async () => {
+    firingStub = {
+      alerts: [
+        {
+          id: 'fp-1',
+          severity: 'critical',
+          title: 'GatewayDown',
+          detail: 'gateway scrape failing',
+        },
+      ],
+      unavailable: false,
+      loading: false,
+      error: null,
+    };
+    renderPage();
+    const rows = await screen.findAllByTestId('firing-alerts-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!).toHaveAttribute('data-alert-id', 'fp-1');
+    expect(rows[0]!).toHaveAttribute('data-severity', 'critical');
+  });
+
+  it('renders the unavailable hint when the firing-alerts hook reports unavailable', async () => {
+    firingStub = { alerts: [], unavailable: true, loading: false, error: null };
+    renderPage();
+    expect(await screen.findByTestId('firing-alerts-unavailable')).toBeInTheDocument();
   });
 
   it('passes the right alerts to AlertsPanel when a faulted charger is in the snapshot', async () => {

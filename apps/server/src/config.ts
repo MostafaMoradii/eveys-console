@@ -41,6 +41,12 @@ const schema = z.object({
   GATEWAY_BASE_URL: z.string().url(),
   GATEWAY_TOKEN: z.string().min(1),
 
+  // Alertmanager (observability profile). Optional: when unset, the
+  // /sys/alerts/firing proxy returns `{ alerts: [], unavailable: true }`
+  // so the Console UI renders the "not configured" hint instead of an
+  // error toast.
+  ALERTMANAGER_URL: z.string().url().optional(),
+
   // Kafka tail
   KAFKA_BROKERS: z
     .string()

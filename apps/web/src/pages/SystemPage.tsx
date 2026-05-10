@@ -6,9 +6,11 @@ import type { ChargePointSummary, TransactionSummary } from '@eveys-console/prot
 
 import { fetchSysStatus } from '@/api/sys-client';
 import { AlertsPanel } from '@/components/AlertsPanel';
+import { FiringAlertsPanel } from '@/components/FiringAlertsPanel';
 import { MetricTile } from '@/components/MetricTile';
 import { ServiceStatusPills } from '@/components/ServiceStatusPills';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useFiringAlerts } from '@/hooks/use-firing-alerts';
 import { useSubscription } from '@/hooks/use-subscription';
 import { computeAlerts } from '@/lib/alerts';
 import { countFaults } from '@/lib/fault';
@@ -20,6 +22,13 @@ import { useConsoleClient } from '@/lib/ws-context';
 // 3-column tile grid pushed a variable-length alerts list into a
 // fixed-size cell, which broke as soon as more than a couple of
 // alerts fired.
+//
+// Two alert panels, stacked: the Alertmanager-backed "Firing alerts"
+// panel on top (durable; survives the operator closing the tab) and
+// the client-derived "Active alerts" below it (zero-infrastructure;
+// derived from the data already on the page). Kept independent on
+// purpose so the source of each row is visible — the two panels
+// answer different questions on different time horizons.
 //
 // Recent-activity section intentionally omitted in v1. We don't have
 // an aggregated event-log subscription today; the closest derivation
@@ -54,6 +63,8 @@ export function SystemPage() {
     [cpRows, sysQuery.data],
   );
 
+  const firing = useFiringAlerts();
+
   if (sysQuery.isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -86,6 +97,12 @@ export function SystemPage() {
         <h2 className="text-xl font-semibold">System status</h2>
         <p className="text-sm text-muted-foreground">Live; refreshes every 5 seconds.</p>
       </div>
+
+      <FiringAlertsPanel
+        alerts={firing.alerts}
+        unavailable={firing.unavailable}
+        loading={firing.loading}
+      />
 
       <AlertsPanel alerts={alerts} loading={cpSub.loading} error={cpSub.error ?? null} />
 
