@@ -1,76 +1,84 @@
 import { useQuery } from '@tanstack/react-query';
-import {
-  Activity,
-  AlertCircle,
-  AlertTriangle,
-  CheckCircle2,
-  Database,
-  HardDrive,
-  Loader2,
-  Network,
-  Server,
-} from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 
-import type { ChargePointSummary } from '@eveys-console/protocol';
+import type { ChargePointSummary, TransactionSummary } from '@eveys-console/protocol';
 
-import { fetchSysStatus, type ComponentStatus, type SysStatus } from '@/api/sys-client';
+import { fetchSysStatus } from '@/api/sys-client';
 import { AlertsPanel } from '@/components/AlertsPanel';
+import { MetricTile } from '@/components/MetricTile';
+import { ServiceStatusPills } from '@/components/ServiceStatusPills';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSubscription } from '@/hooks/use-subscription';
 import { computeAlerts } from '@/lib/alerts';
 import { countFaults } from '@/lib/fault';
 import { useConsoleClient } from '@/lib/ws-context';
-import { cn } from '@/lib/utils';
+
+// Layout note: the operator's resting question on this page is "is
+// anything on fire?" — so alerts come first at full width, then the
+// four headline counts, then the small service-status pills. The old
+// 3-column tile grid pushed a variable-length alerts list into a
+// fixed-size cell, which broke as soon as more than a couple of
+// alerts fired.
+//
+// Recent-activity section intentionally omitted in v1. We don't have
+// an aggregated event-log subscription today; the closest derivation
+// (sort chargers by last_heartbeat_at) would be misleading because it
+// confuses "heartbeat received" with "lifecycle event happened". When
+// we add a server-side event tail we'll wire it in here. Tracked in
+// issue #63.
 
 export function SystemPage() {
   const { token } = useConsoleClient();
-  const q = useQuery({
+  const sysQuery = useQuery({
     queryKey: ['sys-status'],
     queryFn: () => fetchSysStatus(token!),
     refetchInterval: 5_000,
     enabled: !!token,
   });
 
-  // Subscribe to the same charge-points feed FleetPage uses so the
-  // alerts panel reflects whatever the operator would see if they
-  // switched to that page. The 500-row limit is the same one
-  // FaultsCard uses below — plenty of headroom for the fleets we
-  // ship to today.
+  // Re-use the same charge-points subscription FleetPage uses so the
+  // numbers on this page agree with what an operator would see if
+  // they switched tabs. 500 is the cap FaultsCard used in the old
+  // layout — plenty of headroom for current deployments.
   const cpSub = useSubscription('charge-points', { limit: 500 });
   const cpRows: ChargePointSummary[] =
     cpSub.snapshot && cpSub.snapshot.kind === 'charge-points' ? cpSub.snapshot.rows : [];
 
-  // Re-derive alerts on every render. computeAlerts is pure and
-  // cheap; the useMemo is mostly so the AlertsPanel's reference
-  // stays stable across renders that don't change inputs.
+  const txSub = useSubscription('transactions-active', {});
+  const activeTxRows: TransactionSummary[] =
+    txSub.snapshot && txSub.snapshot.kind === 'transactions-active' ? txSub.snapshot.rows : [];
+
   const alerts = useMemo(
-    () => computeAlerts({ charge_points: cpRows, sys_status: q.data ?? null }),
-    [cpRows, q.data],
+    () => computeAlerts({ charge_points: cpRows, sys_status: sysQuery.data ?? null }),
+    [cpRows, sysQuery.data],
   );
 
-  if (q.isLoading) {
+  if (sysQuery.isLoading) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading system status…
       </div>
     );
   }
-  if (q.error || !q.data) {
+  if (sysQuery.error || !sysQuery.data) {
     return (
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
         <AlertTitle>System status unavailable</AlertTitle>
         <AlertDescription>
-          {q.error instanceof Error ? q.error.message : 'unknown error'}
+          {sysQuery.error instanceof Error ? sysQuery.error.message : 'unknown error'}
         </AlertDescription>
       </Alert>
     );
   }
 
-  const s = q.data;
+  const sys = sysQuery.data;
+
+  const onlineCount = cpRows.filter((cp) => cp.online).length;
+  const totalCount = cpRows.length;
+  const faults = countFaults(cpRows);
+  const activeSessions = activeTxRows.length;
 
   return (
     <div className="space-y-6">
@@ -79,195 +87,67 @@ export function SystemPage() {
         <p className="text-sm text-muted-foreground">Live; refreshes every 5 seconds.</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <AlertsPanel alerts={alerts} loading={cpSub.loading} error={cpSub.error ?? null} />
+      <AlertsPanel alerts={alerts} loading={cpSub.loading} error={cpSub.error ?? null} />
 
-        <ComponentCard
-          icon={<Server className="h-4 w-4" />}
-          title="Console server"
-          status={{ ok: true }}
-          stats={[
-            ['uptime', formatUptime(s.console.uptime_seconds)],
-            ['started', formatDate(s.console.started_at)],
-            ['websockets', String(s.connections.websockets)],
-          ]}
+      <section
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+        data-testid="metrics-row"
+      >
+        <MetricTile
+          testId="metric-chargers"
+          label="Chargers online"
+          value={cpSub.loading ? '…' : String(onlineCount)}
+          hint={cpSub.loading ? 'loading…' : `of ${totalCount} known`}
+          tone={!cpSub.loading && totalCount > 0 && onlineCount === 0 ? 'warning' : 'default'}
+          to="/inspect/charge-points"
         />
-
-        <ComponentCard
-          icon={<Activity className="h-4 w-4" />}
-          title="OCPP Gateway"
-          status={s.gateway}
-          stats={[
-            ['version', s.gateway.version ?? 'unknown'],
-            ['probe latency', s.gateway.latency_ms != null ? `${s.gateway.latency_ms} ms` : '—'],
-            ...(s.gateway.detail ? [['detail', s.gateway.detail] as [string, string]] : []),
-          ]}
+        <MetricTile
+          testId="metric-sessions"
+          label="Active sessions"
+          value={txSub.loading ? '…' : String(activeSessions)}
+          hint={
+            txSub.loading
+              ? 'loading…'
+              : activeSessions === 1
+                ? '1 charger charging'
+                : `${activeSessions} chargers charging`
+          }
+          tone={!txSub.loading && activeSessions > 0 ? 'success' : 'default'}
+          to="/inspect/transactions"
         />
-
-        {gatewayComponentEntries(s).map(([name, status]) => {
-          const cs: ComponentStatus = { ok: status === 'ok' };
-          if (status !== 'ok') cs.detail = status;
-          return (
-            <ComponentCard
-              key={`gw-${name}`}
-              icon={iconForComponent(name)}
-              title={`Gateway · ${name}`}
-              status={cs}
-            />
-          );
-        })}
-
-        <ComponentCard
-          icon={<Network className="h-4 w-4" />}
-          title="Kafka tail"
-          status={s.kafka}
-          stats={[
-            ['consumer', s.kafka.consumer_running ? 'running' : 'stopped'],
-            ['topics', (s.kafka.topics ?? []).join(', ') || '—'],
-          ]}
+        <MetricTile
+          testId="metric-faults"
+          label="Faults"
+          value={cpSub.loading ? '…' : String(faults.fault)}
+          hint={
+            cpSub.loading
+              ? 'loading…'
+              : faults.advisory > 0
+                ? `${faults.advisory} advisory`
+                : 'no advisories'
+          }
+          tone={faults.fault > 0 ? 'danger' : faults.advisory > 0 ? 'warning' : 'default'}
+          to="/inspect/charge-points"
         />
+        <MetricTile
+          testId="metric-energy"
+          label="24h energy"
+          // We don't have a fleet-wide aggregate endpoint yet, and the
+          // active-tx subscription only knows in-flight sessions —
+          // not the closed ones that dominate a 24 h window. Rendering
+          // a real-but-wrong number would be worse than not rendering
+          // one, so we show the dash and an honest hint. Tracked in
+          // issue #63 for a follow-up once the gateway exposes a
+          // rollup.
+          value="—"
+          hint="data not available yet"
+        />
+      </section>
 
-        <FaultsCard />
-      </div>
+      <section className="space-y-2" data-testid="service-status-row">
+        <h3 className="text-sm font-medium text-muted-foreground">Services</h3>
+        <ServiceStatusPills sys={sys} />
+      </section>
     </div>
   );
-}
-
-// Live counter of chargers with non-ok fault levels. Subscribes to the
-// same charge-points feed FleetPage uses so the number stays current
-// without an extra REST poll. Renders a single number when 0; a red
-// '...' when the snapshot hasn't loaded yet (the rest of the grid is
-// already on screen by then so we don't block the page).
-function FaultsCard() {
-  const sub = useSubscription('charge-points', { limit: 500 });
-  const rows: ChargePointSummary[] =
-    sub.snapshot && sub.snapshot.kind === 'charge-points' ? sub.snapshot.rows : [];
-  const counts = countFaults(rows);
-
-  const status: ComponentStatus = {
-    ok: counts.fault === 0,
-    ...(counts.fault > 0
-      ? {
-          detail: `${counts.fault} faulted, ${counts.advisory} advisory`,
-        }
-      : {}),
-  };
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center justify-between gap-2 text-sm">
-          <span className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" /> Charger faults
-          </span>
-          <StatusBadge ok={status.ok} />
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-1 text-xs text-muted-foreground">
-        {sub.loading ? (
-          <p>Loading…</p>
-        ) : (
-          <dl className="space-y-0.5">
-            <Row k="faulted" v={String(counts.fault)} />
-            <Row k="advisory" v={String(counts.advisory)} />
-            <Row k="total" v={String(counts.total)} />
-          </dl>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex justify-between">
-      <dt>{k}</dt>
-      <dd className="font-mono text-foreground/80">{v}</dd>
-    </div>
-  );
-}
-
-interface ComponentCardProps {
-  icon: React.ReactNode;
-  title: string;
-  status: ComponentStatus;
-  stats?: [string, string][];
-}
-
-function ComponentCard({ icon, title, status, stats }: ComponentCardProps) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          {icon}
-          {title}
-        </CardTitle>
-        <StatusBadge ok={status.ok} />
-      </CardHeader>
-      <CardContent>
-        {stats && stats.length > 0 ? (
-          <dl className="space-y-1 text-sm">
-            {stats.map(([k, v]) => (
-              <div key={k} className="flex items-baseline justify-between gap-2">
-                <dt className="text-muted-foreground">{k}</dt>
-                <dd className={cn('truncate font-mono text-xs')} title={v}>
-                  {v}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        ) : status.detail ? (
-          <p className="text-sm text-muted-foreground">{status.detail}</p>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function StatusBadge({ ok }: { ok: boolean }) {
-  if (ok) {
-    return (
-      <Badge variant="success" className="gap-1">
-        <CheckCircle2 className="h-3 w-3" />
-        ok
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="destructive" className="gap-1">
-      <AlertCircle className="h-3 w-3" />
-      down
-    </Badge>
-  );
-}
-
-function formatUptime(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  if (seconds < 86_400) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    return `${h}h ${m}m`;
-  }
-  const d = Math.floor(seconds / 86_400);
-  const h = Math.floor((seconds % 86_400) / 3600);
-  return `${d}d ${h}h`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString();
-}
-
-function gatewayComponentEntries(s: SysStatus): [string, string][] {
-  const components = s.gateway.components;
-  if (!components) return [];
-  return Object.entries(components);
-}
-
-function iconForComponent(name: string) {
-  const lower = name.toLowerCase();
-  if (lower.includes('postgres') || lower.includes('database'))
-    return <Database className="h-4 w-4" />;
-  if (lower.includes('redis')) return <HardDrive className="h-4 w-4" />;
-  return <Activity className="h-4 w-4" />;
 }
