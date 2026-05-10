@@ -47,6 +47,29 @@ export class GatewayClient {
     return this.json<unknown>('/api/v1/sys/config');
   }
 
+  // ---- Runtime overrides (admin-config) ---------------------------------
+  // These three pair with the gateway's `runtime_overrides` allowlist. The
+  // Console exposes them via the `/sys/gateway-admin-config` proxy so
+  // operators can flip log_level / webhook URLs / per-CP webhook enables
+  // without a redeploy.
+
+  adminConfig() {
+    return this.json<unknown>('/api/v1/admin/config');
+  }
+
+  patchAdminConfig(updates: Record<string, unknown>) {
+    return this.json<unknown>('/api/v1/admin/config', {
+      method: 'PATCH',
+      body: { updates },
+    });
+  }
+
+  deleteAdminConfigOverride(key: string) {
+    return this.json<unknown>(`/api/v1/admin/config/overrides/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    });
+  }
+
   listChargePoints(
     params: { online?: boolean; vendor?: string; limit?: number; cursor?: string } = {},
   ) {

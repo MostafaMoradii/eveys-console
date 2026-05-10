@@ -3,19 +3,24 @@
 // different fetcher and filter set. Tests exercise both tabs and
 // verify the tab-state ↔ URL sync.
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   fetchConsoleConfig,
   fetchGatewayConfig,
+  fetchGatewayAdminConfig,
+  setGatewayAdminConfig,
+  clearGatewayAdminOverride,
   type ConfigEntry,
+  type GatewayAdminConfig,
   type SysConfig,
 } from '@/api/config-client';
 
 let consoleResult: { data?: SysConfig; error?: Error } = {};
 let gatewayResult: { data?: SysConfig; error?: Error } = {};
+let adminResult: { data?: GatewayAdminConfig; error?: Error } = {};
 
 vi.mock('@/api/config-client', () => ({
   fetchConsoleConfig: vi.fn(async (): Promise<SysConfig> => {
@@ -26,7 +31,25 @@ vi.mock('@/api/config-client', () => ({
     if (gatewayResult.error) throw gatewayResult.error;
     return gatewayResult.data as SysConfig;
   }),
+  fetchGatewayAdminConfig: vi.fn(async (): Promise<GatewayAdminConfig> => {
+    if (adminResult.error) throw adminResult.error;
+    return adminResult.data as GatewayAdminConfig;
+  }),
+  setGatewayAdminConfig: vi.fn(
+    async (_token: string, _updates: Record<string, unknown>): Promise<GatewayAdminConfig> =>
+      adminResult.data as GatewayAdminConfig,
+  ),
+  clearGatewayAdminOverride: vi.fn(
+    async (_token: string, _key: string): Promise<GatewayAdminConfig> =>
+      adminResult.data as GatewayAdminConfig,
+  ),
 }));
+
+const toast = vi.fn();
+vi.mock('@/components/ui/toaster', async (orig) => {
+  const actual = (await orig()) as Record<string, unknown>;
+  return { ...actual, useToast: () => ({ toast }) };
+});
 
 vi.mock('@/lib/ws-context', () => ({
   useConsoleClient: () => ({
@@ -146,6 +169,26 @@ const gatewayConfig: SysConfig = {
       category: 'logging',
     }),
     entry({
+      key: 'webhook_url_cp_boot',
+      value: '',
+      default: '',
+      source: 'default',
+      restart: 'none',
+      mutable: true,
+      description: 'Per-event webhook URL for cp.boot.',
+      category: 'webhooks',
+    }),
+    entry({
+      key: 'webhook_enable_cp_boot',
+      value: 'false',
+      default: 'false',
+      source: 'default',
+      restart: 'none',
+      mutable: true,
+      description: 'Toggle for cp.boot webhook delivery.',
+      category: 'webhooks',
+    }),
+    entry({
       key: 'db_url',
       value: '••••••••',
       sensitive: true,
@@ -158,9 +201,27 @@ const gatewayConfig: SysConfig = {
   ],
 };
 
+// Mirrors what the gateway returns from `/api/v1/admin/config`. The
+// allowlist is the set of keys the gateway flags as runtime-mutable
+// (the override allowlist in `runtime_overrides.py`).
+const adminConfig: GatewayAdminConfig = {
+  scope: 'gateway',
+  overrides: {},
+  allowlist: {
+    log_level: 'Minimum log level emitted by the gateway.',
+    webhook_url_cp_boot: 'Per-event webhook URL for cp.boot.',
+    webhook_enable_cp_boot: 'Toggle for cp.boot webhook delivery.',
+  },
+};
+
 beforeEach(() => {
   consoleResult = { data: consoleConfig };
   gatewayResult = { data: gatewayConfig };
+  adminResult = { data: adminConfig };
+  toast.mockReset();
+  vi.mocked(setGatewayAdminConfig).mockClear();
+  vi.mocked(clearGatewayAdminOverride).mockClear();
+  vi.mocked(fetchGatewayAdminConfig).mockClear();
   // Reset the URL between tests so tab-state from one test doesn't
   // leak into the next via window.history.
   window.history.replaceState(null, '', '/');
@@ -403,6 +464,139 @@ describe('SystemConfigPage — sensitive-only filter', () => {
     // Now narrow further with search; "db" matches db_url, the only sensitive entry.
     await user.type(screen.getByLabelText(/search configuration/i), 'sql');
     expect(screen.getAllByText('db_url').length).toBeGreaterThan(0);
+  });
+});
+
+describe('SystemConfigPage — Gateway tab inline-edit', () => {
+  async function openGateway() {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('PORT');
+    await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
+    await screen.findByText('rest_port');
+    return user;
+  }
+
+  it('renders inline editors for allowlisted entries on the Gateway tab', async () => {
+    await openGateway();
+
+    // log_level → enum select
+    expect(screen.getByLabelText(/^edit log_level$/i)).toBeInTheDocument();
+    // webhook_url_cp_boot → URL text input
+    expect(screen.getByLabelText(/^edit webhook_url_cp_boot$/i)).toBeInTheDocument();
+    // webhook_enable_cp_boot → toggle
+    expect(screen.getByLabelText(/^toggle webhook_enable_cp_boot$/i)).toBeInTheDocument();
+  });
+
+  it('renders a disabled lock for non-allowlisted gateway entries', async () => {
+    await openGateway();
+
+    // rest_port is NOT in our allowlist fixture — should render a Read-only
+    // disabled button with the explanatory tooltip.
+    const card = screen.getByText('rest_port').closest('div.rounded-lg, [class*="card"], section');
+    // Use a broader check: every "Read-only" button on the gateway tab should be
+    // disabled.
+    const lockButtons = screen.getAllByRole('button', { name: /not runtime-editable/i });
+    expect(lockButtons.length).toBeGreaterThan(0);
+    for (const btn of lockButtons) expect(btn).toBeDisabled();
+    expect(card).not.toBeNull();
+  });
+
+  it('renders the per-pod runtime-overrides notice on the Gateway tab', async () => {
+    await openGateway();
+    expect(screen.getByText(/runtime overrides are per-pod/i)).toBeInTheDocument();
+  });
+
+  it('does NOT render the per-pod notice on the Console tab', async () => {
+    renderPage();
+    await screen.findByText('PORT');
+    expect(screen.queryByText(/runtime overrides are per-pod/i)).not.toBeInTheDocument();
+  });
+
+  it('saving a URL field POSTs an updates payload and toasts on success', async () => {
+    const user = await openGateway();
+    const input = screen.getByLabelText(/^edit webhook_url_cp_boot$/i);
+    // userEvent.clear doesn't fire when value is empty; just type into the
+    // empty field.
+    await user.type(input, 'https://hooks.example.com/cp-boot');
+    // Find the closest form's submit button.
+    const form = (input as HTMLInputElement).closest('form')!;
+    await user.click(within(form).getByRole('button', { name: /^save$/i }));
+
+    expect(setGatewayAdminConfig).toHaveBeenCalledWith('test-token', {
+      webhook_url_cp_boot: 'https://hooks.example.com/cp-boot',
+    });
+
+    // Wait for the success toast to fire.
+    await vi.waitFor(() => expect(toast).toHaveBeenCalled());
+    const lastCall = toast.mock.calls.at(-1)![0] as { variant?: string; title: string };
+    expect(lastCall.variant).not.toBe('destructive');
+    expect(lastCall.title).toMatch(/override applied/i);
+  });
+
+  it('toggling a boolean opens AlertDialog; Cancel does not fire the request', async () => {
+    const user = await openGateway();
+    await user.click(screen.getByLabelText(/^toggle webhook_enable_cp_boot$/i));
+
+    // Confirmation dialog should render with the per-pod copy.
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByText(/per-pod and not persisted/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(setGatewayAdminConfig).not.toHaveBeenCalled();
+  });
+
+  it('toggling a boolean → Confirm fires the override request', async () => {
+    const user = await openGateway();
+    await user.click(screen.getByLabelText(/^toggle webhook_enable_cp_boot$/i));
+    await screen.findByRole('alertdialog');
+
+    await user.click(screen.getByRole('button', { name: /^confirm$/i }));
+
+    expect(setGatewayAdminConfig).toHaveBeenCalledWith('test-token', {
+      webhook_enable_cp_boot: true,
+    });
+  });
+
+  it('renders Reset to env when an override is active and DELETE fires on click', async () => {
+    adminResult = {
+      data: {
+        ...adminConfig,
+        overrides: { log_level: 'DEBUG' },
+      },
+    };
+    const user = await openGateway();
+
+    const resetBtn = await screen.findByRole('button', { name: /^reset log_level to env$/i });
+    await user.click(resetBtn);
+
+    expect(clearGatewayAdminOverride).toHaveBeenCalledWith('test-token', 'log_level');
+    await vi.waitFor(() => expect(toast).toHaveBeenCalled());
+  });
+
+  it('toasts destructive on a failed override using the gateway error envelope', async () => {
+    vi.mocked(setGatewayAdminConfig).mockRejectedValueOnce(
+      new Error('value out of range for log_level'),
+    );
+    const user = await openGateway();
+    const input = screen.getByLabelText(/^edit webhook_url_cp_boot$/i);
+    await user.type(input, 'https://hooks.example.com/x');
+    const form = (input as HTMLInputElement).closest('form')!;
+    await user.click(within(form).getByRole('button', { name: /^save$/i }));
+
+    await vi.waitFor(() => expect(toast).toHaveBeenCalled());
+    const lastCall = toast.mock.calls.at(-1)![0] as { variant?: string; description: string };
+    expect(lastCall.variant).toBe('destructive');
+    expect(lastCall.description).toMatch(/out of range/i);
+  });
+
+  it('does NOT render inline editors on the Console tab', async () => {
+    renderPage();
+    await screen.findByText('PORT');
+    expect(screen.queryByLabelText(/^edit log_level$/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^toggle webhook_enable_cp_boot$/i)).not.toBeInTheDocument();
+    // The Console tab MUST NOT trigger the admin-config fetch.
+    expect(fetchGatewayAdminConfig).not.toHaveBeenCalled();
   });
 });
 
