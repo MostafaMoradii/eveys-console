@@ -40,12 +40,14 @@ import { KafkaTail } from './kafka/tail.js';
 import { buildLogger } from './logger.js';
 import { GatewayClient } from './rest/gateway-client.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerDiagnosticsRoutes } from './routes/diagnostics.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerSysConfigRoute } from './routes/sys-config.js';
 import { registerSysGatewayAdminConfigRoute } from './routes/sys-gateway-admin-config.js';
 import { registerSysGatewayConfigRoute } from './routes/sys-gateway-config.js';
 import { registerSysStatusRoute } from './routes/sys-status.js';
 import { registerWsRoute } from './routes/ws.js';
+import { DiagnosticsStore } from './store/diagnostics-store.js';
 
 declare module 'fastify' {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -94,6 +96,7 @@ async function main() {
   const broker = new Broker(kafka, gateway, logger);
   const users = new UserStore(config);
   const pow = new PowVerifier(config);
+  const diagnosticsStore = new DiagnosticsStore(config.DIAGNOSTICS_DATA_DIR);
 
   const startedAt = new Date();
   await registerHealthRoutes(app);
@@ -102,6 +105,7 @@ async function main() {
   await registerSysConfigRoute(app, { config });
   await registerSysGatewayConfigRoute(app, { gateway });
   await registerSysGatewayAdminConfigRoute(app, { gateway });
+  await registerDiagnosticsRoutes(app, { store: diagnosticsStore });
   await registerWsRoute(app, { broker, gateway });
 
   if (users.size === 0) {
@@ -119,6 +123,7 @@ async function main() {
       broker.stop();
       await kafka.stop();
       await app.close();
+      diagnosticsStore.close();
       logger.info('shutdown.done');
       process.exit(0);
     } catch (err) {

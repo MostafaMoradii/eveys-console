@@ -10,6 +10,7 @@
 import { Loader2, Send } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
+import { issueDiagnostics } from '@/api/diagnostics-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -31,7 +32,7 @@ interface CommandsDrawerProps {
 }
 
 export function CommandsDrawer({ cpId, trigger }: CommandsDrawerProps) {
-  const { client } = useConsoleClient();
+  const { client, token } = useConsoleClient();
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [getConfigResult, setGetConfigResult] = useState<{
@@ -60,6 +61,29 @@ export function CommandsDrawer({ cpId, trigger }: CommandsDrawerProps) {
     }
   };
 
+  // Mints a one-shot upload URL via the Console's diagnostics receiver
+  // and returns it. Failure surfaces a toast and re-throws so the caller
+  // can short-circuit the OCPP send. Used by the diagnostics + log forms
+  // when "Generate one-time upload URL" is checked.
+  const issueUrl = async (
+    command: 'GetDiagnostics' | 'GetLog',
+    requestId?: number,
+  ): Promise<{ url: string; request_id: number }> => {
+    if (!token) throw new Error('not signed in');
+    try {
+      const r = await issueDiagnostics(token, cpId, command, requestId);
+      return { url: r.url, request_id: r.request_id };
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: command,
+        description:
+          err instanceof Error ? `Couldn't issue upload URL: ${err.message}` : 'Issue failed',
+      });
+      throw err;
+    }
+  };
+
   return (
     <Sheet>
       <SheetTrigger asChild>{trigger}</SheetTrigger>
@@ -76,8 +100,8 @@ export function CommandsDrawer({ cpId, trigger }: CommandsDrawerProps) {
           <Section title="Diagnostics">
             <TriggerMessageForm busy={busy} send={send} />
             <UnlockConnectorForm busy={busy} send={send} />
-            <GetDiagnosticsForm busy={busy} send={send} />
-            <GetLogForm busy={busy} send={send} />
+            <GetDiagnosticsForm busy={busy} send={send} issueUrl={issueUrl} />
+            <GetLogForm busy={busy} send={send} issueUrl={issueUrl} />
           </Section>
 
           <Section title="Configuration">
@@ -439,23 +463,58 @@ function CancelReservationForm({ busy, send }: CmdFormProps) {
   );
 }
 
-function GetDiagnosticsForm({ busy, send }: CmdFormProps) {
+interface IssueFn {
+  (
+    command: 'GetDiagnostics' | 'GetLog',
+    requestId?: number,
+  ): Promise<{ url: string; request_id: number }>;
+}
+
+function GetDiagnosticsForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl: IssueFn }) {
+  // Default to console-issued URLs — the operator can opt out for a
+  // bespoke URL (e.g. when the charger needs to dump to an external
+  // bucket). When checked, the location field is read-only and shows
+  // "Will be generated on send".
+  const [autoIssue, setAutoIssue] = useState(true);
   const [location, setLocation] = useState('');
-  const submit = (e: FormEvent) => {
+
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (autoIssue) {
+      try {
+        const issued = await issueUrl('GetDiagnostics');
+        setLocation(issued.url);
+        await send('get-diagnostics', { location: issued.url });
+      } catch {
+        // toast was raised in issueUrl
+      }
+      return;
+    }
     if (!location.trim()) return;
     void send('get-diagnostics', { location: location.trim() });
   };
+
   return (
     <CmdCard
       title="GetDiagnostics"
       hint="Tell the charger to upload its diagnostic dump to the given URL."
     >
       <form onSubmit={submit} className="space-y-2">
-        <Field label="location" required hint="upload URL">
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={autoIssue}
+            onChange={(e) => setAutoIssue(e.target.checked)}
+            className="h-3.5 w-3.5"
+            aria-label="Generate one-time upload URL"
+          />
+          <span>Generate one-time upload URL (track in Diagnostics history)</span>
+        </label>
+        <Field label="location" required hint={autoIssue ? 'auto-generated' : 'upload URL'}>
           <Input
-            required
-            value={location}
+            required={!autoIssue}
+            readOnly={autoIssue}
+            value={autoIssue ? '(generated on send)' : location}
             onChange={(e) => setLocation(e.target.value)}
             placeholder="https://logs.example/incoming"
           />
@@ -466,12 +525,33 @@ function GetDiagnosticsForm({ busy, send }: CmdFormProps) {
   );
 }
 
-function GetLogForm({ busy, send }: CmdFormProps) {
+function GetLogForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl: IssueFn }) {
+  const [autoIssue, setAutoIssue] = useState(true);
   const [logType, setLogType] = useState('SecurityLog');
   const [requestId, setRequestId] = useState('');
   const [location, setLocation] = useState('');
-  const submit = (e: FormEvent) => {
+
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (autoIssue) {
+      // request_id is optional in the issue body; the server synthesises
+      // one when omitted. Honour the operator's value if they typed one.
+      const rid = requestId.trim() ? Number(requestId) : undefined;
+      if (rid !== undefined && !Number.isFinite(rid)) return;
+      try {
+        const issued = await issueUrl('GetLog', rid);
+        setLocation(issued.url);
+        setRequestId(String(issued.request_id));
+        await send('get-log', {
+          log_type: logType,
+          request_id: issued.request_id,
+          location: issued.url,
+        });
+      } catch {
+        /* toast raised */
+      }
+      return;
+    }
     const rid = Number(requestId);
     if (!Number.isFinite(rid) || !location.trim()) return;
     void send('get-log', {
@@ -486,25 +566,44 @@ function GetLogForm({ busy, send }: CmdFormProps) {
       hint="OCPP 1.6 Security Whitepaper §4.6. Pulls a security or diagnostics log."
     >
       <form onSubmit={submit} className="space-y-2">
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={autoIssue}
+            onChange={(e) => setAutoIssue(e.target.checked)}
+            className="h-3.5 w-3.5"
+            aria-label="Generate one-time upload URL"
+          />
+          <span>Generate one-time upload URL (track in Diagnostics history)</span>
+        </label>
         <Field label="log_type" required>
           <Select value={logType} onChange={(e) => setLogType(e.target.value)}>
             <option value="SecurityLog">SecurityLog</option>
             <option value="DiagnosticsLog">DiagnosticsLog</option>
           </Select>
         </Field>
-        <Field label="request_id" required>
+        <Field
+          label="request_id"
+          required={!autoIssue}
+          {...(autoIssue ? { hint: 'optional — synthesised when blank' } : {})}
+        >
           <Input
             type="number"
-            required
+            required={!autoIssue}
             value={requestId}
             onChange={(e) => setRequestId(e.target.value)}
             placeholder="42"
           />
         </Field>
-        <Field label="location" required hint="upload URL">
+        <Field
+          label="location"
+          required={!autoIssue}
+          hint={autoIssue ? 'auto-generated' : 'upload URL'}
+        >
           <Input
-            required
-            value={location}
+            required={!autoIssue}
+            readOnly={autoIssue}
+            value={autoIssue ? '(generated on send)' : location}
             onChange={(e) => setLocation(e.target.value)}
             placeholder="https://logs.example/incoming"
           />

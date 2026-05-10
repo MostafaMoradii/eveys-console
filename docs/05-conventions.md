@@ -39,9 +39,10 @@ documented here for the cases when they aren't.
   framework demands it (e.g. Vite's HMR boundary).
 - **Test files**: colocated under `test/` per app/package, named
   `<unit>.test.ts` (or `.test.tsx` for components). No coverage
-  gate yet; ~151 tests today across the workspace — broker, auth
+  gate yet; ~197 tests today across the workspace — broker, auth
   module, config loader + meta, protocol envelope, live wire-shape
-  fixtures, FleetPage and ConfigView (Console + Gateway) components.
+  fixtures, FleetPage and ConfigView (Console + Gateway) components,
+  diagnostics receiver (store + routes + history panel).
   Component-test infra on
   the web side: vitest + jsdom + `@testing-library/{react,dom,
 user-event,jest-dom}`, with a small `test/setup.ts` that shims

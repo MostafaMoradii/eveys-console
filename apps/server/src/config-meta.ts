@@ -285,6 +285,47 @@ const META: Record<keyof Config, KeyMeta> = {
     default: '120000',
     sensitive: false,
   },
+
+  DIAGNOSTICS_DATA_DIR: {
+    description:
+      'Filesystem root for the diagnostics SQLite metadata DB and the per-charger uploads tree.',
+    category: 'diagnostics',
+    mutable: true,
+    restart: 'console',
+    range: 'absolute or repo-relative path',
+    default: './data',
+    sensitive: false,
+  },
+  DIAGNOSTICS_UPLOAD_TTL_SECONDS: {
+    description:
+      'Lifetime of a per-command upload token before it is auto-expired. Operators get this long after issuing the URL to actually receive the upload.',
+    category: 'diagnostics',
+    mutable: true,
+    restart: 'console',
+    range: 'positive integer (seconds)',
+    default: '3600',
+    sensitive: false,
+  },
+  DIAGNOSTICS_MAX_UPLOAD_BYTES: {
+    description:
+      'Per-upload size cap. The body limit is enforced on the upload route directly (not the global Fastify limit), so other routes are unaffected.',
+    category: 'diagnostics',
+    mutable: true,
+    restart: 'console',
+    range: 'positive integer (bytes)',
+    default: '52428800',
+    sensitive: false,
+  },
+  CONSOLE_PUBLIC_BASE_URL: {
+    description:
+      'Externally-reachable base URL of the Console (used to build upload URLs handed to chargers). Falls back to `http://HOST:PORT` for laptop dev.',
+    category: 'diagnostics',
+    mutable: true,
+    restart: 'console',
+    range: 'http(s)://host[:port], no trailing slash',
+    default: '',
+    sensitive: false,
+  },
 };
 
 export interface ConfigEntry {
