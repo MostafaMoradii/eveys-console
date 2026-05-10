@@ -30,3 +30,29 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  validate-observability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Run the official Prometheus / Alertmanager images and use the
+      # bundled promtool / amtool to validate the configs. Catches a
+      # broken alert expression or YAML typo before it lands on prod.
+      - name: promtool check config
+        run: |
+          docker run --rm --entrypoint=promtool \
+            -v "${{ github.workspace }}/deploy/observability:/etc/prometheus:ro" \
+            prom/prometheus:v3.0.1 \
+            check config /etc/prometheus/prometheus.yml
+      - name: promtool check rules
+        run: |
+          docker run --rm --entrypoint=promtool \
+            -v "${{ github.workspace }}/deploy/observability:/etc/prometheus:ro" \
+            prom/prometheus:v3.0.1 \
+            check rules /etc/prometheus/alerts.yml
+      - name: amtool check-config
+        run: |
+          docker run --rm --entrypoint=amtool \
+            -v "${{ github.workspace }}/deploy/observability:/etc/alertmanager:ro" \
+            prom/alertmanager:v0.27.0 \
+            check-config /etc/alertmanager/alertmanager.yml

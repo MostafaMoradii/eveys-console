@@ -1,0 +1,51 @@
+groups:
+  - name: eveys-console
+    rules:
+      - alert: ConsoleDown
+        expr: up{job="eveys-console"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Console scrape failing'
+          description: 'Prometheus has not scraped the Console for 1 minute.'
+
+      - alert: GatewayDown
+        expr: up{job="eveys-gateway"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Gateway scrape failing'
+          description: 'Prometheus has not scraped the OCPP gateway for 1 minute.'
+
+      - alert: WSAuthFailureSpike
+        expr: rate(eveys_console_ws_close_total{code="4401"}[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'WebSocket auth failures elevated'
+          description: '{{ $value | humanize }} 4401 closes/sec over 5m. JWT secret rotation or stuck stale token.'
+
+      - alert: LoginFailureSpike
+        expr: rate(eveys_console_auth_login_total{result="invalid_credentials"}[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Login failures elevated'
+          description: '{{ $value | humanize }} bad-credential logins/sec over 5m. Possible brute force.'
+
+      # The Console server calls prom-client's collectDefaultMetrics with
+      # prefix 'eveys_console_', so Node's default event-loop lag metric is
+      # exported as eveys_console_nodejs_eventloop_lag_seconds (NOT the
+      # unprefixed form). Match the exported name.
+      - alert: EventLoopLagHigh
+        expr: eveys_console_nodejs_eventloop_lag_seconds{job="eveys-console"} > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Console event loop saturated'
+          description: 'Sustained event-loop lag over 1s — investigate.'

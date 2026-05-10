@@ -74,3 +74,49 @@ services:
       server:
         condition: service_healthy
     restart: unless-stopped
+
+  # Observability stack — opt-in via `--profile observability`. A default
+  # `docker compose up` skips these so the dev loop stays lean.
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    container_name: eveys-console-prometheus
+    profiles: [observability]
+    # Host port 9090 is commonly taken by the OCPP simulator's Prometheus,
+    # so the Console's lives on 9091 → 9090 inside the container.
+    ports:
+      - '9091:9090'
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    extra_hosts:
+      # Linux compat: lets the gateway target `host.docker.internal:9100`
+      # resolve when scraping a gateway running on the host.
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: eveys-console-alertmanager
+    profiles: [observability]
+    ports:
+      - '9093:9093'
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  alertmanager-data:
