@@ -2,15 +2,19 @@
 // proxy is a thin shim over the gateway client; the value-add here is
 // verifying (a) the route is wired at the expected path, (b) JWT auth
 // is enforced, (c) `active` / `limit` / `cursor` query params are
-// forwarded verbatim, (d) the upstream body is passed through
-// unchanged on success, and (e) a structured upstream error envelope
-// survives unchanged.
+// forwarded verbatim, (d) the upstream body is renamed to the Console
+// UI's shape (`{started,stopped}_reported_at` → `{started,stopped}_at`)
+// with a derived `open` flag, and (e) a structured upstream error
+// envelope survives unchanged.
 
 import fastifyJwt from '@fastify/jwt';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { registerSysChargePointTransactionsRoute } from '../src/routes/sys-charge-point-transactions.js';
+import {
+  mapTransactionsList,
+  registerSysChargePointTransactionsRoute,
+} from '../src/routes/sys-charge-point-transactions.js';
 
 const JWT_SECRET = 'a-test-secret-of-at-least-16-bytes';
 
@@ -54,8 +58,11 @@ describe('GET /sys/charge-points/:cp_id/transactions', () => {
     expect(gateway.listChargePointTransactions).not.toHaveBeenCalled();
   });
 
-  it('forwards the gateway response on success', async () => {
-    const body = {
+  it('renames the gateway timestamp fields and derives `open`', async () => {
+    // The gateway returns `started_reported_at` / `stopped_reported_at`
+    // and does NOT include an `open` flag — this is what the proxy is
+    // there to map.
+    gateway.listChargePointTransactions.mockResolvedValue({
       transactions: [
         {
           transaction_id: 1,
@@ -63,16 +70,25 @@ describe('GET /sys/charge-points/:cp_id/transactions', () => {
           connector_id: 1,
           id_tag: 'TAG',
           meter_start_wh: 0,
-          started_at: '2026-05-10T00:00:00Z',
           meter_stop_wh: null,
-          stopped_at: null,
+          started_reported_at: '2026-05-10T00:00:00Z',
+          stopped_reported_at: null,
           stop_reason: null,
-          open: true,
+        },
+        {
+          transaction_id: 2,
+          cp_id: 'cp_a',
+          connector_id: 1,
+          id_tag: 'TAG',
+          meter_start_wh: 0,
+          meter_stop_wh: 5000,
+          started_reported_at: '2026-05-10T00:10:00Z',
+          stopped_reported_at: '2026-05-10T00:20:00Z',
+          stop_reason: 'Local',
         },
       ],
       next_cursor: null,
-    };
-    gateway.listChargePointTransactions.mockResolvedValue(body);
+    });
 
     const res = await app.inject({
       method: 'GET',
@@ -80,7 +96,35 @@ describe('GET /sys/charge-points/:cp_id/transactions', () => {
       headers: { authorization: authHeader(app) },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual(body);
+    expect(res.json()).toEqual({
+      transactions: [
+        {
+          transaction_id: 1,
+          cp_id: 'cp_a',
+          connector_id: 1,
+          id_tag: 'TAG',
+          meter_start_wh: 0,
+          meter_stop_wh: null,
+          started_at: '2026-05-10T00:00:00Z',
+          stopped_at: null,
+          stop_reason: null,
+          open: true,
+        },
+        {
+          transaction_id: 2,
+          cp_id: 'cp_a',
+          connector_id: 1,
+          id_tag: 'TAG',
+          meter_start_wh: 0,
+          meter_stop_wh: 5000,
+          started_at: '2026-05-10T00:10:00Z',
+          stopped_at: '2026-05-10T00:20:00Z',
+          stop_reason: 'Local',
+          open: false,
+        },
+      ],
+      next_cursor: null,
+    });
     expect(gateway.listChargePointTransactions).toHaveBeenCalledWith('cp_a', {});
   });
 
@@ -125,6 +169,19 @@ describe('GET /sys/charge-points/:cp_id/transactions', () => {
     expect(gateway.listChargePointTransactions).toHaveBeenLastCalledWith('cp_a', {});
   });
 
+  it('preserves next_cursor for pagination', async () => {
+    gateway.listChargePointTransactions.mockResolvedValue({
+      transactions: [],
+      next_cursor: 'opaque-cursor-token',
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/charge-points/cp_a/transactions',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.json()).toEqual({ transactions: [], next_cursor: 'opaque-cursor-token' });
+  });
+
   it('translates an upstream error envelope to the same status', async () => {
     const err = Object.assign(new Error('upstream'), {
       status: 503,
@@ -139,5 +196,38 @@ describe('GET /sys/charge-points/:cp_id/transactions', () => {
     });
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ error: 'upstream-down' });
+  });
+});
+
+describe('mapTransactionsList', () => {
+  it('returns empty list and null cursor when given an empty upstream', () => {
+    expect(mapTransactionsList({ transactions: [], next_cursor: null })).toEqual({
+      transactions: [],
+      next_cursor: null,
+    });
+  });
+
+  it('coalesces a missing transactions array to []', () => {
+    expect(mapTransactionsList({})).toEqual({ transactions: [], next_cursor: null });
+  });
+
+  it('flags `open` from `stopped_reported_at === null`, not from any upstream-supplied flag', () => {
+    const out = mapTransactionsList({
+      transactions: [
+        {
+          transaction_id: 1,
+          cp_id: 'cp_a',
+          connector_id: 1,
+          id_tag: 'TAG',
+          meter_start_wh: 0,
+          meter_stop_wh: null,
+          started_reported_at: '2026-05-10T00:00:00Z',
+          stopped_reported_at: null,
+          stop_reason: null,
+        },
+      ],
+      next_cursor: null,
+    });
+    expect(out.transactions[0]?.open).toBe(true);
   });
 });
