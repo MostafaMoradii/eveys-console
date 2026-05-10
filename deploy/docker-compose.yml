@@ -104,9 +104,12 @@ services:
       # Linux compat: lets the gateway target `host.docker.internal:9100`
       # resolve when scraping a gateway running on the host.
       - 'host.docker.internal:host-gateway'
-    depends_on:
-      server:
-        condition: service_healthy
+    # No `depends_on: server` here. Prometheus is happy starting before
+    # the things it scrapes — it retries on its own — and requiring the
+    # `server` container forces every observability-profile run to also
+    # bring up the full gateway/Kafka env set even when the operator
+    # only wants to scrape a Console running on the host or under
+    # `pnpm dev`.
     restart: unless-stopped
 
   alertmanager:
