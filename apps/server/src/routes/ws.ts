@@ -161,22 +161,47 @@ export async function registerWsRoute(
       // The RPC namespace mirrors the gateway's command surface 1:1. We
       // accept, forward, and return the gateway's response unmodified.
       let result: unknown;
+      const cpId = requireString(msg.params, 'cp_id');
       switch (msg.method) {
-        case 'remote-start': {
-          const cpId = requireString(msg.params, 'cp_id');
+        case 'remote-start':
           result = await deps.gateway.remoteStart(cpId, msg.params);
           break;
-        }
-        case 'remote-stop': {
-          const cpId = requireString(msg.params, 'cp_id');
+        case 'remote-stop':
           result = await deps.gateway.remoteStop(cpId, msg.params);
           break;
-        }
-        case 'reset': {
-          const cpId = requireString(msg.params, 'cp_id');
+        case 'reset':
           result = await deps.gateway.reset(cpId, msg.params);
           break;
-        }
+        case 'trigger-message':
+          result = await deps.gateway.triggerMessage(cpId, msg.params);
+          break;
+        case 'unlock-connector':
+          result = await deps.gateway.unlockConnector(cpId, msg.params);
+          break;
+        case 'clear-cache':
+          result = await deps.gateway.clearCache(cpId, msg.params);
+          break;
+        case 'get-configuration':
+          result = await deps.gateway.getConfiguration(cpId, msg.params);
+          break;
+        case 'change-configuration':
+          result = await deps.gateway.changeConfiguration(cpId, msg.params);
+          break;
+        case 'reserve-now':
+          result = await deps.gateway.reserveNow(cpId, msg.params);
+          break;
+        case 'cancel-reservation':
+          result = await deps.gateway.cancelReservation(cpId, msg.params);
+          break;
+        case 'get-diagnostics':
+          result = await deps.gateway.getDiagnostics(cpId, msg.params);
+          break;
+        case 'get-log':
+          result = await deps.gateway.getLog(cpId, msg.params);
+          break;
+        case 'data-transfer':
+          result = await deps.gateway.dataTransfer(cpId, msg.params);
+          break;
         default:
           send(socket, errMsg('invalid_message', `unknown rpc method: ${msg.method}`, msg.id));
           return;

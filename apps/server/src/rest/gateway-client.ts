@@ -67,25 +67,56 @@ export class GatewayClient {
     return this.json<unknown>(`/api/v1/transactions?active=true`);
   }
 
+  // ---- OCPP commands -----------------------------------------------------
+  // Each method maps to one of the gateway's
+  // `POST /api/v1/charge-points/{cp_id}/commands/{slug}` endpoints. The body
+  // shapes are 1:1 with what the gateway expects; we don't translate.
+
+  private command(cpId: string, slug: string, body: Record<string, unknown>) {
+    return this.json<unknown>(
+      `/api/v1/charge-points/${encodeURIComponent(cpId)}/commands/${slug}`,
+      { method: 'POST', body },
+    );
+  }
+
   remoteStart(cpId: string, body: Record<string, unknown>) {
-    return this.json<unknown>(
-      `/api/v1/charge-points/${encodeURIComponent(cpId)}/commands/remote-start`,
-      { method: 'POST', body },
-    );
+    return this.command(cpId, 'remote-start', body);
   }
-
   remoteStop(cpId: string, body: Record<string, unknown>) {
-    return this.json<unknown>(
-      `/api/v1/charge-points/${encodeURIComponent(cpId)}/commands/remote-stop`,
-      { method: 'POST', body },
-    );
+    return this.command(cpId, 'remote-stop', body);
   }
-
   reset(cpId: string, body: Record<string, unknown>) {
-    return this.json<unknown>(`/api/v1/charge-points/${encodeURIComponent(cpId)}/commands/reset`, {
-      method: 'POST',
-      body,
-    });
+    return this.command(cpId, 'reset', body);
+  }
+  triggerMessage(cpId: string, body: Record<string, unknown>) {
+    return this.command(cpId, 'trigger-message', body);
+  }
+  unlockConnector(cpId: string, body: Record<string, unknown>) {
+    return this.command(cpId, 'unlock-connector', body);
+  }
+  clearCache(cpId: string, body: Record<string, unknown>) {
+    return this.command(cpId, 'clear-cache', body);
+  }
+  getConfiguration(cpId: string, body: Record<string, unknown>) {
+    return this.command(cpId, 'get-configuration', body);
+  }
+  changeConfiguration(cpId: string, body: Record<string, unknown>) {
+    return this.command(cpId, 'change-configuration', body);
+  }
+  reserveNow(cpId: string, body: Record<string, unknown>) {
+    return this.command(cpId, 'reserve-now', body);
+  }
+  cancelReservation(cpId: string, body: Record<string, unknown>) {
+    return this.command(cpId, 'cancel-reservation', body);
+  }
+  getDiagnostics(cpId: string, body: Record<string, unknown>) {
+    return this.command(cpId, 'get-diagnostics', body);
+  }
+  getLog(cpId: string, body: Record<string, unknown>) {
+    return this.command(cpId, 'get-log', body);
+  }
+  dataTransfer(cpId: string, body: Record<string, unknown>) {
+    return this.command(cpId, 'data-transfer', body);
   }
 }
 

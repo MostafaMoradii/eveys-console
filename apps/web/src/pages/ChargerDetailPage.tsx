@@ -1,9 +1,10 @@
 import { useParams } from '@tanstack/react-router';
-import { ChevronDown, ChevronUp, Loader2, Play, RotateCcw, Square } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Play, RotateCcw, Square, Wrench } from 'lucide-react';
 import { useState } from 'react';
 
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
+import { CommandsDrawer } from '@/components/CommandsDrawer';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -154,6 +155,14 @@ function Commands({ cp, runRpc, isPhone }: CommandsProps) {
           <Play className="h-4 w-4" /> RemoteStart
         </Button>
       ) : null}
+      <CommandsDrawer
+        cpId={cp.cp_id}
+        trigger={
+          <Button variant="outline" className={isPhone ? 'w-full' : undefined}>
+            <Wrench className="h-4 w-4" /> All commands
+          </Button>
+        }
+      />
       {isPhone ? (
         <Button
           variant="ghost"
