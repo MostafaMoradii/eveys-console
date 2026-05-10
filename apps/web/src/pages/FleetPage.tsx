@@ -428,6 +428,7 @@ function FleetTable({ rows }: { rows: ChargePointSummary[] }) {
             <TableHead className="w-[40px]"></TableHead>
             <TableHead>cp_id</TableHead>
             <TableHead>online</TableHead>
+            <TableHead>pod</TableHead>
             <TableHead>last status</TableHead>
             <TableHead>connectors</TableHead>
             <TableHead>vendor / model</TableHead>
@@ -493,6 +494,9 @@ function FleetTableRow({
           </Badge>
         </TableCell>
         <TableCell>
+          <PodCell podId={row.pod_id} />
+        </TableCell>
+        <TableCell>
           <StatusPill status={row.last_status} />
         </TableCell>
         <TableCell>
@@ -509,7 +513,7 @@ function FleetTableRow({
       </TableRow>
       {isOpen ? (
         <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableCell colSpan={8} className="p-0">
+          <TableCell colSpan={9} className="p-0">
             <ConnectorDetail connectors={row.connectors} cpId={row.cp_id} />
           </TableCell>
         </TableRow>
@@ -563,6 +567,7 @@ function FleetCard({ row }: { row: ChargePointSummary }) {
           <Row k="vendor" v={`${row.vendor ?? '—'}${row.model ? ' · ' + row.model : ''}`} />
           <Row k="firmware" v={row.firmware_version ?? '—'} />
           <Row k="heartbeat" v={formatRelativeTime(row.last_heartbeat_at)} />
+          {row.pod_id ? <Row k="pod" v={row.pod_id} /> : null}
         </dl>
       </CardContent>
     </Card>
@@ -577,6 +582,19 @@ function Row({ k, v }: { k: string; v: string }) {
         {v}
       </dd>
     </div>
+  );
+}
+
+// Which gateway pod owns the charger's WebSocket. Truncated to 8 chars
+// because the gateway emits the docker / k8s pod hostname (long); full
+// value on hover.
+function PodCell({ podId }: { podId: string | null | undefined }) {
+  if (!podId) return <span className="text-muted-foreground">—</span>;
+  const short = podId.length > 8 ? `${podId.slice(0, 8)}…` : podId;
+  return (
+    <span className="font-mono text-xs text-muted-foreground" title={podId}>
+      {short}
+    </span>
   );
 }
 

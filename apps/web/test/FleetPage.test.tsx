@@ -195,6 +195,29 @@ describe('FleetPage — snapshot rendering', () => {
     // Heading reflects the row count.
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/Charge points — 3/);
   });
+
+  it('renders pod_id (truncated) for online chargers and an em-dash for offline', () => {
+    nextSubResult = {
+      snapshot: {
+        kind: 'charge-points',
+        rows: [
+          baseRow('CP_ON', { pod_id: 'pod-deadbeef-12345' }),
+          baseRow('CP_OFF', { online: false, pod_id: null }),
+        ],
+        next_cursor: null,
+      },
+    };
+    render(<FleetPage />);
+    // Online charger: pod cell shows the truncated pod_id with full value on title.
+    const onlineRow = screen.getByText('CP_ON').closest('tr')! as HTMLTableRowElement;
+    const podCell = onlineRow.cells[3]!;
+    expect(podCell).toHaveTextContent('pod-dead');
+    expect(within(podCell).getByTitle('pod-deadbeef-12345')).toBeInTheDocument();
+
+    // Offline charger: em-dash placeholder.
+    const offlineRow = screen.getByText('CP_OFF').closest('tr')! as HTMLTableRowElement;
+    expect(offlineRow.cells[3]!).toHaveTextContent('—');
+  });
 });
 
 describe('FleetPage — view toggle', () => {
@@ -414,8 +437,8 @@ describe('FleetPage — delta application', () => {
     render(<FleetPage />);
     const link = screen.getByText('CP_A');
     const dataRow = link.closest('tr')! as HTMLTableRowElement;
-    // Cells in order: [chevron, cp_id, online, last status, connectors, vendor/model, firmware, last heartbeat]
-    const lastStatusCell = dataRow.cells[3]!;
+    // Cells in order: [chevron, cp_id, online, pod, last status, connectors, vendor/model, firmware, last heartbeat]
+    const lastStatusCell = dataRow.cells[4]!;
     expect(within(lastStatusCell).getByText('Charging')).toBeInTheDocument();
     expect(within(lastStatusCell).queryByText('Available')).not.toBeInTheDocument();
   });
