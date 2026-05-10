@@ -30,6 +30,7 @@ import { useToast } from '@/components/ui/toaster';
 import { useSubscription } from '@/hooks/use-subscription';
 import { chargePointFaultLevel, connectorFaultLevel, faultedConnectors } from '@/lib/fault';
 import { describeErrorCode } from '@/lib/ocpp-errors';
+import { formatUptime } from '@/lib/time';
 import { useIsBelow } from '@/lib/use-breakpoint';
 import { useConsoleClient } from '@/lib/ws-context';
 import { cn } from '@/lib/utils';
@@ -192,6 +193,15 @@ function Header({ cp }: { cp: ChargePointSummary }) {
         {cp.pod_id ? (
           <Badge variant="secondary" className="font-mono text-xs" title={cp.pod_id}>
             pod: {cp.pod_id.length > 12 ? `${cp.pod_id.slice(0, 12)}…` : cp.pod_id}
+          </Badge>
+        ) : null}
+        {cp.online && cp.last_boot_at ? (
+          <Badge
+            variant="secondary"
+            className="font-mono text-xs"
+            title={`booted at ${cp.last_boot_at}`}
+          >
+            uptime: {formatUptime(cp.last_boot_at)}
           </Badge>
         ) : null}
       </div>

@@ -218,6 +218,33 @@ describe('FleetPage — snapshot rendering', () => {
     const offlineRow = screen.getByText('CP_OFF').closest('tr')! as HTMLTableRowElement;
     expect(offlineRow.cells[3]!).toHaveTextContent('—');
   });
+
+  it('renders an uptime cell for online chargers and an em-dash for offline', () => {
+    // Anchor "now" so the formatted uptime is deterministic.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-10T12:00:00.000Z'));
+    nextSubResult = {
+      snapshot: {
+        kind: 'charge-points',
+        rows: [
+          baseRow('CP_ON_BOOT', {
+            online: true,
+            last_boot_at: '2026-05-10T09:46:00.000Z', // 2h 14m before now
+          }),
+          baseRow('CP_OFF_NOBOOT', { online: false, last_boot_at: null }),
+        ],
+        next_cursor: null,
+      },
+    };
+    render(<FleetPage />);
+    const onRow = screen.getByText('CP_ON_BOOT').closest('tr')! as HTMLTableRowElement;
+    // Cells: [chevron, cp_id, online, pod, last status, connectors, vendor/model, firmware, last heartbeat, uptime]
+    expect(onRow.cells[9]!).toHaveTextContent('2h 14m');
+
+    const offRow = screen.getByText('CP_OFF_NOBOOT').closest('tr')! as HTMLTableRowElement;
+    expect(offRow.cells[9]!).toHaveTextContent('—');
+    vi.useRealTimers();
+  });
 });
 
 describe('FleetPage — view toggle', () => {

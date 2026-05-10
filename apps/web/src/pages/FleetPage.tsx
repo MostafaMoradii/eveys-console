@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/table';
 import { useSubscription } from '@/hooks/use-subscription';
 import { chargePointFaultLevel, type FaultLevel } from '@/lib/fault';
+import { formatRelativeTime, formatUptime } from '@/lib/time';
 import { useIsBelow } from '@/lib/use-breakpoint';
 import { cn } from '@/lib/utils';
 
@@ -458,6 +459,7 @@ function FleetTable({ rows }: { rows: ChargePointSummary[] }) {
             <TableHead>vendor / model</TableHead>
             <TableHead>firmware</TableHead>
             <TableHead>last heartbeat</TableHead>
+            <TableHead>uptime</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -537,10 +539,13 @@ function FleetTableRow({
         <TableCell className="text-xs text-muted-foreground">
           {formatRelativeTime(row.last_heartbeat_at)}
         </TableCell>
+        <TableCell className="font-mono text-xs text-muted-foreground">
+          {row.online ? formatUptime(row.last_boot_at) : '—'}
+        </TableCell>
       </TableRow>
       {isOpen ? (
         <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableCell colSpan={9} className="p-0">
+          <TableCell colSpan={10} className="p-0">
             <ConnectorDetail connectors={row.connectors} cpId={row.cp_id} />
           </TableCell>
         </TableRow>
@@ -594,6 +599,9 @@ function FleetCard({ row }: { row: ChargePointSummary }) {
           <Row k="vendor" v={`${row.vendor ?? '—'}${row.model ? ' · ' + row.model : ''}`} />
           <Row k="firmware" v={row.firmware_version ?? '—'} />
           <Row k="heartbeat" v={formatRelativeTime(row.last_heartbeat_at)} />
+          {row.online && row.last_boot_at ? (
+            <Row k="uptime" v={formatUptime(row.last_boot_at)} />
+          ) : null}
           {row.pod_id ? <Row k="pod" v={row.pod_id} /> : null}
         </dl>
       </CardContent>
@@ -848,16 +856,4 @@ function EmptyState() {
       <span>No charge points match the current filters.</span>
     </div>
   );
-}
-
-function formatRelativeTime(iso: string | null): string {
-  if (!iso) return '—';
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return '—';
-  const deltaSec = Math.round((Date.now() - t) / 1000);
-  if (deltaSec < 5) return 'now';
-  if (deltaSec < 60) return `${deltaSec}s ago`;
-  if (deltaSec < 3600) return `${Math.round(deltaSec / 60)}m ago`;
-  if (deltaSec < 86_400) return `${Math.round(deltaSec / 3600)}h ago`;
-  return `${Math.round(deltaSec / 86_400)}d ago`;
 }
