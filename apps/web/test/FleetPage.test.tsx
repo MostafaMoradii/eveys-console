@@ -276,6 +276,53 @@ describe('FleetPage — client-side filters', () => {
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/2 of 3 shown/);
   });
 
+  it('faults-only filter narrows to chargers with fault or advisory severity', async () => {
+    const user = userEvent.setup();
+    nextSubResult = {
+      snapshot: {
+        kind: 'charge-points',
+        rows: [
+          // ok
+          baseRow('CP_OK'),
+          // fault: connector status=Faulted
+          baseRow('CP_FAULT', {
+            connectors: [
+              {
+                connector_id: 1,
+                status: 'Faulted',
+                error_code: 'GroundFailure',
+                last_changed_at: null,
+              },
+            ],
+          }),
+          // advisory: error_code != NoError on a non-Faulted connector
+          baseRow('CP_ADV', {
+            connectors: [
+              {
+                connector_id: 1,
+                status: 'Available',
+                error_code: 'WeakSignal',
+                last_changed_at: null,
+              },
+            ],
+          }),
+        ],
+        next_cursor: null,
+      },
+    };
+    render(<FleetPage />);
+    // All three visible before filter.
+    expect(screen.getByText('CP_OK')).toBeInTheDocument();
+    expect(screen.getByText('CP_FAULT')).toBeInTheDocument();
+    expect(screen.getByText('CP_ADV')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /faults only/i }));
+
+    expect(screen.queryByText('CP_OK')).not.toBeInTheDocument();
+    expect(screen.getByText('CP_FAULT')).toBeInTheDocument();
+    expect(screen.getByText('CP_ADV')).toBeInTheDocument();
+  });
+
   it('status filter narrows by last_status', async () => {
     const user = userEvent.setup();
     nextSubResult = {

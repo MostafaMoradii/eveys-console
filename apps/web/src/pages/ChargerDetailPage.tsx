@@ -1,5 +1,14 @@
 import { useParams } from '@tanstack/react-router';
-import { ChevronDown, ChevronUp, Loader2, Play, RotateCcw, Square, Wrench } from 'lucide-react';
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Play,
+  RotateCcw,
+  Square,
+  Wrench,
+} from 'lucide-react';
 import { useState } from 'react';
 
 import type { ChargePointSummary } from '@eveys-console/protocol';
@@ -19,6 +28,8 @@ import {
 } from '@/components/ui/table';
 import { useToast } from '@/components/ui/toaster';
 import { useSubscription } from '@/hooks/use-subscription';
+import { chargePointFaultLevel, connectorFaultLevel, faultedConnectors } from '@/lib/fault';
+import { describeErrorCode } from '@/lib/ocpp-errors';
 import { useIsBelow } from '@/lib/use-breakpoint';
 import { useConsoleClient } from '@/lib/ws-context';
 import { cn } from '@/lib/utils';
@@ -68,6 +79,8 @@ export function ChargerDetailPage() {
     <div className="space-y-4">
       <Header cp={cp} />
 
+      <FaultBanner cp={cp} />
+
       <Card>
         <CardHeader className="pb-3">
           <CardTitle>Commands</CardTitle>
@@ -90,6 +103,72 @@ export function ChargerDetailPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// Banner above the Commands card whenever any connector reports a non-ok
+// fault level. One section per faulted connector — error code, friendly
+// label, what it means, suggested action, vendor info if present, and
+// how long ago the status flipped. Critical/Faulted variant is destructive
+// (red); advisory uses the default Alert.
+function FaultBanner({ cp }: { cp: ChargePointSummary }) {
+  const connectors = faultedConnectors(cp);
+  if (connectors.length === 0) return null;
+  const overall = chargePointFaultLevel(cp);
+  const variant = overall === 'fault' ? 'destructive' : 'default';
+  return (
+    <Alert variant={variant}>
+      <AlertTriangle className="h-4 w-4" />
+      <AlertTitle>
+        {overall === 'fault'
+          ? `Faulted — ${connectors.length} connector${connectors.length === 1 ? '' : 's'}`
+          : `Advisory — ${connectors.length} connector${connectors.length === 1 ? '' : 's'} reporting an error`}
+      </AlertTitle>
+      <AlertDescription className="space-y-3">
+        {connectors.map((c) => {
+          const info = describeErrorCode(c.error_code);
+          const since = c.last_changed_at
+            ? new Date(c.last_changed_at).toLocaleString()
+            : 'unknown';
+          const level = connectorFaultLevel(c);
+          return (
+            <div key={c.connector_id} className="space-y-1">
+              <p className="font-medium">
+                <span className="font-mono text-xs">connector_id={c.connector_id}</span>
+                {' · '}
+                <span className="font-mono text-xs">status={c.status}</span>
+                {' · '}
+                <span className="font-mono text-xs">error_code={c.error_code ?? 'NoError'}</span>
+                {' · '}
+                <span
+                  className={cn(
+                    'rounded px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider',
+                    level === 'fault'
+                      ? 'bg-destructive text-destructive-foreground'
+                      : 'bg-amber-500/20 text-amber-900 dark:text-amber-200',
+                  )}
+                >
+                  {info.label}
+                </span>
+              </p>
+              <p className="text-xs">{info.description}</p>
+              <p className="text-xs">
+                <span className="font-semibold">Suggested action:</span> {info.suggestedAction}
+              </p>
+              {c.vendor_error_code ? (
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-mono">vendor_error_code: {c.vendor_error_code}</span>
+                  {c.info ? <span className="ml-2 italic">{c.info}</span> : null}
+                </p>
+              ) : c.info ? (
+                <p className="text-xs italic text-muted-foreground">{c.info}</p>
+              ) : null}
+              <p className="text-[10px] text-muted-foreground">since {since}</p>
+            </div>
+          );
+        })}
+      </AlertDescription>
+    </Alert>
   );
 }
 

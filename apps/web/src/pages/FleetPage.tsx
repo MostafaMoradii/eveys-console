@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import {
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -32,6 +33,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useSubscription } from '@/hooks/use-subscription';
+import { chargePointFaultLevel, type FaultLevel } from '@/lib/fault';
 import { useIsBelow } from '@/lib/use-breakpoint';
 import { cn } from '@/lib/utils';
 
@@ -81,6 +83,7 @@ export function FleetPage() {
   // Client-side filters — applied to the loaded page only.
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<(typeof STATUSES)[number]>('all');
+  const [faultsOnly, setFaultsOnly] = useState(false);
 
   // Build subscription params. Re-subscribes when any of these change
   // (use-subscription stringifies params and uses that as a dep).
@@ -140,9 +143,10 @@ export function FleetPage() {
         if (!haystack.includes(term)) return false;
       }
       if (statusFilter !== 'all' && r.last_status !== statusFilter) return false;
+      if (faultsOnly && chargePointFaultLevel(r) === 'ok') return false;
       return true;
     });
-  }, [allRows, search, statusFilter]);
+  }, [allRows, search, statusFilter, faultsOnly]);
 
   const onApplyFilters = () => {
     // Any server-side filter change resets the cursor stack to page 1.
@@ -197,6 +201,8 @@ export function FleetPage() {
         knownVendors={knownVendors}
         statusFilter={statusFilter}
         onStatusChange={setStatusFilter}
+        faultsOnly={faultsOnly}
+        onFaultsOnlyChange={setFaultsOnly}
         search={search}
         onSearchChange={setSearch}
       />
@@ -229,6 +235,8 @@ interface FilterBarProps {
   knownVendors: string[];
   statusFilter: (typeof STATUSES)[number];
   onStatusChange: (v: (typeof STATUSES)[number]) => void;
+  faultsOnly: boolean;
+  onFaultsOnlyChange: (v: boolean) => void;
   search: string;
   onSearchChange: (v: string) => void;
 }
@@ -277,6 +285,7 @@ function countActiveFilters(p: FilterBarProps): number {
   if (p.onlineFilter !== 'all') n++;
   if (p.vendorFilter.trim()) n++;
   if (p.statusFilter !== 'all') n++;
+  if (p.faultsOnly) n++;
   return n;
 }
 
@@ -292,6 +301,8 @@ function FilterFields({
   knownVendors,
   statusFilter,
   onStatusChange,
+  faultsOnly,
+  onFaultsOnlyChange,
   search,
   onSearchChange,
   stretch = false,
@@ -354,6 +365,19 @@ function FilterFields({
             </option>
           ))}
         </Select>
+      </FilterField>
+
+      <FilterField label="Faults" hint="status=Faulted or error_code≠NoError" stretch={stretch}>
+        <Button
+          variant={faultsOnly ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => onFaultsOnlyChange(!faultsOnly)}
+          aria-pressed={faultsOnly}
+          className={cn('h-9 gap-1.5', stretch ? 'w-full' : '')}
+        >
+          <AlertTriangle className="h-3.5 w-3.5" />
+          Faults only
+        </Button>
       </FilterField>
     </>
   );
@@ -480,13 +504,16 @@ function FleetTableRow({
           </Button>
         </TableCell>
         <TableCell>
-          <Link
-            to="/inspect/charge-points/$cpId"
-            params={{ cpId: row.cp_id } as never}
-            className="font-mono text-xs text-primary underline-offset-2 hover:underline"
-          >
-            {row.cp_id}
-          </Link>
+          <div className="flex items-center gap-1.5">
+            <FaultDot level={chargePointFaultLevel(row)} />
+            <Link
+              to="/inspect/charge-points/$cpId"
+              params={{ cpId: row.cp_id } as never}
+              className="font-mono text-xs text-primary underline-offset-2 hover:underline"
+            >
+              {row.cp_id}
+            </Link>
+          </div>
         </TableCell>
         <TableCell>
           <Badge variant={row.online ? 'success' : 'muted'}>
@@ -582,6 +609,24 @@ function Row({ k, v }: { k: string; v: string }) {
         {v}
       </dd>
     </div>
+  );
+}
+
+// Tiny coloured dot visible next to cp_id when the charger has a fault
+// or advisory. Inline so the operator can spot fault rows by
+// horizontal scan without using the filter. Hidden when ok.
+function FaultDot({ level }: { level: FaultLevel }) {
+  if (level === 'ok') return null;
+  const cls = level === 'fault' ? 'bg-destructive' : 'bg-amber-500';
+  const title =
+    level === 'fault' ? 'Faulted — blocks charging' : 'Advisory — connector reports an error code';
+  return (
+    <span
+      role="img"
+      aria-label={title}
+      title={title}
+      className={cn('inline-block h-2 w-2 shrink-0 rounded-full', cls)}
+    />
   );
 }
 
