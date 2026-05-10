@@ -16,12 +16,18 @@ export type QueryParams = z.infer<typeof queryParams>;
 // Use offset:true so zod accepts both `Z` and `±HH:MM`.
 const isoTimestamp = z.string().datetime({ offset: true });
 
-export const connectorState = z.object({
-  connector_id: z.number().int().nonnegative(),
-  status: z.string(),
-  error_code: z.string().nullable(),
-  last_changed_at: isoTimestamp.nullable(),
-});
+export const connectorState = z
+  .object({
+    connector_id: z.number().int().nonnegative(),
+    status: z.string(),
+    error_code: z.string().nullable(),
+    last_changed_at: isoTimestamp.nullable(),
+    /** Vendor-specific error code (OCPP 1.6 StatusNotification). */
+    vendor_error_code: z.string().nullable().optional(),
+    /** Free-text human-readable detail line on the StatusNotification. */
+    info: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 // Mirrors the gateway's `GET /api/v1/charge-points` row shape (see
 // docs/integration/02-gateway-rest-api.md). Anything the gateway can

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Database,
   HardDrive,
@@ -10,10 +11,14 @@ import {
   Server,
 } from 'lucide-react';
 
+import type { ChargePointSummary } from '@eveys-console/protocol';
+
 import { fetchSysStatus, type ComponentStatus, type SysStatus } from '@/api/sys-client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useSubscription } from '@/hooks/use-subscription';
+import { countFaults } from '@/lib/fault';
 import { useConsoleClient } from '@/lib/ws-context';
 import { cn } from '@/lib/utils';
 
@@ -99,7 +104,63 @@ export function SystemPage() {
             ['topics', (s.kafka.topics ?? []).join(', ') || '—'],
           ]}
         />
+
+        <FaultsCard />
       </div>
+    </div>
+  );
+}
+
+// Live counter of chargers with non-ok fault levels. Subscribes to the
+// same charge-points feed FleetPage uses so the number stays current
+// without an extra REST poll. Renders a single number when 0; a red
+// '...' when the snapshot hasn't loaded yet (the rest of the grid is
+// already on screen by then so we don't block the page).
+function FaultsCard() {
+  const sub = useSubscription('charge-points', { limit: 500 });
+  const rows: ChargePointSummary[] =
+    sub.snapshot && sub.snapshot.kind === 'charge-points' ? sub.snapshot.rows : [];
+  const counts = countFaults(rows);
+
+  const status: ComponentStatus = {
+    ok: counts.fault === 0,
+    ...(counts.fault > 0
+      ? {
+          detail: `${counts.fault} faulted, ${counts.advisory} advisory`,
+        }
+      : {}),
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center justify-between gap-2 text-sm">
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" /> Charger faults
+          </span>
+          <StatusBadge ok={status.ok} />
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1 text-xs text-muted-foreground">
+        {sub.loading ? (
+          <p>Loading…</p>
+        ) : (
+          <dl className="space-y-0.5">
+            <Row k="faulted" v={String(counts.fault)} />
+            <Row k="advisory" v={String(counts.advisory)} />
+            <Row k="total" v={String(counts.total)} />
+          </dl>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex justify-between">
+      <dt>{k}</dt>
+      <dd className="font-mono text-foreground/80">{v}</dd>
     </div>
   );
 }
