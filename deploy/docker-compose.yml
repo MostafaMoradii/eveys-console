@@ -1,0 +1,76 @@
+# Console deployment compose file. Two services:
+#
+#   - server: the Fastify API + WS surface (built from ../Dockerfile).
+#   - web:    nginx serving the SPA bundle (built from ./web.Dockerfile).
+#
+# This compose does NOT bring up Postgres / Kafka / Redis / the OCPP
+# gateway — the console is intentionally a *consumer* of the gateway
+# stack. Point GATEWAY_BASE_URL + KAFKA_BROKERS at an existing gateway
+# deployment.
+#
+# Run from the repo root:
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#
+# Reachable at http://localhost:5180 (web) and http://localhost:8090 (server).
+
+name: eveys-console
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: eveys-console-server:dev
+    container_name: eveys-console-server
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8090
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_PRETTY: 'false'
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env or the host env}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-eveys-console}
+      JWT_ISSUER: ${JWT_ISSUER:-eveys-console}
+      JWT_TTL_SECONDS: ${JWT_TTL_SECONDS:-28800}
+      CONSOLE_USERS: ${CONSOLE_USERS}
+      AUTH_POW_DIFFICULTY: ${AUTH_POW_DIFFICULTY:-16}
+      AUTH_POW_TTL_SECONDS: ${AUTH_POW_TTL_SECONDS:-120}
+      AUTH_LOGIN_MAX_PER_MIN: ${AUTH_LOGIN_MAX_PER_MIN:-5}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      GATEWAY_BASE_URL: ${GATEWAY_BASE_URL:?set GATEWAY_BASE_URL — points at the OCPP gateway REST API}
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:?set GATEWAY_TOKEN — bearer accepted by the gateway}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:?set KAFKA_BROKERS — CSV of host:port}
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-eveys-console}
+      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-eveys-console}
+      KAFKA_TOPICS_BOOT: ${KAFKA_TOPICS_BOOT:-cp.boot}
+      KAFKA_TOPICS_STATUS: ${KAFKA_TOPICS_STATUS:-cp.status}
+      KAFKA_TOPICS_METER: ${KAFKA_TOPICS_METER:-cp.meter}
+      KAFKA_TOPICS_TX_STARTED: ${KAFKA_TOPICS_TX_STARTED:-tx.started}
+      WS_MAX_SUBSCRIPTIONS_PER_CONN: ${WS_MAX_SUBSCRIPTIONS_PER_CONN:-50}
+      WS_PING_INTERVAL_MS: ${WS_PING_INTERVAL_MS:-30000}
+      WS_IDLE_TIMEOUT_MS: ${WS_IDLE_TIMEOUT_MS:-120000}
+    ports:
+      - '8090:8090'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'node -e "fetch(''http://localhost:8090/healthz'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    image: eveys-console-web:dev
+    container_name: eveys-console-web
+    ports:
+      - '5180:80'
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped

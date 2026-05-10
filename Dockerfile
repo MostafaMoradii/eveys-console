@@ -1,0 +1,55 @@
+# Console server image. Multi-stage build:
+#   1. builder: pnpm install + workspace build
+#   2. runtime: distroless Node 20 with the pruned production deps
+#
+# The web SPA (apps/web/dist) is NOT served from this image — it is a
+# static bundle deployed behind nginx (see deploy/web.Dockerfile). This
+# keeps the server image small and the SPA cacheable / CDN-friendly.
+
+# ---- builder ---------------------------------------------------------------
+
+FROM node:20.10.0-bookworm-slim AS builder
+WORKDIR /repo
+
+# Pin pnpm via Corepack so the build doesn't depend on whatever the host
+# image happens to ship.
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+# Install all workspace dependencies (dev + prod) so the build can run.
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+COPY apps/server/package.json ./apps/server/
+COPY apps/web/package.json ./apps/web/
+COPY packages/protocol/package.json ./packages/protocol/
+COPY packages/api-types/package.json ./packages/api-types/
+
+RUN --mount=type=cache,target=/root/.pnpm-store \
+    pnpm install --frozen-lockfile
+
+# Copy sources and build.
+COPY apps ./apps
+COPY packages ./packages
+
+RUN pnpm --filter @eveys-console/api-types run generate \
+ && pnpm --filter @eveys-console/protocol run build \
+ && pnpm --filter @eveys-console/server run build
+
+# Produce a self-contained server bundle with only the production deps
+# it actually needs. `pnpm deploy` rewrites the workspace symlinks into
+# real copies under /deploy.
+RUN pnpm --filter @eveys-console/server --prod deploy /deploy
+
+# ---- runtime ---------------------------------------------------------------
+
+FROM gcr.io/distroless/nodejs20-debian12:nonroot AS runtime
+WORKDIR /app
+
+COPY --from=builder /deploy/dist ./dist
+COPY --from=builder /deploy/node_modules ./node_modules
+COPY --from=builder /repo/apps/server/proto ./proto
+COPY --from=builder /deploy/package.json ./package.json
+
+EXPOSE 8090
+USER nonroot
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8090
+
+CMD ["dist/main.js"]

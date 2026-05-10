@@ -1,0 +1,29 @@
+**/node_modules
+**/dist
+**/.turbo
+**/.cache
+
+.git
+.github
+
+# Local env / secrets
+**/.env
+**/.env.local
+apps/server/.env
+apps/web/.env
+
+# Tests, dev artifacts
+**/test
+**/__tests__
+**/coverage
+
+# Docs / IDE
+docs
+.vscode
+.idea
+*.log
+
+# OS
+.DS_Store
+
+# License files etc are kept (they ship with the image)

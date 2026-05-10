@@ -82,6 +82,24 @@ proof-of-work CAPTCHA before submitting (~50 ms in a real browser).
 The `mint-token` script (`pnpm --filter @eveys-console/server mint-token`)
 is also kept as a dev-only fallback for headless tests.
 
+### Docker
+
+Two images. The server is distroless Node 20; the web is nginx serving
+the static SPA bundle. Compose ties them together:
+
+```bash
+# Set required env (see deploy/docker-compose.yml for all the keys
+# the server reads). At minimum:
+export JWT_SECRET=$(openssl rand -base64 32)
+export GATEWAY_BASE_URL=http://gateway-host:8080
+export GATEWAY_TOKEN=...
+export KAFKA_BROKERS=kafka-host:9092
+
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+Server on `:8090`, web on `:5180`.
+
 ## Realtime model
 
 Each browser tab opens one WebSocket. Inside that connection it can:
