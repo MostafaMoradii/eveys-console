@@ -7,6 +7,7 @@ import { createRootRoute, createRoute } from '@tanstack/react-router';
 import { ConsoleShell } from './components/AppShell';
 import { ChargerDetailPage } from './pages/ChargerDetailPage';
 import { FleetPage } from './pages/FleetPage';
+import { OcppConformancePage } from './pages/OcppConformancePage';
 import { SystemConfigPage } from './pages/SystemConfigPage';
 import { SystemPage } from './pages/SystemPage';
 import { TransactionDetailPage } from './pages/TransactionDetailPage';
@@ -50,6 +51,12 @@ const sysConfigRoute = createRoute({
   component: SystemConfigPage,
 });
 
+const ocppConformanceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/sys/ocpp-conformance',
+  component: OcppConformancePage,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   inspectChargePointsRoute,
@@ -57,4 +64,5 @@ export const routeTree = rootRoute.addChildren([
   transactionsRoute,
   transactionDetailRoute,
   sysConfigRoute,
+  ocppConformanceRoute,
 ]);
