@@ -43,6 +43,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerDiagnosticsRoutes } from './routes/diagnostics.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerMetricsRoute } from './routes/metrics.js';
+import { registerSysAlertsRoute } from './routes/sys-alerts.js';
 import { registerSysChargePointTransactionsRoute } from './routes/sys-charge-point-transactions.js';
 import { registerSysConfigRoute } from './routes/sys-config.js';
 import { registerSysGatewayAdminConfigRoute } from './routes/sys-gateway-admin-config.js';
@@ -111,6 +112,7 @@ async function main() {
   await registerSysGatewayAdminConfigRoute(app, { gateway });
   await registerSysChargePointTransactionsRoute(app, { gateway });
   await registerSysTransactionsRoute(app, { gateway });
+  await registerSysAlertsRoute(app, { logger });
   await registerDiagnosticsRoutes(app, { store: diagnosticsStore });
   await registerWsRoute(app, { broker, gateway });
 

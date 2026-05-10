@@ -189,6 +189,17 @@ const META: Record<keyof Config, KeyMeta> = {
     sensitive: true,
   },
 
+  ALERTMANAGER_URL: {
+    description:
+      'Base URL of Alertmanager for the firing-alerts panel. Optional — when unset, the panel renders "Alertmanager not configured" instead of an error.',
+    category: 'observability',
+    mutable: true,
+    restart: 'console',
+    range: 'http(s)://host:port URL (no trailing slash).',
+    default: '',
+    sensitive: false,
+  },
+
   KAFKA_BROKERS: {
     description: 'CSV of Kafka bootstrap brokers the Console tails for live events.',
     category: 'kafka',

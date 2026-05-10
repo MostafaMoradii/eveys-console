@@ -48,6 +48,12 @@ services:
       WS_MAX_SUBSCRIPTIONS_PER_CONN: ${WS_MAX_SUBSCRIPTIONS_PER_CONN:-50}
       WS_PING_INTERVAL_MS: ${WS_PING_INTERVAL_MS:-30000}
       WS_IDLE_TIMEOUT_MS: ${WS_IDLE_TIMEOUT_MS:-120000}
+      # Alertmanager — points at the in-stack service when the
+      # observability profile is up. The /sys/alerts/firing route
+      # handles an unreachable Alertmanager gracefully (returns
+      # `{ alerts: [], unavailable: true }`), so leaving this set
+      # while the profile is down is harmless.
+      ALERTMANAGER_URL: ${ALERTMANAGER_URL:-http://alertmanager:9093}
     ports:
       - '8090:8090'
     healthcheck:
