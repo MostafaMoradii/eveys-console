@@ -357,6 +357,55 @@ describe('SystemConfigPage — category grouping', () => {
   });
 });
 
+describe('SystemConfigPage — sensitive-only filter', () => {
+  it('hides non-sensitive entries when the toggle is on (Console tab)', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('PORT');
+
+    // Before: PORT (non-sensitive) and JWT_SECRET (sensitive) both visible.
+    expect(screen.getByText('PORT')).toBeInTheDocument();
+    expect(screen.getAllByText('JWT_SECRET').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: /sensitive only/i }));
+
+    // After: only sensitive entries remain. JWT_SECRET stays; PORT goes.
+    expect(screen.queryByText('PORT')).not.toBeInTheDocument();
+    expect(screen.getAllByText('JWT_SECRET').length).toBeGreaterThan(0);
+  });
+
+  it('toggle is aria-pressed when active', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('PORT');
+
+    const btn = screen.getByRole('button', { name: /sensitive only/i });
+    expect(btn).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(btn);
+    expect(btn).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('combines with the search filter (Gateway tab)', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('PORT');
+
+    await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
+    await screen.findByText('rest_port');
+
+    await user.click(screen.getByRole('button', { name: /sensitive only/i }));
+    // Gateway fixture: only db_url is sensitive. rest_port / kafka_topic_cp_boot / log_level go away.
+    expect(screen.getAllByText('db_url').length).toBeGreaterThan(0);
+    expect(screen.queryByText('rest_port')).not.toBeInTheDocument();
+    expect(screen.queryByText('log_level')).not.toBeInTheDocument();
+
+    // Now narrow further with search; "db" matches db_url, the only sensitive entry.
+    await user.type(screen.getByLabelText(/search configuration/i), 'sql');
+    expect(screen.getAllByText('db_url').length).toBeGreaterThan(0);
+  });
+});
+
 describe('SystemConfigPage — deep-link', () => {
   it('opens on the Gateway tab when ?tab=gateway is in the URL', async () => {
     window.history.replaceState(null, '', '/?tab=gateway');
