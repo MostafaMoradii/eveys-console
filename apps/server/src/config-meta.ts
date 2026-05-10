@@ -197,33 +197,37 @@ const META: Record<keyof Config, KeyMeta> = {
     sensitive: false,
   },
   KAFKA_TOPICS_BOOT: {
-    description: 'Topic carrying BootNotification events from the gateway.',
+    description:
+      'Topic the Console tails for BootNotification events. Must match the topic the gateway publishes to (gateway-side: kafka_topic_cp_boot).',
     mutable: true,
-    restart: 'both',
+    restart: 'console',
     range: 'topic name',
     default: 'cp.boot',
     sensitive: false,
   },
   KAFKA_TOPICS_STATUS: {
-    description: 'Topic carrying StatusNotification events.',
+    description:
+      'Topic the Console tails for StatusNotification events. Must match the topic the gateway publishes to (gateway-side: kafka_topic_cp_status).',
     mutable: true,
-    restart: 'both',
+    restart: 'console',
     range: 'topic name',
     default: 'cp.status',
     sensitive: false,
   },
   KAFKA_TOPICS_METER: {
-    description: 'Topic carrying MeterValues samples.',
+    description:
+      'Topic the Console tails for MeterValues samples. Must match the topic the gateway publishes to (gateway-side: kafka_topic_cp_meter).',
     mutable: true,
-    restart: 'both',
+    restart: 'console',
     range: 'topic name',
     default: 'cp.meter',
     sensitive: false,
   },
   KAFKA_TOPICS_TX_STARTED: {
-    description: 'Topic carrying StartTransaction events.',
+    description:
+      'Topic the Console tails for StartTransaction events. Must match the topic the gateway publishes to (gateway-side: kafka_topic_tx_started).',
     mutable: true,
-    restart: 'both',
+    restart: 'console',
     range: 'topic name',
     default: 'tx.started',
     sensitive: false,
