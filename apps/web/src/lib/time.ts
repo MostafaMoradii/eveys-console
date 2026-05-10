@@ -52,3 +52,29 @@ export function formatUptime(iso: string | null | undefined): string {
   const h = Math.floor((deltaSec % 86_400) / 3600);
   return h > 0 ? `${d}d ${h}h` : `${d}d`;
 }
+
+/**
+ * Render a duration given as a millisecond delta, using the same
+ * compact "Xs" / "Xm" / "Xh Ym" / "Xd Yh" style as `formatUptime`.
+ * Unlike `formatUptime`, this takes an absolute duration rather than
+ * "since-now" — fed by the statistics card (mean session duration)
+ * and other call sites that already have the delta in hand. Returns
+ * '—' for non-finite / negative input.
+ */
+export function formatDurationMinutes(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const deltaSec = Math.floor(ms / 1000);
+  if (deltaSec < 60) return `${deltaSec}s`;
+  if (deltaSec < 3600) {
+    const m = Math.floor(deltaSec / 60);
+    return `${m}m`;
+  }
+  if (deltaSec < 86_400) {
+    const h = Math.floor(deltaSec / 3600);
+    const m = Math.floor((deltaSec % 3600) / 60);
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
+  const d = Math.floor(deltaSec / 86_400);
+  const h = Math.floor((deltaSec % 86_400) / 3600);
+  return h > 0 ? `${d}d ${h}h` : `${d}d`;
+}

@@ -156,3 +156,48 @@ export async function fetchChargePointTransactions(
   if (!res.ok) throw new Error(`sys/charge-points/${cpId}/transactions ${res.status}`);
   return (await res.json()) as TransactionsList;
 }
+
+/**
+ * Page through `/sys/charge-points/:cp_id/transactions` accumulating
+ * up to `maxPages × pageSize` rows. Returns `truncated: true` if the
+ * cap was hit with more pages still available — the StatisticsCard
+ * uses that flag to render a footnote so operators know older
+ * sessions exist beyond the window.
+ *
+ * Defaults (5 × 500 = 2,500 rows) keep the wire cost bounded for
+ * the largest realistic operator: a high-utilisation site doing 30
+ * sessions a day still fits two months in a single fetch. Beyond
+ * that the right answer is a gateway-side aggregation endpoint, not
+ * more pages.
+ */
+export async function fetchAllChargePointTransactions(
+  token: string,
+  cpId: string,
+  maxPages: number = 5,
+  pageSize: number = 500,
+): Promise<{ transactions: TransactionRow[]; truncated: boolean }> {
+  const all: TransactionRow[] = [];
+  let cursor: string | undefined;
+  let truncated = false;
+  for (let i = 0; i < maxPages; i += 1) {
+    const params: ListParams = { limit: pageSize };
+    if (cursor) params.cursor = cursor;
+    const page = await fetchChargePointTransactions(token, cpId, params);
+    all.push(...page.transactions);
+    if (!page.next_cursor) {
+      cursor = undefined;
+      break;
+    }
+    cursor = page.next_cursor;
+    if (i === maxPages - 1) {
+      // Hit the cap with `next_cursor` still set → more rows exist
+      // upstream that we deliberately didn't fetch.
+      truncated = true;
+      // eslint-disable-next-line no-console -- intentional operator-visible signal
+      console.warn(
+        `fetchAllChargePointTransactions(${cpId}): truncated at ${maxPages} pages; older sessions exist`,
+      );
+    }
+  }
+  return { transactions: all, truncated };
+}
