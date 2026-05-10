@@ -1,5 +1,5 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { AlertCircle, Eye, EyeOff, Loader2, Search, Settings } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Loader2, Lock, Search, Settings } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import type { ConfigEntry, ConfigScope, RestartImpact, SysConfig } from '@/api/config-client';
@@ -44,6 +44,7 @@ export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigV
   const { token } = useConsoleClient();
   const [search, setSearch] = useState('');
   const [restartFilter, setRestartFilter] = useState<RestartImpact | 'all'>('all');
+  const [sensitiveOnly, setSensitiveOnly] = useState(false);
   const [revealed, setRevealed] = useState(false);
 
   const q: UseQueryResult<SysConfig> = useQuery({
@@ -58,10 +59,11 @@ export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigV
     const needle = search.trim().toLowerCase();
     return entries.filter((e) => {
       if (restartFilter !== 'all' && e.restart !== restartFilter) return false;
+      if (sensitiveOnly && !e.sensitive) return false;
       if (!needle) return true;
       return e.key.toLowerCase().includes(needle) || e.description.toLowerCase().includes(needle);
     });
-  }, [entries, search, restartFilter]);
+  }, [entries, search, restartFilter, sensitiveOnly]);
 
   if (q.isLoading) {
     return (
@@ -129,6 +131,15 @@ export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigV
           />
         </div>
         <RestartFilter value={restartFilter} onChange={setRestartFilter} options={filters} />
+        <Button
+          variant={sensitiveOnly ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSensitiveOnly((v) => !v)}
+          aria-pressed={sensitiveOnly}
+          title="Show only the keys flagged as sensitive"
+        >
+          <Lock className="mr-1 h-4 w-4" /> Sensitive only
+        </Button>
         <Button
           variant="outline"
           size="sm"
