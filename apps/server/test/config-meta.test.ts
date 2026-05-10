@@ -81,13 +81,13 @@ describe('describeConfig', () => {
     }
   });
 
-  it('topic keys mark restart=both (consumer + producer must agree)', () => {
+  it('topic keys mark restart=console (Console-side change; gateway-side has its own copy)', () => {
     const cfg = loadConfig(baseEnv);
     const entries = describeConfig(cfg, baseEnv);
     const topicKeys = entries.filter((e) => e.key.startsWith('KAFKA_TOPICS_'));
     expect(topicKeys.length).toBeGreaterThan(0);
     for (const entry of topicKeys) {
-      expect(entry.restart).toBe('both');
+      expect(entry.restart).toBe('console');
     }
   });
 });
