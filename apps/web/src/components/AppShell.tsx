@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
-import { Activity, Bolt, LogOut, Menu, Plug, Receipt, Settings } from 'lucide-react';
+import { Activity, Bolt, LogOut, Menu, Plug, Receipt, Settings, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -211,27 +211,40 @@ function NavItem({ to, label, icon, active }: NavItemProps) {
 // the workflow nav above. Icon-only gear — Configuration is a
 // secondary surface; the sidebar nav stays focused on operator
 // workflows above the bar.
+// Where the "What's new" link points. Hardcoded for now; if/when the
+// repo moves under the eveys-mobility org this constant updates.
+const RELEASES_URL = 'https://github.com/MostafaMoradii/eveys-console/releases';
+
 function SidebarFooter({ path }: { path: string }) {
   const active = path.startsWith('/sys/config');
   return (
-    <div className="mt-auto flex items-center justify-between border-t pt-2">
+    <div className="mt-auto flex items-center justify-between gap-2 border-t pt-2">
       <Link
         to="/sys/config"
         title="Configuration"
         aria-label="Configuration"
         className={cn(
-          'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
+          'flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors',
           active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/60',
         )}
       >
         <Settings className="h-4 w-4" />
       </Link>
-      <span
-        className="font-mono text-[10px] text-muted-foreground"
-        title={`eveys-console v${__CONSOLE_VERSION__}`}
-      >
-        v{__CONSOLE_VERSION__}
-      </span>
+      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+        <a
+          href={RELEASES_URL}
+          target="_blank"
+          rel="noreferrer noopener"
+          title="See the latest releases on GitHub"
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 transition-colors hover:bg-accent/60 hover:text-accent-foreground"
+        >
+          <Sparkles className="h-3 w-3" />
+          What's new
+        </a>
+        <span className="font-mono" title={`eveys-console v${__CONSOLE_VERSION__}`}>
+          v{__CONSOLE_VERSION__}
+        </span>
+      </div>
     </div>
   );
 }
