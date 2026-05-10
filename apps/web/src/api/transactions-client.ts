@@ -1,7 +1,21 @@
-// Per-transaction detail + meter-values time-series client. Both call
-// the Console's REST proxy (single origin); the gateway token never
-// leaves the server. The detail page polls these via TanStack Query
-// — there is no WS broker query for single-tx detail.
+// REST clients for the transactions surfaces.
+//
+// Two surfaces today:
+//
+//   - fetchChargePointTransactions(token, cpId, params)
+//       → GET /sys/charge-points/:cp_id/transactions?active=…&limit=…&cursor=…
+//     The row is leaner than a full TransactionDetail (no telemetry /
+//     meter-value join). Pagination is cursor-based: the client treats
+//     `next_cursor` as opaque and pushes/pops it onto a stack to power
+//     Previous/Next.
+//
+//   - fetchTransaction(token, txId) + fetchMeterValues(token, cpId, params)
+//       → GET /sys/transactions/:tx_id
+//       → GET /sys/charge-points/:cp_id/meter-values
+//     Per-transaction detail + meter-values time-series. Both call the
+//     Console's REST proxy (single origin); the gateway token never
+//     leaves the server. The detail page polls these via TanStack Query
+//     — there is no WS broker query for single-tx detail.
 
 import { CONSOLE_BASE_URL as BASE } from '@/lib/console-url';
 
@@ -70,6 +84,36 @@ export interface MeterValuesParams {
   limit?: number;
 }
 
+export interface TransactionRow {
+  transaction_id: number;
+  cp_id: string;
+  connector_id: number;
+  id_tag: string;
+  /** Wh integer at session start. */
+  meter_start_wh: number;
+  /** ISO-8601 string. */
+  started_at: string;
+  /** Wh integer at session stop, or null while the session is open. */
+  meter_stop_wh: number | null;
+  /** ISO-8601 string, or null while the session is open. */
+  stopped_at: string | null;
+  /** OCPP `Reason` enum value if the charger sent one, else null. */
+  stop_reason: string | null;
+  /** Convenience flag the gateway already computes. */
+  open: boolean;
+}
+
+export interface TransactionsList {
+  transactions: TransactionRow[];
+  next_cursor: string | null;
+}
+
+export interface ListParams {
+  active?: boolean;
+  limit?: number;
+  cursor?: string;
+}
+
 export async function fetchTransaction(token: string, txId: number): Promise<TransactionDetail> {
   const res = await fetch(`${BASE}/sys/transactions/${encodeURIComponent(String(txId))}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -95,4 +139,20 @@ export async function fetchMeterValues(
   });
   if (!res.ok) throw new Error(`sys/charge-points/${cpId}/meter-values ${res.status}`);
   return (await res.json()) as MeterValuesResponse;
+}
+
+export async function fetchChargePointTransactions(
+  token: string,
+  cpId: string,
+  params: ListParams = {},
+): Promise<TransactionsList> {
+  const qs = new URLSearchParams();
+  if (params.active !== undefined) qs.set('active', String(params.active));
+  if (params.limit !== undefined) qs.set('limit', String(params.limit));
+  if (params.cursor) qs.set('cursor', params.cursor);
+  const suffix = qs.toString() ? `?${qs}` : '';
+  const url = `${BASE}/sys/charge-points/${encodeURIComponent(cpId)}/transactions${suffix}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`sys/charge-points/${cpId}/transactions ${res.status}`);
+  return (await res.json()) as TransactionsList;
 }
