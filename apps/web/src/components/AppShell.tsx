@@ -58,7 +58,7 @@ export function ConsoleShell() {
               </SheetHeader>
               <div className="flex flex-1 flex-col p-2">
                 <NavContents path={path} />
-                <ConfigGearLink path={path} />
+                <SidebarFooter path={path} />
               </div>
             </SheetContent>
           </Sheet>
@@ -93,7 +93,7 @@ export function ConsoleShell() {
             bottom via mt-auto. */}
         <nav className="hidden w-56 flex-col border-r bg-background p-2 lg:flex">
           <NavContents path={path} />
-          <ConfigGearLink path={path} />
+          <SidebarFooter path={path} />
         </nav>
 
         <main className="flex-1 p-6">
@@ -205,25 +205,33 @@ function NavItem({ to, label, icon, active }: NavItemProps) {
   );
 }
 
-// Gear button anchored at the bottom of the sidebar (mt-auto pushes
-// it past the nav sections). Icon-only by design — the sidebar nav
-// stays focused on the operator's workflows; configuration is a
-// secondary surface.
-function ConfigGearLink({ path }: { path: string }) {
+// Pinned-to-bottom footer bar inside the sidebar. Holds the
+// Configuration gear (left) and the build version (right). mt-auto
+// pushes it past the nav sections; the top border separates it from
+// the workflow nav above. Icon-only gear — Configuration is a
+// secondary surface; the sidebar nav stays focused on operator
+// workflows above the bar.
+function SidebarFooter({ path }: { path: string }) {
   const active = path.startsWith('/sys/config');
   return (
-    <div className="mt-auto pt-2">
+    <div className="mt-auto flex items-center justify-between border-t pt-2">
       <Link
         to="/sys/config"
         title="Configuration"
         aria-label="Configuration"
         className={cn(
-          'flex h-9 w-9 items-center justify-center rounded-md transition-colors',
+          'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
           active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/60',
         )}
       >
         <Settings className="h-4 w-4" />
       </Link>
+      <span
+        className="font-mono text-[10px] text-muted-foreground"
+        title={`eveys-console v${__CONSOLE_VERSION__}`}
+      >
+        v{__CONSOLE_VERSION__}
+      </span>
     </div>
   );
 }
