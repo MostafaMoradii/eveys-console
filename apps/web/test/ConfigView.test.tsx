@@ -288,9 +288,59 @@ describe('SystemConfigPage — category grouping', () => {
 
     await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
     await screen.findByText('rest_port');
-    // 'rest_server' → 'Rest Server'; 'kafka_topics' → 'Kafka Topics'.
-    expect(screen.getByRole('heading', { name: /^rest server.*\(/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /^kafka topics.*\(/i })).toBeInTheDocument();
+    // 'rest_server' → 'REST Server' (acronym), 'kafka_topics' → 'Kafka Topics'.
+    expect(screen.getByRole('heading', { name: /^REST Server.*\(/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Kafka Topics.*\(/ })).toBeInTheDocument();
+  });
+
+  it('preserves canonical acronym casing in headings', async () => {
+    const user = userEvent.setup();
+    // Add an entry with an acronym-bearing category to the gateway fixture.
+    gatewayResult = {
+      data: {
+        ...gatewayConfig,
+        entries: [
+          ...gatewayConfig.entries,
+          entry({
+            key: 'ws_host',
+            value: '0.0.0.0',
+            default: '0.0.0.0',
+            source: 'default',
+            restart: 'gateway',
+            description: 'WS bind.',
+            category: 'ws_server',
+          }),
+          entry({
+            key: 'grpc_port',
+            value: '50051',
+            default: '50051',
+            source: 'default',
+            restart: 'gateway',
+            description: 'gRPC port.',
+            category: 'grpc_server',
+          }),
+          entry({
+            key: 'clickhouse_host',
+            value: 'localhost',
+            default: 'localhost',
+            source: 'default',
+            restart: 'gateway',
+            description: 'CH host.',
+            category: 'clickhouse_ingest',
+          }),
+        ],
+      },
+    };
+    renderPage();
+    await screen.findByText('PORT');
+
+    await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
+    await screen.findByText('ws_host');
+
+    // Acronyms render with canonical casing — not plain Title Case.
+    expect(screen.getByRole('heading', { name: /^WS Server.*\(/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^gRPC Server.*\(/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^ClickHouse Ingest.*\(/ })).toBeInTheDocument();
   });
 });
 

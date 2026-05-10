@@ -199,12 +199,36 @@ function GroupedEntries({ entries, revealed }: { entries: ConfigEntry[]; reveale
 }
 
 // Cosmetic-only: turn snake_case category names into Title Case for
-// the group heading. Underscores → spaces.
+// the group heading. Underscores → spaces. Words that are well-known
+// acronyms render in their canonical casing instead of plain Title
+// Case ("WS" not "Ws"; "gRPC" not "Grpc"; "ClickHouse" not "Clickhouse").
+const ACRONYMS: Record<string, string> = {
+  ws: 'WS',
+  grpc: 'gRPC',
+  rest: 'REST',
+  ocpp: 'OCPP',
+  clickhouse: 'ClickHouse',
+  jwt: 'JWT',
+  ttl: 'TTL',
+  url: 'URL',
+  pod: 'Pod',
+  tls: 'TLS',
+  otlp: 'OTLP',
+  dsn: 'DSN',
+  api: 'API',
+  http: 'HTTP',
+  ip: 'IP',
+};
+
 function humanizeCategory(raw: string): string {
   if (!raw) return 'Other';
   return raw
     .split('_')
-    .map((word) => (word.length === 0 ? word : word[0]!.toUpperCase() + word.slice(1)))
+    .map((word) => {
+      if (word.length === 0) return word;
+      const lower = word.toLowerCase();
+      return ACRONYMS[lower] ?? word[0]!.toUpperCase() + word.slice(1);
+    })
     .join(' ');
 }
 
