@@ -204,6 +204,7 @@ function GroupedEntries({ entries, revealed }: { entries: ConfigEntry[]; reveale
 // Case ("WS" not "Ws"; "gRPC" not "Grpc"; "ClickHouse" not "Clickhouse").
 const ACRONYMS: Record<string, string> = {
   ws: 'WS',
+  websocket: 'WebSocket',
   grpc: 'gRPC',
   rest: 'REST',
   ocpp: 'OCPP',

@@ -99,6 +99,15 @@ const consoleConfig: SysConfig = {
       restart: 'console',
       category: 'gateway',
     }),
+    entry({
+      key: 'WS_PING_INTERVAL_MS',
+      value: '30000',
+      default: '30000',
+      source: 'default',
+      description: 'WS ping cadence.',
+      restart: 'console',
+      category: 'websocket',
+    }),
   ],
 };
 
@@ -267,10 +276,14 @@ describe('SystemConfigPage — category grouping', () => {
     renderPage();
     await screen.findByText('PORT');
 
-    // Three categories in the fixture: network, auth, gateway.
+    // Four categories in the fixture: network, auth, gateway, websocket.
     expect(screen.getByRole('heading', { name: /network.*\(/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /auth.*\(/i })).toBeInTheDocument();
+    // Console-tab tab trigger is a `tab`, but a category labelled "Gateway"
+    // heading is a `heading` role — disambiguate by role.
     expect(screen.getByRole('heading', { name: /gateway.*\(/i })).toBeInTheDocument();
+    // WebSocket — case-sensitive: acronym map should yield 'WebSocket', not 'Websocket'.
+    expect(screen.getByRole('heading', { name: /^WebSocket.*\(/ })).toBeInTheDocument();
   });
 
   it('renders the per-group entry count', async () => {
