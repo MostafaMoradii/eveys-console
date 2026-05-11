@@ -53,6 +53,7 @@ import { registerSysTransactionsRoute } from './routes/sys-transactions.js';
 import { registerWsRoute } from './routes/ws.js';
 import { ChannelsStore } from './store/channels-store.js';
 import { DiagnosticsStore } from './store/diagnostics-store.js';
+import { RulesStore } from './store/rules-store.js';
 
 declare module 'fastify' {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -103,10 +104,11 @@ async function main() {
   const pow = new PowVerifier(config);
   const diagnosticsStore = new DiagnosticsStore(config.DIAGNOSTICS_DATA_DIR);
   const channelsStore = new ChannelsStore(config.ALERTMANAGER_CONFIG_PATH);
-  // Seed the managed Alertmanager config on first boot so the
-  // Alertmanager container has a file to start against. The seed is
-  // an empty channels list + the synthetic fallback receiver; the
-  // operator adds real receivers through the Channels tab.
+  const rulesStore = new RulesStore(config.ALERTS_RULES_CONFIG_PATH, config.PROMTOOL_PATH);
+  // Seed the managed Alertmanager + rules configs on first boot so
+  // the observability containers have files to start against. Each
+  // seed is empty + the synthetic shell needed to be valid; the
+  // operator adds real entries through the UI.
   try {
     await channelsStore.seedIfMissing();
     logger.info({ path: config.ALERTMANAGER_CONFIG_PATH }, 'alertmanager.config.seeded');
@@ -114,6 +116,15 @@ async function main() {
     logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
       'alertmanager.config.seed-failed',
+    );
+  }
+  try {
+    await rulesStore.seedIfMissing();
+    logger.info({ path: config.ALERTS_RULES_CONFIG_PATH }, 'alertmanager.rules.seeded');
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'alertmanager.rules.seed-failed',
     );
   }
 
@@ -127,7 +138,7 @@ async function main() {
   await registerSysGatewayAdminConfigRoute(app, { gateway });
   await registerSysChargePointTransactionsRoute(app, { gateway });
   await registerSysTransactionsRoute(app, { gateway });
-  await registerSysAlertsRoute(app, { logger, channelsStore });
+  await registerSysAlertsRoute(app, { logger, channelsStore, rulesStore });
   await registerDiagnosticsRoutes(app, { store: diagnosticsStore });
   await registerWsRoute(app, { broker, gateway });
 

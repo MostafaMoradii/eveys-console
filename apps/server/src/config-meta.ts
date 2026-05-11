@@ -222,6 +222,28 @@ const META: Record<keyof Config, KeyMeta> = {
     sensitive: false,
   },
 
+  ALERTS_RULES_CONFIG_PATH: {
+    description:
+      'Path to the Prometheus rules file the Console manages via the /sys/alerts Rules tab. Compose mounts this file into the Prometheus container.',
+    category: 'observability',
+    mutable: true,
+    restart: 'console',
+    range: 'filesystem path readable + writable by the Console.',
+    default: './data/alerts-managed.yml',
+    sensitive: false,
+  },
+
+  PROMTOOL_PATH: {
+    description:
+      "Path to `promtool` for rule validation. The Console runs `promtool check rules` before writing the managed file so a malformed expression can't break Prometheus on reload. Falls back to PATH lookup.",
+    category: 'observability',
+    mutable: true,
+    restart: 'console',
+    range: 'filesystem path or PATH-resolvable command name.',
+    default: 'promtool',
+    sensitive: false,
+  },
+
   KAFKA_BROKERS: {
     description: 'CSV of Kafka bootstrap brokers the Console tails for live events.',
     category: 'kafka',

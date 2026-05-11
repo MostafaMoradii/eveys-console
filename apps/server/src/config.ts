@@ -59,6 +59,21 @@ const schema = z.object({
   // the Rules tab renders its "Prometheus not configured" hint.
   PROMETHEUS_URL: z.string().url().optional(),
 
+  // Path to the Prometheus rules file the Console manages via the
+  // Rules tab on /sys/alerts. Compose's Prometheus container mounts
+  // this file as its --rule_files target; the Console reads + writes
+  // it through the managed-rules routes. The Console-managed group is
+  // `console-managed`; rules outside that group (bundled / hand-edited)
+  // are preserved on round-trip but not editable through the UI.
+  ALERTS_RULES_CONFIG_PATH: z.string().default('./data/alerts-managed.yml'),
+
+  // Path to `promtool` for rule validation. When `promtool check rules`
+  // is available the Console runs it before writing the managed file
+  // so a malformed expression can't break Prometheus on reload. When
+  // unset / not found on PATH, validation is skipped with a warning
+  // log and the API surfaces an `validation_skipped: true` flag.
+  PROMTOOL_PATH: z.string().default('promtool'),
+
   // Kafka tail
   KAFKA_BROKERS: z
     .string()

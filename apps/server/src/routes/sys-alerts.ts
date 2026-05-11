@@ -25,6 +25,7 @@ import {
   type ChannelsStore,
   type ManagedConfig,
 } from '../store/channels-store.js';
+import type { AlertingRule, RulesStore } from '../store/rules-store.js';
 
 // Mirror of the web side's `AlertSeverity` (see apps/web/src/lib/alerts.ts).
 // Kept as a local literal so the server doesn't pull a web type. The
@@ -40,6 +41,8 @@ interface RouteDeps {
   // route without standing up a real store. The channels routes
   // 503 when this is missing.
   channelsStore?: ChannelsStore;
+  // Same shape — 503 from the managed-rules routes when missing.
+  rulesStore?: RulesStore;
 }
 
 /** Mirror of the `Alert` shape on the web side. Kept here as a local
@@ -849,6 +852,194 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
       }
     },
   );
+
+  // ==========================================================================
+  // Managed Prometheus rules (CRUD on the console-managed group)
+  // ==========================================================================
+  //
+  // The bigger sibling of the read-only `/sys/alerts/rules` route.
+  // Every write goes through `promtool check rules` before commit so
+  // a bad expression can't break Prometheus. promtool missing on the
+  // host (common in dev) downgrades to skipped+warn rather than
+  // refusing the write — surfaced to the UI via `validation_skipped`.
+
+  const alertingRuleBody = z.object({
+    name: ruleNameSchema,
+    expr: z.string().min(1).max(8192),
+    // Prometheus accepts durations like `30s`, `5m`, `2h`, `1d`.
+    // Empty string means no `for:` (alert fires on first matching scrape).
+    duration: z
+      .string()
+      .max(16)
+      .regex(/^$|^\d+(?:ms|s|m|h|d|w|y)$/i, {
+        message: 'duration must be a Prometheus duration like 30s, 5m, 2h, 1d',
+      }),
+    severity: z.enum(['critical', 'warning', 'info']),
+    summary: z.string().max(1024),
+    description: z.string().max(4096),
+  });
+
+  app.get(
+    '/sys/alerts/rules/managed',
+    { preHandler: requireAuth },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (_req: any, reply: any) => {
+      if (!deps.rulesStore) return reply.code(503).send({ error: 'rules_disabled' });
+      try {
+        const cfg = await deps.rulesStore.read();
+        return reply.code(200).send({ managed: cfg.managed });
+      } catch (err) {
+        deps.logger?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'rules.managed.read-failed',
+        );
+        return reply.code(500).send({ error: 'rules_read_failed' });
+      }
+    },
+  );
+
+  app.post(
+    '/sys/alerts/rules/managed',
+    { preHandler: requireAuth },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (req: any, reply: any) => {
+      if (!deps.rulesStore) return reply.code(503).send({ error: 'rules_disabled' });
+      const parsed = alertingRuleBody.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: 'invalid_body', detail: parsed.error.flatten() });
+      }
+      try {
+        const cfg = await deps.rulesStore.read();
+        if (cfg.managed.some((r) => r.name === parsed.data.name)) {
+          return reply.code(409).send({ error: 'name_taken' });
+        }
+        const nextRules = [...cfg.managed, parsed.data as AlertingRule];
+        const validation = await deps.rulesStore.validate({
+          ...cfg,
+          managed: nextRules,
+        });
+        if (!validation.ok) {
+          return reply.code(400).send({ error: 'invalid_rule', detail: validation.error });
+        }
+        await deps.rulesStore.updateManaged(nextRules);
+        await reloadPrometheus(app, deps);
+        return reply.code(201).send({
+          managed: nextRules,
+          ...(validation.skipped ? { validation_skipped: true } : {}),
+        });
+      } catch (err) {
+        deps.logger?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'rules.managed.add-failed',
+        );
+        return reply.code(500).send({ error: 'rules_write_failed' });
+      }
+    },
+  );
+
+  app.put(
+    '/sys/alerts/rules/managed/:name',
+    { preHandler: requireAuth },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (req: any, reply: any) => {
+      if (!deps.rulesStore) return reply.code(503).send({ error: 'rules_disabled' });
+      const name = isObject(req.params) && isString(req.params.name) ? req.params.name : '';
+      if (!RULE_NAME_RE.test(name)) return reply.code(400).send({ error: 'invalid_name' });
+      const parsed = alertingRuleBody.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: 'invalid_body', detail: parsed.error.flatten() });
+      }
+      if (parsed.data.name !== name) {
+        return reply.code(400).send({ error: 'name_mismatch' });
+      }
+      try {
+        const cfg = await deps.rulesStore.read();
+        const idx = cfg.managed.findIndex((r) => r.name === name);
+        if (idx < 0) return reply.code(404).send({ error: 'not_found' });
+        const nextRules = [...cfg.managed];
+        nextRules[idx] = parsed.data as AlertingRule;
+        const validation = await deps.rulesStore.validate({ ...cfg, managed: nextRules });
+        if (!validation.ok) {
+          return reply.code(400).send({ error: 'invalid_rule', detail: validation.error });
+        }
+        await deps.rulesStore.updateManaged(nextRules);
+        await reloadPrometheus(app, deps);
+        return reply.code(200).send({
+          managed: nextRules,
+          ...(validation.skipped ? { validation_skipped: true } : {}),
+        });
+      } catch (err) {
+        deps.logger?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'rules.managed.put-failed',
+        );
+        return reply.code(500).send({ error: 'rules_write_failed' });
+      }
+    },
+  );
+
+  app.delete(
+    '/sys/alerts/rules/managed/:name',
+    { preHandler: requireAuth },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (req: any, reply: any) => {
+      if (!deps.rulesStore) return reply.code(503).send({ error: 'rules_disabled' });
+      const name = isObject(req.params) && isString(req.params.name) ? req.params.name : '';
+      if (!RULE_NAME_RE.test(name)) return reply.code(400).send({ error: 'invalid_name' });
+      try {
+        const cfg = await deps.rulesStore.read();
+        const nextRules = cfg.managed.filter((r) => r.name !== name);
+        if (nextRules.length === cfg.managed.length) {
+          return reply.code(404).send({ error: 'not_found' });
+        }
+        // Validate the post-delete file too — a remaining rule that
+        // referenced this one (unusual) would fail here.
+        const validation = await deps.rulesStore.validate({ ...cfg, managed: nextRules });
+        if (!validation.ok) {
+          return reply.code(400).send({ error: 'invalid_rule', detail: validation.error });
+        }
+        await deps.rulesStore.updateManaged(nextRules);
+        await reloadPrometheus(app, deps);
+        return reply.code(200).send({ managed: nextRules });
+      } catch (err) {
+        deps.logger?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'rules.managed.delete-failed',
+        );
+        return reply.code(500).send({ error: 'rules_write_failed' });
+      }
+    },
+  );
+}
+
+// Rule names: Prometheus accepts most strings; we constrain to the
+// same shape as channel names so URL segments are safe.
+const RULE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/i;
+const ruleNameSchema = z.string().regex(RULE_NAME_RE, {
+  message: 'name must be alphanumeric with optional -_, up to 63 chars',
+});
+
+async function reloadPrometheus(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  app: any,
+  deps: RouteDeps,
+): Promise<void> {
+  const base = app.config.PROMETHEUS_URL;
+  if (!base) return;
+  try {
+    const res = await fetch(`${String(base).replace(/\/+$/, '')}/-/reload`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(1000),
+    });
+    if (!res.ok) {
+      deps.logger?.warn({ status: res.status }, 'rules.reload.bad-status');
+    }
+  } catch (err) {
+    deps.logger?.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'rules.reload.failed',
+    );
+  }
 }
 
 // Channel names: Alertmanager treats receiver names as YAML strings;

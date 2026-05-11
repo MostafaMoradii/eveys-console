@@ -1311,3 +1311,328 @@ describe('mapRulesResponse', () => {
     expect(rules?.map((r) => r.duration)).toEqual(['1m', '1h', '90s']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Managed rules CRUD
+// ---------------------------------------------------------------------------
+
+import { RulesStore } from '../src/store/rules-store.js';
+
+async function buildRulesApp2(
+  opts: { promtoolPath?: string; prometheusUrl?: string } = {},
+): Promise<{
+  app: FastifyInstance;
+  store: RulesStore;
+  dir: string;
+}> {
+  const dir = await mkdtemp(join(tmpdir(), 'rules-route-'));
+  // Default to a missing binary so promtool falls into skipped path.
+  const store = new RulesStore(
+    join(dir, 'alerts-managed.yml'),
+    opts.promtoolPath ?? '/definitely-not-a-real-binary',
+  );
+  const app = Fastify({ logger: false });
+  await app.register(fastifyJwt, { secret: JWT_SECRET });
+  app.decorate('config', {
+    PROMETHEUS_URL: opts.prometheusUrl,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any);
+  await registerSysAlertsRoute(app, { rulesStore: store });
+  await app.ready();
+  return { app, store, dir };
+}
+
+describe('Managed rules routes — disabled without a store', () => {
+  it('returns 503 from GET when rulesStore is missing', async () => {
+    const app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/alerts/rules/managed',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(503);
+    await app.close();
+  });
+});
+
+describe('GET /sys/alerts/rules/managed', () => {
+  let ctx: Awaited<ReturnType<typeof buildRulesApp2>>;
+  beforeEach(async () => {
+    ctx = await buildRulesApp2();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('returns 401 without a JWT', async () => {
+    const res = await ctx.app.inject({ method: 'GET', url: '/sys/alerts/rules/managed' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns empty list when the file does not exist', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: '/sys/alerts/rules/managed',
+      headers: { authorization: authHeader(ctx.app) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ managed: [] });
+  });
+});
+
+describe('POST /sys/alerts/rules/managed', () => {
+  let ctx: Awaited<ReturnType<typeof buildRulesApp2>>;
+  beforeEach(async () => {
+    ctx = await buildRulesApp2({ prometheusUrl: 'http://prometheus:9091' });
+    // Mock the /-/reload call.
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({}) }));
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('creates a valid rule + validation_skipped flag when promtool is missing', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/rules/managed',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        name: 'MyAlert',
+        expr: 'up == 0',
+        duration: '5m',
+        severity: 'warning',
+        summary: 'down',
+        description: '',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as { managed: Array<{ name: string }>; validation_skipped?: boolean };
+    expect(body.managed[0]?.name).toBe('MyAlert');
+    expect(body.validation_skipped).toBe(true);
+    const onDisk = await ctx.store.read();
+    expect(onDisk.managed).toHaveLength(1);
+  });
+
+  it('rejects an invalid body', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/rules/managed',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        name: 'X',
+        expr: '' /* empty */,
+        duration: '5m',
+        severity: 'warning',
+        summary: '',
+        description: '',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a bad duration format', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/rules/managed',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        name: 'Bad',
+        expr: 'up == 0',
+        duration: 'not-a-duration',
+        severity: 'warning',
+        summary: '',
+        description: '',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects unsafe rule names', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/rules/managed',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        name: '../etc/passwd',
+        expr: 'up == 0',
+        duration: '5m',
+        severity: 'warning',
+        summary: '',
+        description: '',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects an invalid severity', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/rules/managed',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        name: 'X',
+        expr: 'up == 0',
+        duration: '5m',
+        severity: 'omega',
+        summary: '',
+        description: '',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a duplicate name with 409', async () => {
+    await ctx.store.updateManaged([
+      {
+        name: 'X',
+        expr: 'up == 0',
+        duration: '5m',
+        severity: 'warning',
+        summary: '',
+        description: '',
+      },
+    ]);
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/rules/managed',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        name: 'X',
+        expr: 'up == 1',
+        duration: '5m',
+        severity: 'warning',
+        summary: '',
+        description: '',
+      },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+});
+
+describe('PUT /sys/alerts/rules/managed/:name', () => {
+  let ctx: Awaited<ReturnType<typeof buildRulesApp2>>;
+  beforeEach(async () => {
+    ctx = await buildRulesApp2({ prometheusUrl: 'http://prometheus:9091' });
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({}) }));
+    await ctx.store.updateManaged([
+      {
+        name: 'Existing',
+        expr: 'up == 0',
+        duration: '5m',
+        severity: 'warning',
+        summary: 'old',
+        description: '',
+      },
+    ]);
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('updates an existing rule', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/rules/managed/Existing',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        name: 'Existing',
+        expr: 'up == 0',
+        duration: '10m',
+        severity: 'critical',
+        summary: 'new',
+        description: '',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const cfg = await ctx.store.read();
+    expect(cfg.managed[0]?.severity).toBe('critical');
+    expect(cfg.managed[0]?.summary).toBe('new');
+  });
+
+  it('returns 400 when path and body names disagree', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/rules/managed/Existing',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        name: 'Other',
+        expr: 'up == 0',
+        duration: '5m',
+        severity: 'warning',
+        summary: '',
+        description: '',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('returns 404 for an unknown rule', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/rules/managed/Ghost',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        name: 'Ghost',
+        expr: 'up == 0',
+        duration: '5m',
+        severity: 'warning',
+        summary: '',
+        description: '',
+      },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('DELETE /sys/alerts/rules/managed/:name', () => {
+  let ctx: Awaited<ReturnType<typeof buildRulesApp2>>;
+  beforeEach(async () => {
+    ctx = await buildRulesApp2({ prometheusUrl: 'http://prometheus:9091' });
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({}) }));
+    await ctx.store.updateManaged([
+      {
+        name: 'A',
+        expr: 'up == 0',
+        duration: '5m',
+        severity: 'warning',
+        summary: '',
+        description: '',
+      },
+      {
+        name: 'B',
+        expr: 'up == 1',
+        duration: '5m',
+        severity: 'warning',
+        summary: '',
+        description: '',
+      },
+    ]);
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('removes the named rule', async () => {
+    const res = await ctx.app.inject({
+      method: 'DELETE',
+      url: '/sys/alerts/rules/managed/A',
+      headers: { authorization: authHeader(ctx.app) },
+    });
+    expect(res.statusCode).toBe(200);
+    const cfg = await ctx.store.read();
+    expect(cfg.managed.map((r) => r.name)).toEqual(['B']);
+  });
+
+  it('returns 404 for an unknown rule', async () => {
+    const res = await ctx.app.inject({
+      method: 'DELETE',
+      url: '/sys/alerts/rules/managed/Ghost',
+      headers: { authorization: authHeader(ctx.app) },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+});
