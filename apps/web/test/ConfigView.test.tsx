@@ -304,7 +304,7 @@ describe('SystemConfigPage — Gateway tab', () => {
     expect(fetchGatewayConfig).toHaveBeenCalled();
   });
 
-  it('shows the full filter set including Both on the Gateway tab', async () => {
+  it('shows the gateway-relevant restart-impact filters on the Gateway tab', async () => {
     const user = userEvent.setup();
     renderPage();
     await screen.findByText('PORT');
@@ -312,11 +312,14 @@ describe('SystemConfigPage — Gateway tab', () => {
     await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
     await screen.findByText('rest_port');
 
+    // Gateway tab keeps only the values that actually apply to a
+    // gateway entry: All / Gateway / Live (none). 'Console' / 'Both'
+    // were removed because no gateway key has restart=console.
     const filterGroup = screen.getByRole('group', { name: /filter by restart impact/i });
     const labels = Array.from(filterGroup.querySelectorAll('button')).map((b) =>
       b.textContent?.trim(),
     );
-    expect(labels).toEqual(['All', 'Gateway', 'Console', 'Both', 'Live']);
+    expect(labels).toEqual(['All', 'Gateway', 'Live']);
   });
 
   it('renders impact + category for gateway entries', async () => {
@@ -327,8 +330,11 @@ describe('SystemConfigPage — Gateway tab', () => {
     await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
     await screen.findByText('rest_port');
 
-    // Category now renders as a group heading (humanised), not a card badge.
-    expect(screen.getByRole('heading', { name: /rest server.*\(/i })).toBeInTheDocument();
+    // Category renders as a collapsible <details> with a humanised
+    // summary; the data-testid carries the raw category for stable
+    // matching across the redesign.
+    const cat = screen.getByTestId('config-category-rest_server');
+    expect(within(cat).getByText(/REST Server/)).toBeInTheDocument();
     expect(screen.getByText(/production network policy/i)).toBeInTheDocument();
   });
 
@@ -359,29 +365,30 @@ describe('SystemConfigPage — Gateway tab', () => {
 });
 
 describe('SystemConfigPage — category grouping', () => {
-  it('groups Console entries under category headings', async () => {
+  it('groups Console entries under collapsible category sections', async () => {
     renderPage();
     await screen.findByText('PORT');
 
     // Four categories in the fixture: network, auth, gateway, websocket.
-    expect(screen.getByRole('heading', { name: /network.*\(/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /auth.*\(/i })).toBeInTheDocument();
-    // Console-tab tab trigger is a `tab`, but a category labelled "Gateway"
-    // heading is a `heading` role — disambiguate by role.
-    expect(screen.getByRole('heading', { name: /gateway.*\(/i })).toBeInTheDocument();
-    // WebSocket — case-sensitive: acronym map should yield 'WebSocket', not 'Websocket'.
-    expect(screen.getByRole('heading', { name: /^WebSocket.*\(/ })).toBeInTheDocument();
+    expect(screen.getByTestId('config-category-network')).toBeInTheDocument();
+    expect(screen.getByTestId('config-category-auth')).toBeInTheDocument();
+    expect(screen.getByTestId('config-category-gateway')).toBeInTheDocument();
+    expect(screen.getByTestId('config-category-websocket')).toBeInTheDocument();
+    // Acronym-aware humanisation: WebSocket not Websocket.
+    expect(
+      within(screen.getByTestId('config-category-websocket')).getByText(/WebSocket/),
+    ).toBeInTheDocument();
   });
 
-  it('renders the per-group entry count', async () => {
+  it('renders the per-category entry count badge', async () => {
     renderPage();
     await screen.findByText('PORT');
-    // Each fixture group has one entry — heading text should end with "(1)".
-    const network = screen.getByRole('heading', { name: /^network.*\(1\)$/i });
-    expect(network).toBeInTheDocument();
+    // Each fixture group has one entry — the count badge reads "1".
+    const network = screen.getByTestId('config-category-network');
+    expect(within(network).getByText('1')).toBeInTheDocument();
   });
 
-  it('humanises snake_case category names in headings', async () => {
+  it('humanises snake_case category names in summaries', async () => {
     const user = userEvent.setup();
     renderPage();
     await screen.findByText('PORT');
@@ -389,11 +396,15 @@ describe('SystemConfigPage — category grouping', () => {
     await user.click(screen.getByRole('tab', { name: /^gateway$/i }));
     await screen.findByText('rest_port');
     // 'rest_server' → 'REST Server' (acronym), 'kafka_topics' → 'Kafka Topics'.
-    expect(screen.getByRole('heading', { name: /^REST Server.*\(/ })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /^Kafka Topics.*\(/ })).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('config-category-rest_server')).getByText(/REST Server/),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('config-category-kafka_topics')).getByText(/Kafka Topics/),
+    ).toBeInTheDocument();
   });
 
-  it('preserves canonical acronym casing in headings', async () => {
+  it('preserves canonical acronym casing in summaries', async () => {
     const user = userEvent.setup();
     // Add an entry with an acronym-bearing category to the gateway fixture.
     gatewayResult = {
@@ -438,9 +449,17 @@ describe('SystemConfigPage — category grouping', () => {
     await screen.findByText('ws_host');
 
     // Acronyms render with canonical casing — not plain Title Case.
-    expect(screen.getByRole('heading', { name: /^WS Server.*\(/ })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /^gRPC Server.*\(/ })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /^ClickHouse Ingest.*\(/ })).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('config-category-ws_server')).getByText(/WS Server/),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('config-category-grpc_server')).getByText(/gRPC Server/),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('config-category-clickhouse_ingest')).getByText(
+        /ClickHouse Ingest/,
+      ),
+    ).toBeInTheDocument();
   });
 });
 
@@ -593,8 +612,14 @@ describe('SystemConfigPage — Gateway tab inline-edit', () => {
     };
     const user = await openGateway();
 
-    const resetBtn = await screen.findByRole('button', { name: /^reset log_level to env$/i });
-    await user.click(resetBtn);
+    // Overridden rows render twice — once in the pinned "Active
+    // overrides" section, once inside their native category section.
+    // Both buttons trigger the same mutation; clicking either is fine.
+    const resetBtns = await screen.findAllByRole('button', {
+      name: /^reset log_level to env$/i,
+    });
+    expect(resetBtns.length).toBeGreaterThan(0);
+    await user.click(resetBtns[0]!);
 
     expect(clearGatewayAdminOverride).toHaveBeenCalledWith('test-token', 'log_level');
     await vi.waitFor(() => expect(toast).toHaveBeenCalled());

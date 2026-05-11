@@ -242,17 +242,169 @@ export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigV
           adminConfig={adminQ.data}
           consoleAdminConfig={consoleAdminQ.data}
           configQueryKey={queryKey}
+          isFiltering={search.trim().length > 0 || restartFilter !== 'all' || sensitiveOnly}
         />
       )}
     </div>
   );
 }
 
-// Group entries by `category` and render each group under a heading.
-// The grouping is purely visual; ordering preserves the order categories
-// first appear in the entry list (so the operator's familiar layout
-// from the upstream metadata is preserved instead of alphabetised).
+// Group entries by `category` and render each group as a collapsible
+// section. Sorting + collapsing rules:
+//
+//   - Categories with at least one mutable key sort to the top
+//     ("hotness" — the ones an operator actually touches). Ties
+//     broken alphabetically.
+//   - A category opens by default when (a) a filter is active (the
+//     operator is searching), or (b) any entry in it has an active
+//     override. Otherwise it starts collapsed; the operator chooses.
+//   - Above the categories, a pinned "Active overrides" section
+//     surfaces every key whose source === 'override' so the operator
+//     sees what they've changed at a glance.
 function GroupedEntries({
+  entries,
+  revealed,
+  scope,
+  adminConfig,
+  consoleAdminConfig,
+  configQueryKey,
+  isFiltering,
+}: {
+  entries: ConfigEntry[];
+  revealed: boolean;
+  scope: ConfigScope;
+  adminConfig: GatewayAdminConfig | undefined;
+  consoleAdminConfig: ConsoleAdminConfig | undefined;
+  configQueryKey: string;
+  isFiltering: boolean;
+}) {
+  // Bucket by category.
+  const byCategory = new Map<string, ConfigEntry[]>();
+  for (const entry of entries) {
+    const cat = entry.category || 'other';
+    const list = byCategory.get(cat);
+    if (list) list.push(entry);
+    else byCategory.set(cat, [entry]);
+  }
+
+  // Hotness scoring: count of mutable keys per category. Ties broken
+  // alphabetically. Categories with zero mutable keys (bind-time
+  // structural stuff like ws_server) fall to the bottom.
+  const sortedGroups = Array.from(byCategory.entries())
+    .map(([category, items]) => {
+      const mutableCount = items.filter((e) => e.mutable).length;
+      const overrideCount = items.filter((e) => isOverrideActive(e, scope, adminConfig)).length;
+      return { category, entries: items, mutableCount, overrideCount };
+    })
+    .sort((a, b) => {
+      if (a.mutableCount !== b.mutableCount) return b.mutableCount - a.mutableCount;
+      return a.category.localeCompare(b.category);
+    });
+
+  // Active overrides — flatten across all categories, render as a
+  // pinned section. Hidden when empty.
+  const activeOverrides = entries.filter((e) => isOverrideActive(e, scope, adminConfig));
+
+  return (
+    <div className="space-y-4">
+      {activeOverrides.length > 0 ? (
+        <ActiveOverridesSection
+          entries={activeOverrides}
+          revealed={revealed}
+          scope={scope}
+          adminConfig={adminConfig}
+          consoleAdminConfig={consoleAdminConfig}
+          configQueryKey={configQueryKey}
+        />
+      ) : null}
+
+      {sortedGroups.map((group) => (
+        <CategorySection
+          key={group.category}
+          category={group.category}
+          entries={group.entries}
+          overrideCount={group.overrideCount}
+          revealed={revealed}
+          scope={scope}
+          adminConfig={adminConfig}
+          consoleAdminConfig={consoleAdminConfig}
+          configQueryKey={configQueryKey}
+          forceOpen={isFiltering || group.overrideCount > 0}
+        />
+      ))}
+    </div>
+  );
+}
+
+function isOverrideActive(
+  entry: ConfigEntry,
+  scope: ConfigScope,
+  adminConfig: GatewayAdminConfig | undefined,
+): boolean {
+  if (scope === 'console') return entry.source === 'override';
+  const overrides = adminConfig?.overrides;
+  return !!overrides && Object.prototype.hasOwnProperty.call(overrides, entry.key);
+}
+
+function CategorySection({
+  category,
+  entries,
+  overrideCount,
+  revealed,
+  scope,
+  adminConfig,
+  consoleAdminConfig,
+  configQueryKey,
+  forceOpen,
+}: {
+  category: string;
+  entries: ConfigEntry[];
+  overrideCount: number;
+  revealed: boolean;
+  scope: ConfigScope;
+  adminConfig: GatewayAdminConfig | undefined;
+  consoleAdminConfig: ConsoleAdminConfig | undefined;
+  configQueryKey: string;
+  forceOpen: boolean;
+}) {
+  // <details> handles the open/close natively + a11y. `open` flips
+  // forceOpen so the operator can still toggle once it's open.
+  return (
+    <details
+      className="rounded-md border bg-card/40"
+      open={forceOpen}
+      data-testid={`config-category-${category}`}
+      data-category={category}
+    >
+      <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2 text-sm font-medium">
+        <span>{humanizeCategory(category)}</span>
+        <Badge variant="secondary" className="text-[10px]">
+          {entries.length}
+        </Badge>
+        {overrideCount > 0 ? (
+          <Badge variant="warning" className="text-[10px]" data-testid="category-override-count">
+            {overrideCount} override{overrideCount === 1 ? '' : 's'}
+          </Badge>
+        ) : null}
+      </summary>
+      <div className="grid grid-cols-1 gap-3 border-t bg-background p-3">
+        {entries.map((entry) => (
+          <ConfigCard
+            key={entry.key}
+            entry={entry}
+            revealed={revealed}
+            scope={scope}
+            adminConfig={adminConfig}
+            consoleAdminConfig={consoleAdminConfig}
+            configQueryKey={configQueryKey}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function ActiveOverridesSection({
   entries,
   revealed,
   scope,
@@ -267,46 +419,36 @@ function GroupedEntries({
   consoleAdminConfig: ConsoleAdminConfig | undefined;
   configQueryKey: string;
 }) {
-  const groups: { category: string; entries: ConfigEntry[] }[] = [];
-  const indexByCategory = new Map<string, number>();
-  for (const entry of entries) {
-    const cat = entry.category || 'other';
-    let idx = indexByCategory.get(cat);
-    if (idx === undefined) {
-      idx = groups.length;
-      indexByCategory.set(cat, idx);
-      groups.push({ category: cat, entries: [] });
-    }
-    groups[idx]!.entries.push(entry);
-  }
-
   return (
-    <div className="space-y-6">
-      {groups.map((group) => (
-        <section key={group.category} aria-labelledby={`config-group-${group.category}`}>
-          <h3
-            id={`config-group-${group.category}`}
-            className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-          >
-            {humanizeCategory(group.category)}{' '}
-            <span className="ml-1 font-normal normal-case">({group.entries.length})</span>
-          </h3>
-          <div className="grid grid-cols-1 gap-3">
-            {group.entries.map((entry) => (
-              <ConfigCard
-                key={entry.key}
-                entry={entry}
-                revealed={revealed}
-                scope={scope}
-                adminConfig={adminConfig}
-                consoleAdminConfig={consoleAdminConfig}
-                configQueryKey={configQueryKey}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
+    <section
+      aria-labelledby="config-active-overrides"
+      data-testid="config-active-overrides"
+      className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3"
+    >
+      <h3
+        id="config-active-overrides"
+        className="mb-2 text-xs font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300"
+      >
+        Active overrides ({entries.length})
+      </h3>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Runtime overrides currently in effect. Use the &quot;Reset to env&quot; button on each row
+        to revert.
+      </p>
+      <div className="grid grid-cols-1 gap-3">
+        {entries.map((entry) => (
+          <ConfigCard
+            key={`override-${entry.key}`}
+            entry={entry}
+            revealed={revealed}
+            scope={scope}
+            adminConfig={adminConfig}
+            consoleAdminConfig={consoleAdminConfig}
+            configQueryKey={configQueryKey}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -389,11 +531,34 @@ function ConfigCard({
   // is irrelevant for the current scope.
   void consoleAdminConfig;
 
+  // Editable rows stay open by default — the operator's intent is to
+  // see the form. Read-only rows collapse so 111 entries don't form a
+  // wall of text; the operator expands the row they want to inspect.
+  // Active overrides always open regardless (visible state matters).
+  const detailsOpen = isAllowlisted || hasOverride;
+
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="font-mono text-sm">{entry.key}</CardTitle>
+    <Card data-testid={`config-card-${entry.key}`}>
+      <details open={detailsOpen} className="group/details">
+        <summary
+          className={cn(
+            'flex cursor-pointer flex-wrap items-center gap-2 px-4 py-2.5',
+            // Make the summary look like the previous CardHeader so
+            // the redesign feels familiar.
+            'border-b border-transparent group-open/details:border-border',
+          )}
+        >
+          <span className="flex-1 truncate font-mono text-sm font-semibold">{entry.key}</span>
+          <code
+            className={cn(
+              'truncate rounded bg-muted px-2 py-0.5 font-mono text-[11px]',
+              entry.sensitive && !revealed ? 'text-muted-foreground' : '',
+            )}
+            data-testid={`value-${entry.key}`}
+            title={display}
+          >
+            {truncateForHeader(display)}
+          </code>
           <div className="flex flex-wrap items-center gap-1.5">
             <SourcePill source={entry.source} />
             <RestartPill restart={entry.restart} />
@@ -405,52 +570,50 @@ function ConfigCard({
             {entry.sensitive ? <Badge variant="destructive">sensitive</Badge> : null}
             {!entry.mutable ? <Badge variant="secondary">read-only</Badge> : null}
           </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2 text-sm">
-        <p className="text-muted-foreground">{entry.description}</p>
-        {entry.impact ? (
-          <p className="rounded border-l-2 border-muted bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            <span className="font-semibold uppercase tracking-wider">Impact</span> · {entry.impact}
-          </p>
-        ) : null}
+        </summary>
+        <CardContent className="space-y-2 pt-3 text-sm">
+          <p className="text-muted-foreground">{entry.description}</p>
+          {entry.impact ? (
+            <p className="rounded border-l-2 border-muted bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              <span className="font-semibold uppercase tracking-wider">Impact</span> ·{' '}
+              {entry.impact}
+            </p>
+          ) : null}
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <KV label="Current value">
-            <code
-              className={cn(
-                'block break-all rounded bg-muted px-2 py-1 font-mono text-xs',
-                entry.sensitive && !revealed ? 'text-muted-foreground' : '',
-              )}
-              data-testid={`value-${entry.key}`}
-            >
-              {display}
-            </code>
-          </KV>
-          <KV label="Default">
-            <code className="block break-all rounded bg-muted px-2 py-1 font-mono text-xs">
-              {entry.default || '<none>'}
-            </code>
-          </KV>
-          <KV label="Range">
-            <span className="text-xs text-muted-foreground">{entry.range}</span>
-          </KV>
-        </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <KV label="Default">
+              <code className="block break-all rounded bg-muted px-2 py-1 font-mono text-xs">
+                {entry.default || '<none>'}
+              </code>
+            </KV>
+            <KV label="Range">
+              <span className="text-xs text-muted-foreground">{entry.range}</span>
+            </KV>
+          </div>
 
-        {isAllowlisted ? (
-          <InlineEditor
-            entry={entry}
-            description={allowlistDescription ?? entry.description}
-            hasOverride={hasOverride}
-            scope={scope}
-            configQueryKey={configQueryKey}
-          />
-        ) : scope === 'gateway' ? (
-          <ReadOnlyTooltip />
-        ) : null}
-      </CardContent>
+          {isAllowlisted ? (
+            <InlineEditor
+              entry={entry}
+              description={allowlistDescription ?? entry.description}
+              hasOverride={hasOverride}
+              scope={scope}
+              configQueryKey={configQueryKey}
+            />
+          ) : scope === 'gateway' ? (
+            <ReadOnlyTooltip />
+          ) : null}
+        </CardContent>
+      </details>
     </Card>
   );
+}
+
+/** Cap the value preview shown in the collapsed row so a long URL
+ *  doesn't push the badges off-screen. The full value is still in the
+ *  details body + the title attribute. */
+function truncateForHeader(s: string): string {
+  if (s.length <= 32) return s;
+  return `${s.slice(0, 24)}…${s.slice(-6)}`;
 }
 
 // Lock-with-tooltip block shown next to read-only gateway keys. The
