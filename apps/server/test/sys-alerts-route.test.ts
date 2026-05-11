@@ -10,11 +10,13 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mapFiringAlert, mapSilence, registerSysAlertsRoute } from '../src/routes/sys-alerts.js';
+import { ChannelsStore } from '../src/store/channels-store.js';
 
 const JWT_SECRET = 'a-test-secret-of-at-least-16-bytes';
 
 interface BuildOptions {
   alertmanagerUrl?: string;
+  channelsStore?: ChannelsStore;
 }
 
 async function buildApp(opts: BuildOptions = {}): Promise<FastifyInstance> {
@@ -25,7 +27,9 @@ async function buildApp(opts: BuildOptions = {}): Promise<FastifyInstance> {
     ALERTMANAGER_URL: opts.alertmanagerUrl,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
-  await registerSysAlertsRoute(app);
+  const deps: { channelsStore?: ChannelsStore } = {};
+  if (opts.channelsStore) deps.channelsStore = opts.channelsStore;
+  await registerSysAlertsRoute(app, deps);
   await app.ready();
   return app;
 }
@@ -736,5 +740,358 @@ describe('mapSilence', () => {
       is_regex: false,
       is_equal: true,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Channels routes
+// ---------------------------------------------------------------------------
+
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+async function buildChannelsApp(): Promise<{
+  app: FastifyInstance;
+  store: ChannelsStore;
+  dir: string;
+}> {
+  const dir = await mkdtemp(join(tmpdir(), 'channels-route-'));
+  const store = new ChannelsStore(join(dir, 'managed.yml'));
+  const app = await buildApp({
+    alertmanagerUrl: 'http://alertmanager:9093',
+    channelsStore: store,
+  });
+  return { app, store, dir };
+}
+
+describe('Channels routes — disabled when no store is wired', () => {
+  it('returns 503 from GET when channelsStore is missing', async () => {
+    const app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(503);
+    await app.close();
+  });
+});
+
+describe('GET /sys/alerts/channels', () => {
+  let ctx: Awaited<ReturnType<typeof buildChannelsApp>>;
+  beforeEach(async () => {
+    ctx = await buildChannelsApp();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('returns 401 without a JWT', async () => {
+    const res = await ctx.app.inject({ method: 'GET', url: '/sys/alerts/channels' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns an empty list when the file does not exist', async () => {
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ channels: [], default_channel: '' });
+  });
+
+  it('returns receivers with secrets masked', async () => {
+    await ctx.store.updateChannels(
+      [
+        {
+          type: 'slack',
+          name: 'ops',
+          api_url: 'https://hooks.slack.com/services/T1/B2/THE-SECRET-TOKEN-tail',
+          channel: '#a',
+        },
+      ],
+      'ops',
+    );
+    const res = await ctx.app.inject({
+      method: 'GET',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+    });
+    const body = res.json() as { channels: Array<{ api_url: string }> };
+    expect(body.channels[0]?.api_url).not.toContain('THE-SECRET-TOKEN');
+    expect(body.channels[0]?.api_url).toContain('••••');
+  });
+});
+
+describe('POST /sys/alerts/channels', () => {
+  let ctx: Awaited<ReturnType<typeof buildChannelsApp>>;
+  beforeEach(async () => {
+    ctx = await buildChannelsApp();
+    // Don't actually call Alertmanager's /-/reload in tests.
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({}) }));
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('rejects an invalid body shape', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: { type: 'slack' /* missing api_url, channel, name */ },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('creates a Slack receiver and persists it', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: 'ops',
+        api_url: 'https://hooks.slack.com/services/T1/B2/abc123def-tail',
+        channel: '#ocpp-alerts',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const cfg = await ctx.store.read();
+    expect(cfg.channels).toHaveLength(1);
+    expect(cfg.channels[0]?.name).toBe('ops');
+    expect(cfg.default_channel).toBe('ops');
+  });
+
+  it('rejects a duplicate name with 409', async () => {
+    await ctx.store.updateChannels(
+      [{ type: 'slack', name: 'ops', api_url: 'https://hooks/x', channel: '#a' }],
+      'ops',
+    );
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: 'ops',
+        api_url: 'https://hooks/y',
+        channel: '#b',
+      },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('rejects an unsafe name', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: '../etc/passwd',
+        api_url: 'https://hooks/x',
+        channel: '#a',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('PUT /sys/alerts/channels/:name', () => {
+  let ctx: Awaited<ReturnType<typeof buildChannelsApp>>;
+  beforeEach(async () => {
+    ctx = await buildChannelsApp();
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({}) }));
+    await ctx.store.updateChannels(
+      [
+        {
+          type: 'slack',
+          name: 'ops',
+          api_url: 'https://hooks.slack.com/services/T1/B2/REAL-SECRET',
+          channel: '#a',
+          title: 'old title',
+        },
+      ],
+      'ops',
+    );
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('updates non-secret fields and keeps the existing api_url when the body sends a masked value', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/channels/ops',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: 'ops',
+        api_url: 'https://hooks.slack.com••••CRET',
+        channel: '#ocpp',
+        title: 'new title',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const cfg = await ctx.store.read();
+    const ch = cfg.channels[0] as { type: 'slack'; api_url: string; title?: string; channel: string };
+    expect(ch.api_url).toBe('https://hooks.slack.com/services/T1/B2/REAL-SECRET');
+    expect(ch.title).toBe('new title');
+    expect(ch.channel).toBe('#ocpp');
+  });
+
+  it('replaces the api_url when the body sends a fresh non-masked value', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/channels/ops',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: 'ops',
+        api_url: 'https://hooks.slack.com/services/T1/B2/NEW-SECRET',
+        channel: '#a',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const cfg = await ctx.store.read();
+    const ch = cfg.channels[0] as { type: 'slack'; api_url: string };
+    expect(ch.api_url).toBe('https://hooks.slack.com/services/T1/B2/NEW-SECRET');
+  });
+
+  it('returns 400 when path name and body name disagree', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/channels/ops',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: 'other',
+        api_url: 'https://hooks/x',
+        channel: '#a',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('returns 404 when the named channel does not exist', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/channels/ghost',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: 'ghost',
+        api_url: 'https://hooks/x',
+        channel: '#a',
+      },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('DELETE /sys/alerts/channels/:name', () => {
+  let ctx: Awaited<ReturnType<typeof buildChannelsApp>>;
+  beforeEach(async () => {
+    ctx = await buildChannelsApp();
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({}) }));
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('removes the named channel', async () => {
+    await ctx.store.updateChannels(
+      [
+        { type: 'slack', name: 'a', api_url: 'https://hooks/x', channel: '#a' },
+        { type: 'slack', name: 'b', api_url: 'https://hooks/y', channel: '#b' },
+      ],
+      'a',
+    );
+    const res = await ctx.app.inject({
+      method: 'DELETE',
+      url: '/sys/alerts/channels/a',
+      headers: { authorization: authHeader(ctx.app) },
+    });
+    expect(res.statusCode).toBe(200);
+    const cfg = await ctx.store.read();
+    expect(cfg.channels.map((c) => c.name)).toEqual(['b']);
+    // Default falls back to the remaining channel.
+    expect(cfg.default_channel).toBe('b');
+  });
+
+  it('returns 404 for an unknown channel', async () => {
+    const res = await ctx.app.inject({
+      method: 'DELETE',
+      url: '/sys/alerts/channels/ghost',
+      headers: { authorization: authHeader(ctx.app) },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('clears the default when the last channel is removed', async () => {
+    await ctx.store.updateChannels(
+      [{ type: 'slack', name: 'only', api_url: 'https://hooks/x', channel: '#a' }],
+      'only',
+    );
+    const res = await ctx.app.inject({
+      method: 'DELETE',
+      url: '/sys/alerts/channels/only',
+      headers: { authorization: authHeader(ctx.app) },
+    });
+    expect(res.statusCode).toBe(200);
+    const cfg = await ctx.store.read();
+    expect(cfg.channels).toHaveLength(0);
+    expect(cfg.default_channel).toBe('');
+  });
+});
+
+describe('POST /sys/alerts/channels/:name/test', () => {
+  let ctx: Awaited<ReturnType<typeof buildChannelsApp>>;
+  beforeEach(async () => {
+    ctx = await buildChannelsApp();
+    await ctx.store.updateChannels(
+      [{ type: 'slack', name: 'ops', api_url: 'https://hooks/x', channel: '#a' }],
+      'ops',
+    );
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('returns 202 on successful upstream', async () => {
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({}) }));
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels/ops/test',
+      headers: { authorization: authHeader(ctx.app) },
+    });
+    expect(res.statusCode).toBe(202);
+  });
+
+  it('returns 404 when the channel does not exist', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels/ghost/test',
+      headers: { authorization: authHeader(ctx.app) },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 502 when Alertmanager rejects the test alert', async () => {
+    mockFetchOnce(() => ({ ok: false, status: 400, json: async () => ({}) }));
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels/ops/test',
+      headers: { authorization: authHeader(ctx.app) },
+    });
+    expect(res.statusCode).toBe(502);
   });
 });
