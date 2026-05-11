@@ -102,6 +102,7 @@ export type AuthLoginResult = 'success' | 'invalid_credentials' | 'disabled';
 export type GatewayOp =
   | 'health'
   | 'sys_config'
+  | 'sys_kpis'
   | 'admin_config'
   | 'patch_admin_config'
   | 'delete_admin_config_override'

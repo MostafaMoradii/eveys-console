@@ -57,6 +57,10 @@ export class GatewayClient {
     return this.json<unknown>('sys_config', '/api/v1/sys/config');
   }
 
+  sysKpis() {
+    return this.json<unknown>('sys_kpis', '/api/v1/sys/kpis');
+  }
+
   // ---- Runtime overrides (admin-config) ---------------------------------
   // These three pair with the gateway's `runtime_overrides` allowlist. The
   // Console exposes them via the `/sys/gateway-admin-config` proxy so
