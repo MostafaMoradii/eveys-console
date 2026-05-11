@@ -19,6 +19,7 @@ vi.mock('@/lib/ws-context', () => ({
   useConsoleClient: () => ({
     client: { rpc: vi.fn(), subscribe: vi.fn(), close: vi.fn(), connect: vi.fn() },
     status: 'open',
+    diagnostics: { lastCloseCode: null, lastCloseReason: null, reconnectAttempt: 0 },
     token: 'test-token',
     setToken: setTokenSpy,
   }),
@@ -124,5 +125,17 @@ describe('AppShell — sign-out confirmation', () => {
     renderShell();
     const btn = screen.getByTestId('signout-button');
     expect(btn.getAttribute('aria-label')).toBe('Sign out');
+  });
+});
+
+describe('AppShell — connection diagnostics surfacing', () => {
+  it('exposes ws status + diagnostic data attributes on the status pill', () => {
+    renderShell();
+    // The Badge variant renders as a span; pick it up by the
+    // status-text content the mock pins to "open".
+    const pill = screen.getByText(/ws: open/i);
+    expect(pill.getAttribute('data-ws-status')).toBe('open');
+    expect(pill.getAttribute('data-ws-last-close-code')).toBe('');
+    expect(pill.getAttribute('data-ws-reconnect-attempt')).toBe('0');
   });
 });
