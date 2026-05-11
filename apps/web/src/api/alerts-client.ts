@@ -110,3 +110,116 @@ export async function expireSilence(token: string, id: string): Promise<void> {
   }
   throw new Error(`DELETE sys/alerts/silences ${res.status}`);
 }
+
+// ---------------------------------------------------------------------------
+// Channels (receiver config)
+// ---------------------------------------------------------------------------
+// The browser mirrors the server's discriminated-union shape for
+// receivers. Secret-bearing fields (Slack webhook URL, SMTP password,
+// webhook basic-auth password) arrive masked from the server; the form
+// treats an empty string as "keep existing" so an operator editing a
+// non-secret field doesn't need to re-enter the secret.
+
+export type ChannelType = 'slack' | 'email' | 'webhook';
+
+export interface ChannelSlack {
+  type: 'slack';
+  name: string;
+  api_url: string;
+  channel: string;
+  title?: string;
+  text?: string;
+}
+
+export interface ChannelEmail {
+  type: 'email';
+  name: string;
+  to: string;
+  from: string;
+  smarthost: string;
+  auth_username?: string;
+  auth_password?: string;
+  require_tls?: boolean;
+}
+
+export interface ChannelWebhook {
+  type: 'webhook';
+  name: string;
+  url: string;
+  http_basic_auth_username?: string;
+  http_basic_auth_password?: string;
+}
+
+export type Channel = ChannelSlack | ChannelEmail | ChannelWebhook;
+
+export interface ChannelsResponse {
+  channels: Channel[];
+  /** Empty string when the synthetic null-fallback is the route's
+   *  default — alerts fire but go nowhere. */
+  default_channel: string;
+}
+
+export async function fetchChannels(token: string): Promise<ChannelsResponse> {
+  const res = await fetch(`${BASE}/sys/alerts/channels`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 503) {
+    // The server reports "channels disabled" when the store isn't
+    // wired (no ALERTMANAGER_CONFIG_PATH bound). The Channels tab
+    // renders an explanatory hint in that case.
+    return { channels: [], default_channel: '' };
+  }
+  if (!res.ok) throw new Error(`GET sys/alerts/channels ${res.status}`);
+  return (await res.json()) as ChannelsResponse;
+}
+
+export async function createChannel(token: string, channel: Channel): Promise<ChannelsResponse> {
+  const res = await fetch(`${BASE}/sys/alerts/channels`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(channel),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`POST sys/alerts/channels ${res.status}: ${body}`);
+  }
+  return (await res.json()) as ChannelsResponse;
+}
+
+export async function updateChannel(token: string, channel: Channel): Promise<ChannelsResponse> {
+  const res = await fetch(`${BASE}/sys/alerts/channels/${encodeURIComponent(channel.name)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(channel),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`PUT sys/alerts/channels ${res.status}: ${body}`);
+  }
+  return (await res.json()) as ChannelsResponse;
+}
+
+export async function deleteChannel(token: string, name: string): Promise<ChannelsResponse> {
+  const res = await fetch(`${BASE}/sys/alerts/channels/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`DELETE sys/alerts/channels ${res.status}: ${body}`);
+  }
+  return (await res.json()) as ChannelsResponse;
+}
+
+export async function testChannel(token: string, name: string): Promise<void> {
+  const res = await fetch(`${BASE}/sys/alerts/channels/${encodeURIComponent(name)}/test`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 202) return;
+  // 502 / 503 / 404 / 400 all surface to the caller so the form can
+  // distinguish "Alertmanager rejected" from "channel was renamed
+  // mid-click."
+  const body = await res.text();
+  throw new Error(`POST sys/alerts/channels/.../test ${res.status}: ${body}`);
+}

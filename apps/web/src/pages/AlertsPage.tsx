@@ -10,6 +10,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { BellRing } from 'lucide-react';
 
 import { ActiveSilencesPanel } from '@/components/ActiveSilencesPanel';
+import { ChannelsPanel } from '@/components/ChannelsPanel';
 import { FiringAlertsPanel } from '@/components/FiringAlertsPanel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -100,10 +101,7 @@ export function AlertsPage() {
         </TabsContent>
 
         <TabsContent value="channels">
-          <PlaceholderCard
-            title="Channels"
-            body="Configure where Alertmanager sends notifications — Slack webhooks, PagerDuty integration keys, email SMTP, etc. UI coming in the next PR; for now edit deploy/observability/alertmanager.yml and reload the Alertmanager container."
-          />
+          <ChannelsPanel />
         </TabsContent>
 
         <TabsContent value="rules">
