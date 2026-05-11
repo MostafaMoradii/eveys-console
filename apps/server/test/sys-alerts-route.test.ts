@@ -9,7 +9,7 @@ import fastifyJwt from '@fastify/jwt';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { mapFiringAlert, registerSysAlertsRoute } from '../src/routes/sys-alerts.js';
+import { mapFiringAlert, mapSilence, registerSysAlertsRoute } from '../src/routes/sys-alerts.js';
 
 const JWT_SECRET = 'a-test-secret-of-at-least-16-bytes';
 
@@ -319,5 +319,422 @@ describe('mapFiringAlert', () => {
     expect(
       mapFiringAlert({ ...valid, labels: { ...valid.labels, cp_id: '' } })?.cp_id,
     ).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Silences
+// ---------------------------------------------------------------------------
+
+describe('GET /sys/alerts/silences', () => {
+  let app: FastifyInstance;
+
+  it('returns 401 without a JWT', async () => {
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({ method: 'GET', url: '/sys/alerts/silences' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns unavailable when ALERTMANAGER_URL is unset (no upstream call)', async () => {
+    app = await buildApp({});
+    const spy = vi.fn();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).fetch = spy;
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/alerts/silences',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ silences: [], unavailable: true });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('maps active + pending silences and drops expired ones', async () => {
+    mockFetchOnce(() => ({
+      ok: true,
+      status: 200,
+      json: async () => [
+        {
+          id: '11111111-2222-3333-4444-555555555555',
+          status: { state: 'active' },
+          matchers: [{ name: 'alertname', value: 'ConsoleDown', isRegex: false, isEqual: true }],
+          startsAt: '2026-05-10T11:00:00.000Z',
+          endsAt: '2026-05-10T13:00:00.000Z',
+          comment: 'silencing during deploy',
+          createdBy: 'alice',
+        },
+        {
+          id: '22222222-3333-4444-5555-666666666666',
+          status: { state: 'pending' },
+          matchers: [{ name: 'fingerprint', value: 'abc123', isRegex: false, isEqual: true }],
+          startsAt: '2026-05-10T12:00:00.000Z',
+          endsAt: '2026-05-10T14:00:00.000Z',
+          comment: '',
+          createdBy: 'bob',
+        },
+        {
+          id: '33333333-4444-5555-6666-777777777777',
+          status: { state: 'expired' },
+          matchers: [{ name: 'alertname', value: 'OldThing' }],
+          startsAt: '2026-05-09T10:00:00.000Z',
+          endsAt: '2026-05-09T11:00:00.000Z',
+          comment: 'old',
+          createdBy: 'carol',
+        },
+      ],
+    }));
+
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/alerts/silences',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      silences: Array<{ id: string; status: string }>;
+      unavailable: boolean;
+    };
+    expect(body.unavailable).toBe(false);
+    expect(body.silences).toHaveLength(2);
+    expect(body.silences.map((s) => s.status)).toEqual(['active', 'pending']);
+    expect(body.silences[0]).toEqual({
+      id: '11111111-2222-3333-4444-555555555555',
+      matchers: [{ name: 'alertname', value: 'ConsoleDown', is_regex: false, is_equal: true }],
+      starts_at: '2026-05-10T11:00:00.000Z',
+      ends_at: '2026-05-10T13:00:00.000Z',
+      comment: 'silencing during deploy',
+      created_by: 'alice',
+      status: 'active',
+    });
+  });
+
+  it('returns unavailable on upstream 500', async () => {
+    mockFetchOnce(() => ({ ok: false, status: 500, json: async () => ({}) }));
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/alerts/silences',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ silences: [], unavailable: true });
+  });
+
+  it('returns unavailable on network error', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).fetch = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/alerts/silences',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.json()).toEqual({ silences: [], unavailable: true });
+  });
+});
+
+describe('POST /sys/alerts/silences', () => {
+  let app: FastifyInstance;
+
+  it('returns 401 without a JWT', async () => {
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({ method: 'POST', url: '/sys/alerts/silences', payload: {} });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects an empty body', async () => {
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sys/alerts/silences',
+      headers: { authorization: authHeader(app) },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects matchers with empty strings', async () => {
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sys/alerts/silences',
+      headers: { authorization: authHeader(app) },
+      payload: {
+        matchers: [{ name: '', value: 'x' }],
+        ends_at: '2026-05-10T13:00:00.000Z',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('forwards a valid body and returns the upstream id', async () => {
+    const spy = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ silenceID: 'abc-uuid' }),
+    }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).fetch = spy;
+
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sys/alerts/silences',
+      headers: { authorization: authHeader(app) },
+      payload: {
+        matchers: [{ name: 'fingerprint', value: 'fp-1', is_regex: false, is_equal: true }],
+        starts_at: '2026-05-10T11:00:00.000Z',
+        ends_at: '2026-05-10T13:00:00.000Z',
+        comment: 'because',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toEqual({ id: 'abc-uuid' });
+
+    expect(spy).toHaveBeenCalledOnce();
+    const [url, init] = spy.mock.calls[0]!;
+    expect(url).toBe('http://alertmanager:9093/api/v2/silences');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toEqual({
+      matchers: [{ name: 'fingerprint', value: 'fp-1', isRegex: false, isEqual: true }],
+      startsAt: '2026-05-10T11:00:00.000Z',
+      endsAt: '2026-05-10T13:00:00.000Z',
+      comment: 'because',
+      createdBy: 'tester',
+    });
+  });
+
+  it('defaults starts_at to now and created_by to the JWT sub when omitted', async () => {
+    const spy = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ silenceID: 'new-id' }),
+    }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).fetch = spy;
+
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const before = Date.now();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sys/alerts/silences',
+      headers: { authorization: authHeader(app) },
+      payload: {
+        matchers: [{ name: 'alertname', value: 'ConsoleDown' }],
+        ends_at: '2026-05-10T13:00:00.000Z',
+      },
+    });
+    const after = Date.now();
+    expect(res.statusCode).toBe(201);
+
+    const body = JSON.parse((spy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.createdBy).toBe('tester');
+    const startsMs = new Date(body.startsAt).getTime();
+    expect(startsMs).toBeGreaterThanOrEqual(before);
+    expect(startsMs).toBeLessThanOrEqual(after);
+    // Matcher defaults filled in.
+    expect(body.matchers[0]).toEqual({
+      name: 'alertname',
+      value: 'ConsoleDown',
+      isRegex: false,
+      isEqual: true,
+    });
+  });
+
+  it('returns unavailable when ALERTMANAGER_URL is unset', async () => {
+    app = await buildApp({});
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sys/alerts/silences',
+      headers: { authorization: authHeader(app) },
+      payload: {
+        matchers: [{ name: 'alertname', value: 'ConsoleDown' }],
+        ends_at: '2026-05-10T13:00:00.000Z',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ silences: [], unavailable: true });
+  });
+
+  it('returns unavailable on upstream 500', async () => {
+    mockFetchOnce(() => ({ ok: false, status: 500, json: async () => ({}) }));
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sys/alerts/silences',
+      headers: { authorization: authHeader(app) },
+      payload: {
+        matchers: [{ name: 'alertname', value: 'ConsoleDown' }],
+        ends_at: '2026-05-10T13:00:00.000Z',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ unavailable: true });
+  });
+
+  it('returns unavailable on upstream malformed body (no silenceID)', async () => {
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({ wrong: 'shape' }) }));
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sys/alerts/silences',
+      headers: { authorization: authHeader(app) },
+      payload: {
+        matchers: [{ name: 'alertname', value: 'ConsoleDown' }],
+        ends_at: '2026-05-10T13:00:00.000Z',
+      },
+    });
+    expect(res.json()).toEqual({ unavailable: true });
+  });
+});
+
+describe('DELETE /sys/alerts/silences/:id', () => {
+  let app: FastifyInstance;
+
+  it('returns 401 without a JWT', async () => {
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/sys/alerts/silences/11111111-2222-3333-4444-555555555555',
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects a non-UUID id with 400', async () => {
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/sys/alerts/silences/not-a-uuid',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('returns 204 on upstream 200', async () => {
+    const spy = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).fetch = spy;
+
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/sys/alerts/silences/11111111-2222-3333-4444-555555555555',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(204);
+    expect(spy).toHaveBeenCalledOnce();
+    const [url, init] = spy.mock.calls[0]!;
+    expect(url).toBe(
+      'http://alertmanager:9093/api/v2/silence/11111111-2222-3333-4444-555555555555',
+    );
+    expect((init as RequestInit).method).toBe('DELETE');
+  });
+
+  it('returns unavailable on upstream 500', async () => {
+    mockFetchOnce(() => ({ ok: false, status: 500, json: async () => ({}) }));
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/sys/alerts/silences/11111111-2222-3333-4444-555555555555',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ unavailable: true });
+  });
+
+  it('returns unavailable on network error', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).fetch = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    app = await buildApp({ alertmanagerUrl: 'http://alertmanager:9093' });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/sys/alerts/silences/11111111-2222-3333-4444-555555555555',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.json()).toEqual({ unavailable: true });
+  });
+});
+
+describe('mapSilence', () => {
+  const valid = {
+    id: 'abcdef01-2345-6789-abcd-ef0123456789',
+    status: { state: 'active' },
+    matchers: [{ name: 'alertname', value: 'ConsoleDown', isRegex: false, isEqual: true }],
+    startsAt: '2026-05-10T11:00:00.000Z',
+    endsAt: '2026-05-10T13:00:00.000Z',
+    comment: 'because',
+    createdBy: 'alice',
+  };
+
+  it('maps the v2 shape into the Console shape', () => {
+    expect(mapSilence(valid)).toEqual({
+      id: 'abcdef01-2345-6789-abcd-ef0123456789',
+      matchers: [{ name: 'alertname', value: 'ConsoleDown', is_regex: false, is_equal: true }],
+      starts_at: '2026-05-10T11:00:00.000Z',
+      ends_at: '2026-05-10T13:00:00.000Z',
+      comment: 'because',
+      created_by: 'alice',
+      status: 'active',
+    });
+  });
+
+  it('preserves expired status (filtering is the route layer)', () => {
+    const expired = { ...valid, status: { state: 'expired' } };
+    expect(mapSilence(expired)?.status).toBe('expired');
+  });
+
+  it('returns null on non-object input', () => {
+    expect(mapSilence(null)).toBeNull();
+    expect(mapSilence('x')).toBeNull();
+    expect(mapSilence(42)).toBeNull();
+  });
+
+  it('returns null when id is missing or empty', () => {
+    expect(mapSilence({ ...valid, id: '' })).toBeNull();
+    const { id: _id, ...rest } = valid;
+    expect(mapSilence(rest)).toBeNull();
+  });
+
+  it('returns null when matchers is missing or empty', () => {
+    expect(mapSilence({ ...valid, matchers: [] })).toBeNull();
+    expect(mapSilence({ ...valid, matchers: 'nope' })).toBeNull();
+  });
+
+  it('returns null when startsAt or endsAt is missing', () => {
+    const { startsAt: _s, ...noStarts } = valid;
+    const { endsAt: _e, ...noEnds } = valid;
+    expect(mapSilence(noStarts)).toBeNull();
+    expect(mapSilence(noEnds)).toBeNull();
+  });
+
+  it('returns null on unknown status', () => {
+    expect(mapSilence({ ...valid, status: { state: 'mystery' } })).toBeNull();
+    expect(mapSilence({ ...valid, status: null })).toBeNull();
+  });
+
+  it('defaults comment and createdBy when absent', () => {
+    const { comment: _c, createdBy: _cb, ...rest } = valid;
+    const out = mapSilence(rest);
+    expect(out?.comment).toBe('');
+    expect(out?.created_by).toBe('');
+  });
+
+  it('defaults is_equal to true when the upstream omits isEqual', () => {
+    const out = mapSilence({
+      ...valid,
+      matchers: [{ name: 'alertname', value: 'ConsoleDown' }],
+    });
+    expect(out?.matchers[0]).toEqual({
+      name: 'alertname',
+      value: 'ConsoleDown',
+      is_regex: false,
+      is_equal: true,
+    });
   });
 });

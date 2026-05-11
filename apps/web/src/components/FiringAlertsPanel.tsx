@@ -22,6 +22,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
+import { SilenceButton } from '@/components/SilenceButton';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { Alert, AlertSeverity } from '@/lib/alerts';
@@ -152,6 +153,9 @@ function FiringAlertRow({ alert }: { alert: Alert }) {
         {alert.detail ? (
           <p className="mt-0.5 text-xs text-muted-foreground">{alert.detail}</p>
         ) : null}
+      </div>
+      <div className="ml-auto flex shrink-0 items-start">
+        <SilenceButton alertId={alert.id} alertTitle={alert.title} />
       </div>
     </li>
   );

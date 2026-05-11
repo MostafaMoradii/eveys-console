@@ -1,8 +1,10 @@
 // Component tests for FiringAlertsPanel. Pure render — the parent
 // owns the polling — so each test feeds it a fixed prop set and
 // asserts on the resulting DOM. Router <Link> is stubbed to a plain
-// anchor so cp_id links render without mounting RouterProvider.
+// anchor so cp_id links render without mounting RouterProvider; the
+// useConsoleClient hook is stubbed for the silence-button mutation.
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,6 +35,15 @@ vi.mock('@tanstack/react-router', () => ({
   },
 }));
 
+vi.mock('@/lib/ws-context', () => ({
+  useConsoleClient: () => ({
+    client: { rpc: vi.fn(), subscribe: vi.fn(), close: vi.fn(), connect: vi.fn() },
+    status: 'open',
+    token: 'test-token',
+    setToken: vi.fn(),
+  }),
+}));
+
 import { FiringAlertsPanel } from '@/components/FiringAlertsPanel';
 import type { Alert } from '@/lib/alerts';
 
@@ -40,9 +51,14 @@ afterEach(() => {
   cleanup();
 });
 
+function renderPanel(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
+
 describe('FiringAlertsPanel', () => {
   it('renders the unavailable hint when unavailable=true', () => {
-    render(<FiringAlertsPanel alerts={[]} unavailable={true} />);
+    renderPanel(<FiringAlertsPanel alerts={[]} unavailable={true} />);
     expect(screen.getByTestId('firing-alerts-unavailable')).toHaveTextContent(
       /Alertmanager not configured/i,
     );
@@ -52,13 +68,13 @@ describe('FiringAlertsPanel', () => {
   });
 
   it('renders the empty state when alerts is empty and not unavailable', () => {
-    render(<FiringAlertsPanel alerts={[]} unavailable={false} />);
+    renderPanel(<FiringAlertsPanel alerts={[]} unavailable={false} />);
     expect(screen.getByTestId('firing-alerts-empty')).toHaveTextContent(/No alerts firing/i);
     expect(screen.queryByTestId('firing-alerts-unavailable')).toBeNull();
   });
 
   it('renders the loading spinner when loading=true', () => {
-    render(<FiringAlertsPanel alerts={[]} unavailable={false} loading={true} />);
+    renderPanel(<FiringAlertsPanel alerts={[]} unavailable={false} loading={true} />);
     expect(screen.getByTestId('firing-alerts-loading')).toBeInTheDocument();
     expect(screen.queryByTestId('firing-alerts-empty')).toBeNull();
   });
@@ -80,7 +96,7 @@ describe('FiringAlertsPanel', () => {
         since: '2026-05-10T11:05:00.000Z',
       },
     ];
-    render(<FiringAlertsPanel alerts={alerts} unavailable={false} />);
+    renderPanel(<FiringAlertsPanel alerts={alerts} unavailable={false} />);
     const rows = screen.getAllByTestId('firing-alerts-row');
     expect(rows).toHaveLength(2);
     expect(screen.getByTestId('firing-alerts-count')).toHaveTextContent('2');
@@ -92,7 +108,7 @@ describe('FiringAlertsPanel', () => {
       { id: 'w', severity: 'warning', title: 'W', detail: '' },
       { id: 'i', severity: 'info', title: 'I', detail: '' },
     ];
-    render(<FiringAlertsPanel alerts={alerts} unavailable={false} />);
+    renderPanel(<FiringAlertsPanel alerts={alerts} unavailable={false} />);
     const rows = screen.getAllByTestId('firing-alerts-row');
     expect(rows.map((r) => r.getAttribute('data-severity'))).toEqual([
       'critical',
@@ -114,20 +130,20 @@ describe('FiringAlertsPanel', () => {
         cp_id: 'CP_A',
       },
     ];
-    render(<FiringAlertsPanel alerts={alerts} unavailable={false} />);
+    renderPanel(<FiringAlertsPanel alerts={alerts} unavailable={false} />);
     const link = screen.getByTestId('firing-alerts-cp-link');
     expect(link).toHaveAttribute('href', '/inspect/charge-points/CP_A');
     expect(link).toHaveTextContent('CP_A');
   });
 
   it('omits the count badge when in the unavailable / empty / loading states', () => {
-    const { unmount } = render(<FiringAlertsPanel alerts={[]} unavailable={true} />);
+    const { unmount } = renderPanel(<FiringAlertsPanel alerts={[]} unavailable={true} />);
     expect(screen.queryByTestId('firing-alerts-count')).toBeNull();
     unmount();
-    render(<FiringAlertsPanel alerts={[]} unavailable={false} />);
+    renderPanel(<FiringAlertsPanel alerts={[]} unavailable={false} />);
     expect(screen.queryByTestId('firing-alerts-count')).toBeNull();
     cleanup();
-    render(<FiringAlertsPanel alerts={[]} unavailable={false} loading={true} />);
+    renderPanel(<FiringAlertsPanel alerts={[]} unavailable={false} loading={true} />);
     expect(screen.queryByTestId('firing-alerts-count')).toBeNull();
   });
 });
