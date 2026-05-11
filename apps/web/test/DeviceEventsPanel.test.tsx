@@ -164,11 +164,11 @@ describe('DeviceEventsPanel — detail toggle', () => {
     const detail = screen.getByTestId('device-events-detail');
     expect(detail).toHaveTextContent('sample_count');
     expect(detail).toHaveTextContent('2');
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
 
     await user.click(toggle);
     expect(screen.queryByTestId('device-events-detail')).not.toBeInTheDocument();
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('hides the toggle when detail is empty', () => {
@@ -179,40 +179,127 @@ describe('DeviceEventsPanel — detail toggle', () => {
   });
 });
 
+describe('DeviceEventsPanel — pause / clear', () => {
+  it('Pause buffers incoming events; Resume flushes them', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DeviceEventsPanel cpId="cp_test" />);
+
+    // First event before pause — visible.
+    setSub({ lastDelta: delta(makeEvent({ summary: 'before-pause' })) });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+    expect(screen.getByText('before-pause')).toBeInTheDocument();
+
+    // Pause; next event buffers, not visible.
+    await user.click(screen.getByTestId('device-events-pause'));
+    setSub({
+      lastDelta: delta(makeEvent({ summary: 'during-pause', at: '2026-05-10T11:59:01Z' })),
+    });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+    expect(screen.queryByText('during-pause')).toBeNull();
+
+    // Resume flushes the buffered event into the visible list.
+    await user.click(screen.getByTestId('device-events-resume'));
+    expect(screen.getByText('during-pause')).toBeInTheDocument();
+  });
+
+  it('Clear empties the visible list', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DeviceEventsPanel cpId="cp_test" />);
+    setSub({ lastDelta: delta(makeEvent({ summary: 'one' })) });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+    expect(screen.getByText('one')).toBeInTheDocument();
+    await user.click(screen.getByTestId('device-events-clear'));
+    expect(screen.queryByText('one')).toBeNull();
+    expect(screen.getByTestId('device-events-empty')).toBeInTheDocument();
+  });
+});
+
+describe('DeviceEventsPanel — kind filter + search', () => {
+  it('kind chip toggles visibility of that kind', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DeviceEventsPanel cpId="cp_test" />);
+    setSub({ lastDelta: delta(makeEvent({ summary: 'boot-event', kind: 'boot' })) });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+    setSub({
+      lastDelta: delta(
+        makeEvent({ summary: 'status-event', kind: 'status', at: '2026-05-10T11:59:02Z' }),
+      ),
+    });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+    expect(screen.getByText('boot-event')).toBeInTheDocument();
+    expect(screen.getByText('status-event')).toBeInTheDocument();
+
+    // Turn off `boot` chip → boot row hidden.
+    await user.click(screen.getByTestId('device-events-kind-boot'));
+    expect(screen.queryByText('boot-event')).toBeNull();
+    expect(screen.getByText('status-event')).toBeInTheDocument();
+  });
+
+  it('search box filters by substring on summary', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DeviceEventsPanel cpId="cp_test" />);
+    setSub({ lastDelta: delta(makeEvent({ summary: 'BootNotification — Eveys X1' })) });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+    setSub({
+      lastDelta: delta(
+        makeEvent({ summary: 'Connector 2 → Charging', at: '2026-05-10T11:59:03Z' }),
+      ),
+    });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+
+    await user.type(screen.getByTestId('device-events-search'), 'Charging');
+    expect(screen.getByText('Connector 2 → Charging')).toBeInTheDocument();
+    expect(screen.queryByText('BootNotification — Eveys X1')).toBeNull();
+  });
+});
+
+describe('DeviceEventsPanel — JSON view', () => {
+  it('Show JSON renders a JSON dump of the event', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DeviceEventsPanel cpId="cp_test" />);
+    setSub({
+      lastDelta: delta(
+        makeEvent({ summary: 'json-ev', detail: { connector_id: 1, status: 'Charging' } }),
+      ),
+    });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+    await user.click(screen.getByTestId('device-events-toggle-json'));
+    const json = screen.getByTestId('device-events-json');
+    expect(json.textContent).toContain('"connector_id": 1');
+    expect(json.textContent).toContain('"status": "Charging"');
+  });
+});
+
 describe('DeviceEventsPanel — ring cap', () => {
-  it('caps the visible rows at 200 and drops the oldest beyond', () => {
-    // Render once with the empty state, then push 205 distinct deltas
+  it('caps the visible rows at 500 and drops the oldest beyond', () => {
+    // Render once with the empty state, then push 505 distinct deltas
     // via rerender so the effect runs each time. Each event gets a
     // unique `at` so the assertion can identify which ones survived.
     const { rerender } = render(<DeviceEventsPanel cpId="cp_test" />);
-    for (let i = 0; i < 205; i++) {
+    for (let i = 0; i < 505; i++) {
       // Padding makes the lex order match the numeric order, so the
       // first event (i=0, 'evt-000') is the oldest and the last
-      // (i=204, 'evt-204') is the newest.
+      // (i=504, 'evt-504') is the newest.
       const tag = `evt-${String(i).padStart(3, '0')}`;
       setSub({
         lastDelta: delta(
           makeEvent({
             summary: tag,
-            // Distinct `at` per event so React's effect treats each
-            // delta as a new reference even after the ring caps.
             at: new Date(2026, 0, 1, 0, 0, i).toISOString(),
           }),
         ),
       });
-      // Wrap in act() because we're synchronously firing many
-      // rerenders that schedule effects; act flushes them in-loop.
       act(() => {
         rerender(<DeviceEventsPanel cpId="cp_test" />);
       });
     }
 
     const rows = screen.getAllByTestId('device-events-summary').map((el) => el.textContent);
-    expect(rows).toHaveLength(200);
-    // Newest first → 'evt-204' is at index 0.
-    expect(rows[0]).toBe('evt-204');
+    expect(rows).toHaveLength(500);
+    // Newest first → 'evt-504' is at index 0.
+    expect(rows[0]).toBe('evt-504');
     // Oldest five (evt-000 .. evt-004) are dropped; oldest survivor is evt-005.
-    expect(rows[199]).toBe('evt-005');
+    expect(rows[499]).toBe('evt-005');
     expect(rows).not.toContain('evt-000');
   });
 });

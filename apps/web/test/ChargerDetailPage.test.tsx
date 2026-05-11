@@ -114,6 +114,13 @@ function renderPage() {
   return render(withProviders(<ChargerDetailPage />));
 }
 
+// Commands moved to a tab in the detail-page refactor; helper opens
+// it so the existing assertions on the Hard-Reset / RemoteStart
+// controls keep working without each test re-implementing the click.
+async function openCommandsTab(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId('detail-tab-commands'));
+}
+
 beforeEach(() => {
   rpcSpy.mockClear();
   isPhone = false;
@@ -177,6 +184,7 @@ describe('ChargerDetailPage — Hard Reset', () => {
     const user = userEvent.setup();
     nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
     renderPage();
+    await openCommandsTab(user);
     expect(screen.queryByTestId('hard-reset-dialog')).toBeNull();
     await user.click(screen.getByTestId('hard-reset-button'));
     expect(screen.getByTestId('hard-reset-dialog')).toBeInTheDocument();
@@ -187,6 +195,7 @@ describe('ChargerDetailPage — Hard Reset', () => {
     const user = userEvent.setup();
     nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
     renderPage();
+    await openCommandsTab(user);
     await user.click(screen.getByTestId('hard-reset-button'));
     await user.click(screen.getByTestId('hard-reset-confirm'));
     expect(rpcSpy).toHaveBeenCalledTimes(1);
@@ -197,6 +206,7 @@ describe('ChargerDetailPage — Hard Reset', () => {
     const user = userEvent.setup();
     nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
     renderPage();
+    await openCommandsTab(user);
     await user.click(screen.getByTestId('hard-reset-button'));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(rpcSpy).not.toHaveBeenCalled();
@@ -208,6 +218,7 @@ describe('ChargerDetailPage — RemoteStart id_tag', () => {
     const user = userEvent.setup();
     nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
     renderPage();
+    await openCommandsTab(user);
     const btn = screen.getByTestId('remote-start-button');
     expect(btn).toBeDisabled();
     await user.type(screen.getByTestId('remote-start-idtag'), 'TAG-1234');
@@ -218,6 +229,7 @@ describe('ChargerDetailPage — RemoteStart id_tag', () => {
     const user = userEvent.setup();
     nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
     renderPage();
+    await openCommandsTab(user);
     await user.type(screen.getByTestId('remote-start-idtag'), 'TAG-9999');
     await user.click(screen.getByTestId('remote-start-button'));
     expect(rpcSpy).toHaveBeenCalledWith('remote-start', {
@@ -230,6 +242,7 @@ describe('ChargerDetailPage — RemoteStart id_tag', () => {
     const user = userEvent.setup();
     nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
     renderPage();
+    await openCommandsTab(user);
     await user.type(screen.getByTestId('remote-start-idtag'), '  TAG-1  ');
     await user.click(screen.getByTestId('remote-start-button'));
     expect(rpcSpy).toHaveBeenCalledWith('remote-start', {
@@ -242,6 +255,7 @@ describe('ChargerDetailPage — RemoteStart id_tag', () => {
     const user = userEvent.setup();
     nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
     renderPage();
+    await openCommandsTab(user);
     await user.type(screen.getByTestId('remote-start-idtag'), '   ');
     expect(screen.getByTestId('remote-start-button')).toBeDisabled();
   });
