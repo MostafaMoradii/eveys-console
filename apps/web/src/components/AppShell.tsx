@@ -1,6 +1,7 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import {
   Activity,
+  BellRing,
   Bolt,
   BookOpen,
   LogOut,
@@ -231,6 +232,12 @@ function NavContents({ path }: { path: string }) {
           label="Status"
           icon={<Activity className="h-4 w-4" />}
           active={path === '/'}
+        />
+        <NavItem
+          to="/sys/alerts"
+          label="Alerts"
+          icon={<BellRing className="h-4 w-4" />}
+          active={path.startsWith('/sys/alerts')}
         />
       </NavSection>
 
