@@ -5,12 +5,14 @@ import { useMemo } from 'react';
 import type { ChargePointSummary, TransactionSummary } from '@eveys-console/protocol';
 
 import { fetchSysStatus } from '@/api/sys-client';
+import { ActiveSilencesPanel } from '@/components/ActiveSilencesPanel';
 import { AlertsPanel } from '@/components/AlertsPanel';
 import { FiringAlertsPanel } from '@/components/FiringAlertsPanel';
 import { MetricTile } from '@/components/MetricTile';
 import { ServiceStatusPills } from '@/components/ServiceStatusPills';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useFiringAlerts } from '@/hooks/use-firing-alerts';
+import { useSilences } from '@/hooks/use-silences';
 import { useSubscription } from '@/hooks/use-subscription';
 import { computeAlerts } from '@/lib/alerts';
 import { countFaults } from '@/lib/fault';
@@ -64,6 +66,7 @@ export function SystemPage() {
   );
 
   const firing = useFiringAlerts();
+  const silences = useSilences();
 
   if (sysQuery.isLoading) {
     return (
@@ -102,6 +105,12 @@ export function SystemPage() {
         alerts={firing.alerts}
         unavailable={firing.unavailable}
         loading={firing.loading}
+      />
+
+      <ActiveSilencesPanel
+        silences={silences.silences}
+        unavailable={silences.unavailable}
+        loading={silences.loading}
       />
 
       <AlertsPanel alerts={alerts} loading={cpSub.loading} error={cpSub.error ?? null} />
