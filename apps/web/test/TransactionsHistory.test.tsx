@@ -42,6 +42,26 @@ vi.mock('@/lib/ws-context', () => ({
   }),
 }));
 
+// Subscription stub for the live meter-history feed. Tests set
+// `subResult.lastDelta` to simulate a sample arriving.
+interface SubStub {
+  loading: boolean;
+  error: string | null;
+  snapshot: unknown;
+  lastDelta: unknown;
+  cursor: string | null;
+}
+let subResult: SubStub = {
+  loading: false,
+  error: null,
+  snapshot: null,
+  lastDelta: null,
+  cursor: null,
+};
+vi.mock('@/hooks/use-subscription', () => ({
+  useSubscription: () => subResult,
+}));
+
 // Minimal router stub: <Link to="..." params={...}> renders an <a>
 // whose href has the param substituted in. The component only uses
 // Link, so this is sufficient.
@@ -108,6 +128,13 @@ function renderWith(cpId = 'cp_test') {
 beforeEach(() => {
   listResult = {};
   vi.mocked(fetchChargePointTransactions).mockClear();
+  subResult = {
+    loading: false,
+    error: null,
+    snapshot: null,
+    lastDelta: null,
+    cursor: null,
+  };
 });
 
 afterEach(() => cleanup());
@@ -158,10 +185,11 @@ describe('TransactionsHistory', () => {
     };
     renderWith();
     expect(await screen.findByText('open')).toBeInTheDocument();
-    // kWh column is em-dash for an open row.
-    const link = await screen.findByTestId('router-link');
-    const row = link.closest('tr')!;
-    expect(within(row).getByText('—')).toBeInTheDocument();
+    // Open row with no live meter samples yet: kWh / kW / SoC all em-dash.
+    const row = (await screen.findByTestId('tx-row')) as HTMLElement;
+    expect(within(row).getByTestId('tx-row-kwh').textContent).toBe('—');
+    expect(within(row).getByTestId('tx-row-kw').textContent).toBe('—');
+    expect(within(row).getByTestId('tx-row-soc').textContent).toBe('—');
   });
 
   it('renders kWh and a closed-duration string for a closed transaction', async () => {
@@ -270,6 +298,50 @@ describe('TransactionsHistory', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('open row pulls live kW + SoC + kWh from meter-history deltas', async () => {
+    const open = makeRow({ transaction_id: 42, connector_id: 2, open: true, meter_start_wh: 5000 });
+    listResult = { data: { transactions: [open], next_cursor: null } };
+
+    // First render with no live data — kW / SoC empty.
+    subResult.lastDelta = {
+      kind: 'meter-history',
+      append: {
+        cp_id: 'cp_test',
+        transaction_id: 42,
+        connector_id: 2,
+        measurand: 'POWER_ACTIVE_IMPORT',
+        value: 22000, // 22 kW
+        unit: 'W',
+        recorded_at: '2026-05-10T10:01:00Z',
+      },
+    };
+    renderWith();
+    const row = await screen.findByTestId('tx-row');
+    expect(within(row).getByTestId('tx-row-kw').textContent).toBe('22.0');
+
+    // Push an SoC sample — same row should now also show SoC.
+    subResult = {
+      ...subResult,
+      lastDelta: {
+        kind: 'meter-history',
+        append: {
+          cp_id: 'cp_test',
+          transaction_id: 42,
+          connector_id: 2,
+          measurand: 'SOC',
+          value: 67,
+          unit: '%',
+          recorded_at: '2026-05-10T10:01:05Z',
+        },
+      },
+    };
+    // Force re-render by re-rendering the same component tree.
+    cleanup();
+    renderWith();
+    const row2 = await screen.findByTestId('tx-row');
+    expect(within(row2).getByTestId('tx-row-soc').textContent).toBe('67%');
   });
 
   it('formatClosedDuration renders compact closed-session durations', () => {
