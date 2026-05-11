@@ -63,10 +63,30 @@ export function ConsoleClientProvider({ children }: { children: ReactNode }) {
     });
   }, [token]);
 
+  // React StrictMode (enabled in main.tsx) runs each effect twice in
+  // dev: mount → cleanup → mount. A naive `connect()` / `close()`
+  // pair aborts the in-flight WS handshake on the dry-run cleanup —
+  // the next mount's connect() short-circuits because status is
+  // still "connecting", and the aborted socket fires onclose with
+  // code 1006 + explicitlyClosed=true, leaving the pill stuck closed.
+  //
+  // Defer the close. If the next mount runs first, the deferred
+  // close is cancelled and the socket lives on. A real unmount still
+  // closes within a tick.
+  const pendingCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!token) return;
+    if (pendingCloseRef.current !== null) {
+      clearTimeout(pendingCloseRef.current);
+      pendingCloseRef.current = null;
+    }
     client.connect();
-    return () => client.close();
+    return () => {
+      pendingCloseRef.current = setTimeout(() => {
+        pendingCloseRef.current = null;
+        client.close();
+      }, 0);
+    };
   }, [client, token]);
 
   const setToken = useCallback((t: string | null) => {
