@@ -346,6 +346,11 @@ function isNoEntry(err: unknown): boolean {
   );
 }
 
+/** Exported for the route layer, which re-masks the in-memory result
+ *  of a write before sending it back. (Re-reading from disk would
+ *  produce the same result with extra I/O.) */
+export { maskSecrets };
+
 export const __test__ = {
   parseManagedYaml,
   renderManagedYaml,

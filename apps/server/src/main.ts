@@ -51,6 +51,7 @@ import { registerSysGatewayConfigRoute } from './routes/sys-gateway-config.js';
 import { registerSysStatusRoute } from './routes/sys-status.js';
 import { registerSysTransactionsRoute } from './routes/sys-transactions.js';
 import { registerWsRoute } from './routes/ws.js';
+import { ChannelsStore } from './store/channels-store.js';
 import { DiagnosticsStore } from './store/diagnostics-store.js';
 
 declare module 'fastify' {
@@ -101,6 +102,7 @@ async function main() {
   const users = new UserStore(config);
   const pow = new PowVerifier(config);
   const diagnosticsStore = new DiagnosticsStore(config.DIAGNOSTICS_DATA_DIR);
+  const channelsStore = new ChannelsStore(config.ALERTMANAGER_CONFIG_PATH);
 
   const startedAt = new Date();
   await registerHealthRoutes(app);
@@ -112,7 +114,7 @@ async function main() {
   await registerSysGatewayAdminConfigRoute(app, { gateway });
   await registerSysChargePointTransactionsRoute(app, { gateway });
   await registerSysTransactionsRoute(app, { gateway });
-  await registerSysAlertsRoute(app, { logger });
+  await registerSysAlertsRoute(app, { logger, channelsStore });
   await registerDiagnosticsRoutes(app, { store: diagnosticsStore });
   await registerWsRoute(app, { broker, gateway });
 

@@ -19,6 +19,13 @@
 
 import { z } from 'zod';
 
+import {
+  maskSecrets,
+  type Channel,
+  type ChannelsStore,
+  type ManagedConfig,
+} from '../store/channels-store.js';
+
 // Mirror of the web side's `AlertSeverity` (see apps/web/src/lib/alerts.ts).
 // Kept as a local literal so the server doesn't pull a web type. The
 // /sys/alerts/firing response is JSON; the web client narrows it back
@@ -29,6 +36,10 @@ interface RouteDeps {
   // logger is optional so the existing test harness (which builds the
   // app with `logger: false`) can omit it without typing gymnastics.
   logger?: { warn: (obj: unknown, msg?: string) => void };
+  // Optional so the firing/silences-only test harness can build the
+  // route without standing up a real store. The channels routes
+  // 503 when this is missing.
+  channelsStore?: ChannelsStore;
 }
 
 /** Mirror of the `Alert` shape on the web side. Kept here as a local
@@ -417,4 +428,331 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
       }
     },
   );
+
+  // ==========================================================================
+  // Channels — receiver-config CRUD + test-alert
+  // ==========================================================================
+  //
+  // All four routes 503 when channelsStore isn't wired. That's the
+  // "Console didn't enable Channels management on this deployment"
+  // path — distinct from the "Alertmanager isn't configured" path
+  // covered by ALERTMANAGER_URL. The web side handles both as
+  // "Channels tab unavailable" but the codes differ so the operator
+  // can tell from the network tab.
+
+  // ---- GET /sys/alerts/channels — list (secrets masked) -------------------
+  app.get(
+    '/sys/alerts/channels',
+    { preHandler: requireAuth },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (_req: any, reply: any) => {
+      if (!deps.channelsStore) return reply.code(503).send({ error: 'channels_disabled' });
+      try {
+        const cfg = await deps.channelsStore.readMasked();
+        return reply.code(200).send({
+          channels: cfg.channels,
+          default_channel: cfg.default_channel,
+        });
+      } catch (err) {
+        deps.logger?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'channels.read.failed',
+        );
+        return reply.code(500).send({ error: 'channels_read_failed' });
+      }
+    },
+  );
+
+  // Body shapes — kept as discriminated unions so a `type: 'slack'`
+  // body cannot smuggle email fields into the YAML through trailing
+  // unknown keys.
+  const slackBody = z.object({
+    type: z.literal('slack'),
+    name: channelNameSchema,
+    api_url: z.string().url(),
+    channel: z.string().min(1).max(80),
+    title: z.string().max(1024).optional(),
+    text: z.string().max(4096).optional(),
+  });
+  const emailBody = z.object({
+    type: z.literal('email'),
+    name: channelNameSchema,
+    to: z.string().min(3).max(256),
+    from: z.string().min(3).max(256),
+    smarthost: z.string().min(3).max(256),
+    auth_username: z.string().max(256).optional(),
+    auth_password: z.string().max(1024).optional(),
+    require_tls: z.boolean().optional(),
+  });
+  const webhookBody = z.object({
+    type: z.literal('webhook'),
+    name: channelNameSchema,
+    url: z.string().url(),
+    http_basic_auth_username: z.string().max(256).optional(),
+    http_basic_auth_password: z.string().max(1024).optional(),
+  });
+  const channelBody = z.discriminatedUnion('type', [slackBody, emailBody, webhookBody]);
+
+  // ---- POST /sys/alerts/channels — add ------------------------------------
+  app.post(
+    '/sys/alerts/channels',
+    { preHandler: requireAuth },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (req: any, reply: any) => {
+      if (!deps.channelsStore) return reply.code(503).send({ error: 'channels_disabled' });
+      const parsed = channelBody.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: 'invalid_body', detail: parsed.error.flatten() });
+      }
+      try {
+        const cfg = await deps.channelsStore.read();
+        if (cfg.channels.some((c) => c.name === parsed.data.name)) {
+          return reply.code(409).send({ error: 'name_taken' });
+        }
+        const next = await deps.channelsStore.updateChannels(
+          [...cfg.channels, parsed.data as Channel],
+          // First channel added becomes the default if no default
+          // is set yet. Otherwise leave the existing default alone.
+          cfg.default_channel || parsed.data.name,
+        );
+        await reloadAlertmanager(app, deps);
+        return reply.code(201).send(maskedResponse(next));
+      } catch (err) {
+        deps.logger?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'channels.add.failed',
+        );
+        return reply.code(500).send({ error: 'channels_write_failed' });
+      }
+    },
+  );
+
+  // ---- PUT /sys/alerts/channels/:name — replace ---------------------------
+  app.put(
+    '/sys/alerts/channels/:name',
+    { preHandler: requireAuth },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (req: any, reply: any) => {
+      if (!deps.channelsStore) return reply.code(503).send({ error: 'channels_disabled' });
+      const name = isObject(req.params) && isString(req.params.name) ? req.params.name : '';
+      if (!CHANNEL_NAME_RE.test(name)) return reply.code(400).send({ error: 'invalid_name' });
+      const parsed = channelBody.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: 'invalid_body', detail: parsed.error.flatten() });
+      }
+      if (parsed.data.name !== name) {
+        return reply.code(400).send({ error: 'name_mismatch' });
+      }
+      try {
+        const cfg = await deps.channelsStore.read();
+        const idx = cfg.channels.findIndex((c) => c.name === name);
+        if (idx < 0) return reply.code(404).send({ error: 'not_found' });
+        // Empty-string secrets mean "keep existing" — merge against
+        // the current value so the operator doesn't have to re-enter
+        // a Slack URL just to change the title.
+        const merged = mergeKeepSecrets(cfg.channels[idx]!, parsed.data as Channel);
+        const channels = [...cfg.channels];
+        channels[idx] = merged;
+        const next = await deps.channelsStore.updateChannels(channels, cfg.default_channel);
+        await reloadAlertmanager(app, deps);
+        return reply.code(200).send(maskedResponse(next));
+      } catch (err) {
+        deps.logger?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'channels.put.failed',
+        );
+        return reply.code(500).send({ error: 'channels_write_failed' });
+      }
+    },
+  );
+
+  // ---- DELETE /sys/alerts/channels/:name — remove -------------------------
+  app.delete(
+    '/sys/alerts/channels/:name',
+    { preHandler: requireAuth },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (req: any, reply: any) => {
+      if (!deps.channelsStore) return reply.code(503).send({ error: 'channels_disabled' });
+      const name = isObject(req.params) && isString(req.params.name) ? req.params.name : '';
+      if (!CHANNEL_NAME_RE.test(name)) return reply.code(400).send({ error: 'invalid_name' });
+      try {
+        const cfg = await deps.channelsStore.read();
+        const remaining = cfg.channels.filter((c) => c.name !== name);
+        if (remaining.length === cfg.channels.length) {
+          return reply.code(404).send({ error: 'not_found' });
+        }
+        // If we just removed the current default, fall back to either
+        // the first remaining channel or the synthetic null fallback.
+        const nextDefault =
+          cfg.default_channel === name ? (remaining[0]?.name ?? '') : cfg.default_channel;
+        const next = await deps.channelsStore.updateChannels(remaining, nextDefault);
+        await reloadAlertmanager(app, deps);
+        return reply.code(200).send(maskedResponse(next));
+      } catch (err) {
+        deps.logger?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'channels.delete.failed',
+        );
+        return reply.code(500).send({ error: 'channels_write_failed' });
+      }
+    },
+  );
+
+  // ---- POST /sys/alerts/channels/:name/test — fire a synthetic alert ------
+  app.post(
+    '/sys/alerts/channels/:name/test',
+    { preHandler: requireAuth },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (req: any, reply: any) => {
+      if (!deps.channelsStore) return reply.code(503).send({ error: 'channels_disabled' });
+      const name = isObject(req.params) && isString(req.params.name) ? req.params.name : '';
+      if (!CHANNEL_NAME_RE.test(name)) return reply.code(400).send({ error: 'invalid_name' });
+      const base = app.config.ALERTMANAGER_URL;
+      if (!base) return reply.code(503).send({ error: 'alertmanager_disabled' });
+      try {
+        const cfg = await deps.channelsStore.read();
+        if (!cfg.channels.some((c) => c.name === name)) {
+          return reply.code(404).send({ error: 'not_found' });
+        }
+        // Inject a synthetic alert with a `receiver` matcher. The
+        // managed route block routes by receiver name so the test
+        // alert flows only to the named channel. The startsAt-/
+        // endsAt window is tight (~2 min) — Alertmanager fires once
+        // then resolves quietly.
+        const now = new Date();
+        const endsAt = new Date(now.getTime() + 120_000);
+        const body = [
+          {
+            labels: {
+              alertname: 'ConsoleTestAlert',
+              severity: 'info',
+              receiver: name,
+              fingerprint_marker: `test-${now.getTime()}`,
+            },
+            annotations: {
+              summary: `Console test alert → ${name}`,
+              description:
+                'Synthetic alert fired from the Console Channels page to verify delivery. ' +
+                'If you see this in your channel, the receiver is wired correctly.',
+            },
+            startsAt: now.toISOString(),
+            endsAt: endsAt.toISOString(),
+          },
+        ];
+        const url = `${base.replace(/\/+$/, '')}/api/v2/alerts`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+        if (!res.ok) {
+          deps.logger?.warn(
+            { upstream: 'alertmanager', status: res.status },
+            'channels.test.upstream-bad-status',
+          );
+          return reply.code(502).send({ error: 'alertmanager_rejected' });
+        }
+        return reply.code(202).send({ ok: true });
+      } catch (err) {
+        deps.logger?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'channels.test.failed',
+        );
+        return reply.code(502).send({ error: 'alertmanager_unreachable' });
+      }
+    },
+  );
+}
+
+// Channel names: Alertmanager treats receiver names as YAML strings;
+// in practice they're short alphanumerics with - and _ to keep them
+// safe in route matchers and config-file output. Enforce here too so
+// the API surface can't smuggle in unsafe characters.
+const CHANNEL_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/i;
+const channelNameSchema = z.string().regex(CHANNEL_NAME_RE, {
+  message: 'name must be alphanumeric with optional -_, up to 63 chars',
+});
+
+// Map a masked-empty secret back to the live one so PUT can update
+// non-secret fields without forcing the operator to re-enter the
+// Slack URL / SMTP password every time. The masked form from
+// readMasked() will not round-trip equal to the live value; that's
+// fine because the empty-string variant is what the form sends when
+// the user didn't touch the field.
+function mergeKeepSecrets(current: Channel, next: Channel): Channel {
+  if (current.type !== next.type) return next;
+  switch (next.type) {
+    case 'slack':
+      return {
+        ...next,
+        api_url:
+          next.api_url && !next.api_url.includes('••••')
+            ? next.api_url
+            : (current as Extract<Channel, { type: 'slack' }>).api_url,
+      };
+    case 'email': {
+      const cur = current as Extract<Channel, { type: 'email' }>;
+      const out: Channel = { ...next };
+      // empty-string or masked → keep existing
+      if (!next.auth_password || next.auth_password.includes('••••')) {
+        if (cur.auth_password) out.auth_password = cur.auth_password;
+        else delete (out as { auth_password?: string }).auth_password;
+      }
+      return out;
+    }
+    case 'webhook': {
+      const cur = current as Extract<Channel, { type: 'webhook' }>;
+      const out: Channel = {
+        ...next,
+        url:
+          next.url && !next.url.includes('••••')
+            ? next.url
+            : cur.url,
+      };
+      if (!next.http_basic_auth_password || next.http_basic_auth_password.includes('••••')) {
+        if (cur.http_basic_auth_password)
+          out.http_basic_auth_password = cur.http_basic_auth_password;
+        else delete (out as { http_basic_auth_password?: string }).http_basic_auth_password;
+      }
+      return out;
+    }
+  }
+}
+
+function maskedResponse(cfg: ManagedConfig): { channels: Channel[]; default_channel: string } {
+  // Re-run the masking step on the in-memory config rather than
+  // re-reading from disk — same result, no I/O.
+  return {
+    channels: cfg.channels.map(maskSecrets),
+    default_channel: cfg.default_channel,
+  };
+}
+
+// Best-effort reload: POSTs to Alertmanager's lifecycle endpoint.
+// Failures log a warning but don't fail the write — the file is
+// already persisted; the next time the operator hits a config-affecting
+// endpoint we'll try again. The 1s budget keeps the UI snappy when
+// Alertmanager is wedged.
+async function reloadAlertmanager(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  app: any,
+  deps: RouteDeps,
+): Promise<void> {
+  const base = app.config.ALERTMANAGER_URL;
+  if (!base) return;
+  try {
+    const res = await fetch(`${base.replace(/\/+$/, '')}/-/reload`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(1000),
+    });
+    if (!res.ok) {
+      deps.logger?.warn({ status: res.status }, 'channels.reload.bad-status');
+    }
+  } catch (err) {
+    deps.logger?.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'channels.reload.failed',
+    );
+  }
 }
