@@ -241,6 +241,7 @@ export function FleetPage() {
         canGoNext={!!nextCursor}
         onNext={() => (nextCursor ? setCursorStack((s) => [...s, nextCursor]) : undefined)}
         pageNumber={cursorStack.length}
+        loadedRowCount={rows.length}
       />
     </div>
   );
@@ -553,10 +554,7 @@ function FleetTableRow({
         </TableCell>
         <TableCell className="text-sm">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span>
-              {row.vendor ?? '—'}
-              {row.model ? <span className="text-muted-foreground"> / {row.model}</span> : null}
-            </span>
+            <VendorModel vendor={row.vendor} model={row.model} />
             <ChargerSpecChips model={row.model} compact />
           </div>
         </TableCell>
@@ -625,7 +623,7 @@ function FleetCard({ row }: { row: ChargePointSummary }) {
         </div>
 
         <dl className="space-y-1 text-xs text-muted-foreground">
-          <Row k="vendor" v={`${row.vendor ?? '—'}${row.model ? ' · ' + row.model : ''}`} />
+          <Row k="vendor" v={vendorModelText(row.vendor, row.model)} />
           <Row k="firmware" v={row.firmware_version ?? '—'} />
           <Row k="heartbeat" v={formatRelativeTime(row.last_heartbeat_at)} />
           {row.online && row.last_boot_at ? (
@@ -647,6 +645,36 @@ function Row({ k, v }: { k: string; v: string }) {
       </dd>
     </div>
   );
+}
+
+// Render the vendor/model pair so a missing side never produces a
+// leading em-dash. "Eveys / Eveys-22kW-AC" with both; "Eveys" or
+// "Eveys-22kW-AC" with one; "—" with neither.
+function VendorModel({
+  vendor,
+  model,
+}: {
+  vendor: string | null | undefined;
+  model: string | null | undefined;
+}) {
+  if (vendor && model)
+    return (
+      <span>
+        {vendor}
+        <span className="text-muted-foreground"> / {model}</span>
+      </span>
+    );
+  if (vendor) return <span>{vendor}</span>;
+  if (model) return <span>{model}</span>;
+  return <span className="text-muted-foreground">—</span>;
+}
+
+function vendorModelText(
+  vendor: string | null | undefined,
+  model: string | null | undefined,
+): string {
+  if (vendor && model) return `${vendor} · ${model}`;
+  return vendor ?? model ?? '—';
 }
 
 // Tiny coloured dot visible next to cp_id when the charger has a fault
@@ -824,6 +852,10 @@ interface PaginationProps {
   canGoNext: boolean;
   onNext: () => void;
   pageNumber: number;
+  /** Number of rows currently rendered (post client-side filters).
+   *  Shown alongside the page number so the operator has a concrete
+   *  count rather than just "Page N" with no scale. */
+  loadedRowCount: number;
 }
 
 function Pagination({
@@ -834,6 +866,7 @@ function Pagination({
   canGoNext,
   onNext,
   pageNumber,
+  loadedRowCount,
 }: PaginationProps) {
   // Stacks vertically below `sm` so each row gets enough horizontal
   // space; horizontal at sm+ to keep the desktop layout compact.
@@ -853,7 +886,9 @@ function Pagination({
         </Select>
       </div>
       <div className="flex items-center justify-between gap-2 sm:justify-end">
-        <span>Page {pageNumber}</span>
+        <span>
+          Showing {loadedRowCount} {loadedRowCount === 1 ? 'row' : 'rows'} · Page {pageNumber}
+        </span>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
