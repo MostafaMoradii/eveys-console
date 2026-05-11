@@ -211,6 +211,17 @@ const META: Record<keyof Config, KeyMeta> = {
     sensitive: false,
   },
 
+  PROMETHEUS_URL: {
+    description:
+      'Base URL of Prometheus for the Rules tab on /sys/alerts. Optional — when unset, the Rules tab renders "Prometheus not configured".',
+    category: 'observability',
+    mutable: true,
+    restart: 'console',
+    range: 'http(s)://host:port URL (no trailing slash).',
+    default: '',
+    sensitive: false,
+  },
+
   KAFKA_BROKERS: {
     description: 'CSV of Kafka bootstrap brokers the Console tails for live events.',
     category: 'kafka',

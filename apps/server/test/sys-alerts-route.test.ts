@@ -1100,3 +1100,214 @@ describe('POST /sys/alerts/channels/:name/test', () => {
     expect(res.statusCode).toBe(502);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Default-receiver switch
+// ---------------------------------------------------------------------------
+
+describe('PUT /sys/alerts/channels/default', () => {
+  let ctx: Awaited<ReturnType<typeof buildChannelsApp>>;
+  beforeEach(async () => {
+    ctx = await buildChannelsApp();
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({}) }));
+    await ctx.store.updateChannels(
+      [
+        { type: 'slack', name: 'a', api_url: 'https://hooks/x', channel: '#a' },
+        { type: 'slack', name: 'b', api_url: 'https://hooks/y', channel: '#b' },
+      ],
+      'a',
+    );
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('rejects an invalid body', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/channels/default',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: { not_name: 'b' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects an unknown channel name', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/channels/default',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: { name: 'ghost' },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('updates the default to the given channel', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/channels/default',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: { name: 'b' },
+    });
+    expect(res.statusCode).toBe(200);
+    const cfg = await ctx.store.read();
+    expect(cfg.default_channel).toBe('b');
+    expect(cfg.channels.map((c) => c.name)).toEqual(['a', 'b']);
+  });
+
+  it('clears the default when name is null', async () => {
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/channels/default',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: { name: null },
+    });
+    expect(res.statusCode).toBe(200);
+    const cfg = await ctx.store.read();
+    expect(cfg.default_channel).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rules
+// ---------------------------------------------------------------------------
+
+import { mapRulesResponse } from '../src/routes/sys-alerts.js';
+
+async function buildRulesApp(opts: { prometheusUrl?: string } = {}): Promise<FastifyInstance> {
+  const app = Fastify({ logger: false });
+  await app.register(fastifyJwt, { secret: JWT_SECRET });
+  app.decorate('config', {
+    PROMETHEUS_URL: opts.prometheusUrl,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any);
+  await registerSysAlertsRoute(app, {});
+  await app.ready();
+  return app;
+}
+
+describe('GET /sys/alerts/rules', () => {
+  it('returns unavailable when PROMETHEUS_URL is unset', async () => {
+    const app = await buildRulesApp({});
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/alerts/rules',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ groups: [], unavailable: true });
+    await app.close();
+  });
+
+  it('returns 401 without a JWT', async () => {
+    const app = await buildRulesApp({ prometheusUrl: 'http://prometheus:9090' });
+    const res = await app.inject({ method: 'GET', url: '/sys/alerts/rules' });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('returns unavailable on upstream 500', async () => {
+    mockFetchOnce(() => ({ ok: false, status: 500, json: async () => ({}) }));
+    const app = await buildRulesApp({ prometheusUrl: 'http://prometheus:9090' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/alerts/rules',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.json()).toEqual({ groups: [], unavailable: true });
+    await app.close();
+  });
+
+  it('maps a real-shaped /api/v1/rules response', async () => {
+    mockFetchOnce(() => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'success',
+        data: {
+          groups: [
+            {
+              name: 'eveys-console',
+              file: '/etc/prometheus/alerts.yml',
+              interval: 15,
+              rules: [
+                {
+                  type: 'alerting',
+                  name: 'ConsoleDown',
+                  query: 'up{job="eveys-console"} == 0',
+                  duration: 300,
+                  labels: { severity: 'warning' },
+                  annotations: { summary: 'Console scrape failing', description: 'no scrape 5m' },
+                  state: 'inactive',
+                  health: 'ok',
+                  lastEvaluation: '2026-05-11T09:00:00.000Z',
+                  evaluationTime: '0.001234',
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    }));
+    const app = await buildRulesApp({ prometheusUrl: 'http://prometheus:9090' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/alerts/rules',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      groups: Array<{
+        name: string;
+        rules: Array<{ name: string; duration: string; severity: string | null }>;
+      }>;
+    };
+    expect(body.groups).toHaveLength(1);
+    expect(body.groups[0]?.rules[0]).toMatchObject({
+      name: 'ConsoleDown',
+      duration: '5m',
+      severity: 'warning',
+      state: 'inactive',
+    });
+    await app.close();
+  });
+});
+
+describe('mapRulesResponse', () => {
+  it('returns the unavailable envelope on a non-object input', () => {
+    expect(mapRulesResponse(null)).toEqual({ groups: [], unavailable: true });
+    expect(mapRulesResponse('whatever')).toEqual({ groups: [], unavailable: true });
+  });
+
+  it('skips groups without a name', () => {
+    const out = mapRulesResponse({
+      data: {
+        groups: [
+          { name: 'good', rules: [] },
+          { rules: [] }, // no name → skipped
+        ],
+      },
+    });
+    expect(out.groups.map((g) => g.name)).toEqual(['good']);
+  });
+
+  it('formats durations 60 → 1m, 3600 → 1h, 90 → 90s', () => {
+    const out = mapRulesResponse({
+      data: {
+        groups: [
+          {
+            name: 'g',
+            rules: [
+              { name: 'a', type: 'alerting', query: 'x', duration: 60, state: 'inactive' },
+              { name: 'b', type: 'alerting', query: 'x', duration: 3600, state: 'inactive' },
+              { name: 'c', type: 'alerting', query: 'x', duration: 90, state: 'inactive' },
+            ],
+          },
+        ],
+      },
+    });
+    const rules = out.groups[0]?.rules;
+    expect(rules?.map((r) => r.duration)).toEqual(['1m', '1h', '90s']);
+  });
+});

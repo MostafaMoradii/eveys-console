@@ -54,6 +54,10 @@ services:
       # `{ alerts: [], unavailable: true }`), so leaving this set
       # while the profile is down is harmless.
       ALERTMANAGER_URL: ${ALERTMANAGER_URL:-http://alertmanager:9093}
+      # Prometheus — points at the in-stack service. The Rules tab on
+      # /sys/alerts proxies /api/v1/rules through this. When unset
+      # (or unreachable) the tab renders "Prometheus not configured".
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-http://prometheus:9090}
       # Path inside the container where the Console writes the
       # managed Alertmanager config. The Alertmanager service below
       # mounts the same named volume read-only and points its

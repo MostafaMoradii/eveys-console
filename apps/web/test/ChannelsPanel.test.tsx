@@ -27,6 +27,7 @@ const createMutate = vi.fn();
 const updateMutate = vi.fn();
 const deleteMutate = vi.fn();
 const testMutate = vi.fn();
+const setDefaultMutate = vi.fn();
 
 vi.mock('@/hooks/use-channels', () => ({
   useChannels: () => channelsStub,
@@ -50,6 +51,12 @@ vi.mock('@/hooks/use-channels', () => ({
   }),
   useTestChannel: () => ({
     mutate: testMutate,
+    mutateAsync: vi.fn(),
+    isPending: false,
+    error: null,
+  }),
+  useSetDefaultChannel: () => ({
+    mutate: setDefaultMutate,
     mutateAsync: vi.fn(),
     isPending: false,
     error: null,
@@ -79,6 +86,7 @@ beforeEach(() => {
   updateMutate.mockClear();
   deleteMutate.mockClear();
   testMutate.mockClear();
+  setDefaultMutate.mockClear();
 });
 
 afterEach(() => {
@@ -224,6 +232,40 @@ describe('ChannelsPanel — delete', () => {
     await user.click(screen.getByTestId('delete-channel-confirm'));
     expect(deleteMutate).toHaveBeenCalledTimes(1);
     expect(deleteMutate.mock.calls[0]?.[0]).toBe('ops');
+  });
+});
+
+describe('ChannelsPanel — Set as default', () => {
+  it('shows the Set-default button only on non-default channels', () => {
+    channelsStub = {
+      channels: [
+        { type: 'slack', name: 'a', api_url: 'https://hooks/x', channel: '#a' },
+        { type: 'slack', name: 'b', api_url: 'https://hooks/y', channel: '#b' },
+      ],
+      defaultChannel: 'a',
+      loading: false,
+      error: null,
+    };
+    renderPanel();
+    const buttons = screen.queryAllByTestId('set-default-channel-button');
+    expect(buttons).toHaveLength(1);
+  });
+
+  it('fires the setDefault mutation with the row name when clicked', async () => {
+    const user = userEvent.setup();
+    channelsStub = {
+      channels: [
+        { type: 'slack', name: 'a', api_url: 'https://hooks/x', channel: '#a' },
+        { type: 'slack', name: 'b', api_url: 'https://hooks/y', channel: '#b' },
+      ],
+      defaultChannel: 'a',
+      loading: false,
+      error: null,
+    };
+    renderPanel();
+    await user.click(screen.getByTestId('set-default-channel-button'));
+    expect(setDefaultMutate).toHaveBeenCalledTimes(1);
+    expect(setDefaultMutate.mock.calls[0]?.[0]).toBe('b');
   });
 });
 

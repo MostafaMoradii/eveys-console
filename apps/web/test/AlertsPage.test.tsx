@@ -80,11 +80,14 @@ vi.mock('@/hooks/use-silence-mutations', () => ({
   useExpireSilence: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
 }));
 
-// ChannelsPanel needs the ws-context for tokens + the channels hook.
-// We're testing tab wiring here, not the panel itself — replace with a
-// minimal stub. Real ChannelsPanel has its own test.
+// ChannelsPanel + RulesPanel need ws-context and their own queries.
+// We're testing tab wiring here, not the panels — replace with stubs.
+// Real panels have their own tests.
 vi.mock('@/components/ChannelsPanel', () => ({
   ChannelsPanel: () => <div data-testid="channels-panel">stub</div>,
+}));
+vi.mock('@/components/RulesPanel', () => ({
+  RulesPanel: () => <div data-testid="rules-panel">stub</div>,
 }));
 
 import { AlertsPage } from '@/pages/AlertsPage';
@@ -150,12 +153,11 @@ describe('AlertsPage', () => {
     expect(screen.getByTestId('channels-panel')).toBeInTheDocument();
   });
 
-  it('Rules tab renders a placeholder card', async () => {
+  it('Rules tab renders the rules panel', async () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByTestId('tab-rules'));
-    expect(screen.getAllByText('Rules').length).toBeGreaterThan(0);
-    expect(screen.getByText(/alerts\.yml/i)).toBeInTheDocument();
+    expect(screen.getByTestId('rules-panel')).toBeInTheDocument();
   });
 
   it('shows the firing-count pip on the Firing tab when alerts are present', () => {
