@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { formatDurationMinutes, formatRelativeTime, formatUptime } from '@/lib/time';
+import {
+  formatAbsoluteTime,
+  formatDurationMinutes,
+  formatRelativeTime,
+  formatUptime,
+} from '@/lib/time';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -83,5 +88,26 @@ describe('formatDurationMinutes', () => {
   it('renders multi-day as Xd Yh, omitting hours when 0', () => {
     expect(formatDurationMinutes(3 * 86_400_000 + 4 * 3_600_000)).toBe('3d 4h');
     expect(formatDurationMinutes(3 * 86_400_000)).toBe('3d');
+  });
+});
+
+describe('formatAbsoluteTime', () => {
+  it('returns em-dash for null / undefined / unparseable', () => {
+    expect(formatAbsoluteTime(null)).toBe('—');
+    expect(formatAbsoluteTime(undefined)).toBe('—');
+    expect(formatAbsoluteTime('not-a-date')).toBe('—');
+  });
+
+  it('renders UTC with seconds precision', () => {
+    expect(formatAbsoluteTime('2026-05-10T17:19:25.987000+00:00')).toBe('2026-05-10 17:19:25 UTC');
+  });
+
+  it('renders the same UTC value regardless of input offset', () => {
+    // 17:19 UTC ≡ 19:19 +02:00 — the formatter normalises to UTC.
+    expect(formatAbsoluteTime('2026-05-10T19:19:25.000+02:00')).toBe('2026-05-10 17:19:25 UTC');
+  });
+
+  it('pads single-digit month/day/hour/min/sec', () => {
+    expect(formatAbsoluteTime('2026-01-05T03:04:05.000Z')).toBe('2026-01-05 03:04:05 UTC');
   });
 });

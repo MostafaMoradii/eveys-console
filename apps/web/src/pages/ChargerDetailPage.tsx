@@ -14,6 +14,7 @@ import { useState } from 'react';
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
 import { ChargerSpecChips } from '@/components/ChargerSpecChips';
+import { TimeAgo } from '@/components/TimeAgo';
 import { CommandsDrawer } from '@/components/CommandsDrawer';
 import { DeviceEventsPanel } from '@/components/DeviceEventsPanel';
 import { DiagnosticsHistory } from '@/components/DiagnosticsHistory';
@@ -142,9 +143,6 @@ function FaultBanner({ cp }: { cp: ChargePointSummary }) {
       <AlertDescription className="space-y-3">
         {connectors.map((c) => {
           const info = describeErrorCode(c.error_code);
-          const since = c.last_changed_at
-            ? new Date(c.last_changed_at).toLocaleString()
-            : 'unknown';
           const level = connectorFaultLevel(c);
           return (
             <div key={c.connector_id} className="space-y-1">
@@ -178,7 +176,9 @@ function FaultBanner({ cp }: { cp: ChargePointSummary }) {
               ) : c.info ? (
                 <p className="text-xs italic text-muted-foreground">{c.info}</p>
               ) : null}
-              <p className="text-[10px] text-muted-foreground">since {since}</p>
+              <p className="text-[10px] text-muted-foreground">
+                since <TimeAgo iso={c.last_changed_at} />
+              </p>
             </div>
           );
         })}
@@ -337,7 +337,7 @@ function ConnectorTable({ connectors }: { connectors: Connector[] }) {
               )}
             </TableCell>
             <TableCell className="text-xs text-muted-foreground">
-              {c.last_changed_at ?? '—'}
+              <TimeAgo iso={c.last_changed_at} />
             </TableCell>
           </TableRow>
         ))}
@@ -373,7 +373,7 @@ function ConnectorCards({ connectors }: { connectors: Connector[] }) {
                 )
               }
             />
-            <Field k="last_changed_at" v={c.last_changed_at ?? '—'} />
+            <Field k="last_changed_at" v={<TimeAgo iso={c.last_changed_at} />} />
           </dl>
         </li>
       ))}

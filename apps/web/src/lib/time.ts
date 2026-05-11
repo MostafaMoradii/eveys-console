@@ -12,6 +12,26 @@
 // every snapshot/delta so this is fine. A 60s-tick global re-render
 // is overkill for the read patterns we have.
 
+/**
+ * Render `iso` as a human-readable absolute timestamp in UTC, formatted
+ * `YYYY-MM-DD HH:MM:SS UTC`. Used as the hover/title companion to
+ * `formatRelativeTime`. Returns '—' on null / unparseable.
+ *
+ * UTC rather than local — the audience is on-call SREs across timezones,
+ * a single canonical clock removes ambiguity when reading logs alongside
+ * the UI.
+ */
+export function formatAbsoluteTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`
+  );
+}
+
 export function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   const t = new Date(iso).getTime();
