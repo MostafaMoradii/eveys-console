@@ -80,6 +80,13 @@ vi.mock('@/hooks/use-silence-mutations', () => ({
   useExpireSilence: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
 }));
 
+// ChannelsPanel needs the ws-context for tokens + the channels hook.
+// We're testing tab wiring here, not the panel itself — replace with a
+// minimal stub. Real ChannelsPanel has its own test.
+vi.mock('@/components/ChannelsPanel', () => ({
+  ChannelsPanel: () => <div data-testid="channels-panel">stub</div>,
+}));
+
 import { AlertsPage } from '@/pages/AlertsPage';
 
 function withProviders(node: ReactNode) {
@@ -136,13 +143,11 @@ describe('AlertsPage', () => {
     expect(lastCall?.replace).toBe(true);
   });
 
-  it('Channels tab renders a placeholder card', async () => {
+  it('Channels tab renders the channels panel', async () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByTestId('tab-channels'));
-    // "Channels" appears in the tab trigger AND the card title — match either.
-    expect(screen.getAllByText('Channels').length).toBeGreaterThan(0);
-    expect(screen.getByText(/alertmanager\.yml/i)).toBeInTheDocument();
+    expect(screen.getByTestId('channels-panel')).toBeInTheDocument();
   });
 
   it('Rules tab renders a placeholder card', async () => {
