@@ -158,14 +158,19 @@ interface CmdFormProps {
 }
 
 function CmdCard({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  // <div> wrapper — NOT <form>. Each per-command body renders its
+  // own <form onSubmit={...}> inside `children`; nesting forms is
+  // invalid HTML, the parser flattens them, and the inner type=submit
+  // button can bubble past the inner preventDefault and trigger a
+  // real page reload. Keep the chrome in a plain element.
   return (
-    <form className="space-y-2 rounded-md border bg-card p-3" onSubmit={(e) => e.preventDefault()}>
+    <div className="space-y-2 rounded-md border bg-card p-3" data-testid="cmd-card">
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-sm font-medium">{title}</p>
       </div>
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       {children}
-    </form>
+    </div>
   );
 }
 

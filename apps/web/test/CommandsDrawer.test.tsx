@@ -66,9 +66,33 @@ describe('CommandsDrawer', () => {
     expect(screen.getByRole('heading', { name: /vendor/i })).toBeInTheDocument();
   });
 
+  it('CmdCard renders as a <div>, not <form>, so the inner per-command form does not nest', async () => {
+    // Regression: nested forms get flattened by the parser. The inner
+    // `<Button type="submit">` then bubbles past the outer no-op
+    // preventDefault and triggers a real HTML submit → page reload.
+    // Pin the wrapper element + assert each card holds exactly one
+    // <form> at depth.
+    await openDrawer();
+    const cards = screen.getAllByTestId('cmd-card');
+    expect(cards.length).toBeGreaterThan(5);
+    for (const card of cards) {
+      expect(card.tagName).toBe('DIV');
+      // At most one inner form per card (some cards have no form at
+      // all, e.g. ClearCache which is a single button). What we MUST
+      // not have is nested forms.
+      const forms = card.querySelectorAll('form');
+      expect(forms.length).toBeLessThanOrEqual(1);
+      if (forms[0]) {
+        expect(forms[0].querySelector('form')).toBeNull();
+      }
+    }
+  });
+
   it('TriggerMessage builds the right payload (with optional connector_id omitted)', async () => {
     const user = await openDrawer();
-    const card = screen.getByText('TriggerMessage').closest('form')!;
+    const card = screen
+      .getByText('TriggerMessage')
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     // Default value is 'Heartbeat' from the select.
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
 
@@ -80,7 +104,9 @@ describe('CommandsDrawer', () => {
 
   it('TriggerMessage forwards connector_id when set', async () => {
     const user = await openDrawer();
-    const card = screen.getByText('TriggerMessage').closest('form')!;
+    const card = screen
+      .getByText('TriggerMessage')
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     const connectorInput = within(card).getByPlaceholderText('—') as HTMLInputElement;
     await user.type(connectorInput, '2');
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
@@ -94,7 +120,9 @@ describe('CommandsDrawer', () => {
 
   it('UnlockConnector requires a positive connector_id', async () => {
     const user = await openDrawer();
-    const card = screen.getByText('UnlockConnector').closest('form')!;
+    const card = screen
+      .getByText('UnlockConnector')
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     // Default value is '1'; submit immediately should work.
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
     expect(rpc).toHaveBeenCalledWith('unlock-connector', {
@@ -105,7 +133,9 @@ describe('CommandsDrawer', () => {
 
   it('ChangeConfiguration requires the key field', async () => {
     const user = await openDrawer();
-    const card = screen.getByText('ChangeConfiguration').closest('form')!;
+    const card = screen
+      .getByText('ChangeConfiguration')
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     // Submit with no key → no RPC.
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
     expect(rpc).not.toHaveBeenCalled();
@@ -124,7 +154,9 @@ describe('CommandsDrawer', () => {
   it('GetConfiguration without keys sends an empty body', async () => {
     rpc.mockResolvedValueOnce({ configuration_key: [], unknown_key: [] });
     const user = await openDrawer();
-    const card = screen.getByText('GetConfiguration').closest('form')!;
+    const card = screen
+      .getByText('GetConfiguration')
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
     expect(rpc).toHaveBeenCalledWith('get-configuration', { cp_id: 'cp_test' });
   });
@@ -132,7 +164,9 @@ describe('CommandsDrawer', () => {
   it('GetConfiguration parses comma- and space-separated keys', async () => {
     rpc.mockResolvedValueOnce({ configuration_key: [], unknown_key: [] });
     const user = await openDrawer();
-    const card = screen.getByText('GetConfiguration').closest('form')!;
+    const card = screen
+      .getByText('GetConfiguration')
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     const input = within(card).getByPlaceholderText(/HeartbeatInterval/);
     await user.type(input, 'A, B  C');
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
@@ -144,14 +178,18 @@ describe('CommandsDrawer', () => {
 
   it('ClearCache sends an empty body', async () => {
     const user = await openDrawer();
-    const card = screen.getByText(/Clear authorization cache/i).closest('form')!;
+    const card = screen
+      .getByText(/Clear authorization cache/i)
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
     expect(rpc).toHaveBeenCalledWith('clear-cache', { cp_id: 'cp_test' });
   });
 
   it('CancelReservation requires reservation_id > 0', async () => {
     const user = await openDrawer();
-    const card = screen.getByText('CancelReservation').closest('form')!;
+    const card = screen
+      .getByText('CancelReservation')
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     // Empty input — submit blocked.
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
     expect(rpc).not.toHaveBeenCalled();
@@ -167,7 +205,7 @@ describe('CommandsDrawer', () => {
 
   it('GetLog requires log_type + request_id + location when auto-issue is OFF', async () => {
     const user = await openDrawer();
-    const card = screen.getByText('GetLog').closest('form')!;
+    const card = screen.getByText('GetLog').closest<HTMLElement>('[data-testid="cmd-card"]')!;
     // Untick the auto-issue checkbox to exercise the legacy path.
     const checkbox = within(card).getByLabelText(/Generate one-time upload URL/i);
     await user.click(checkbox);
@@ -193,7 +231,9 @@ describe('CommandsDrawer', () => {
 
   it('GetDiagnostics with auto-issue ON mints a URL via /sys/diagnostics/issue then sends OCPP', async () => {
     const user = await openDrawer();
-    const card = screen.getByText('GetDiagnostics').closest('form')!;
+    const card = screen
+      .getByText('GetDiagnostics')
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     // The checkbox is checked by default; the location field is read-only.
     const cb = within(card).getByLabelText(/Generate one-time upload URL/i) as HTMLInputElement;
     expect(cb.checked).toBe(true);
@@ -217,7 +257,9 @@ describe('CommandsDrawer', () => {
 
   it('GetDiagnostics with auto-issue OFF preserves the legacy operator-typed URL path', async () => {
     const user = await openDrawer();
-    const card = screen.getByText('GetDiagnostics').closest('form')!;
+    const card = screen
+      .getByText('GetDiagnostics')
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     const cb = within(card).getByLabelText(/Generate one-time upload URL/i);
     await user.click(cb); // uncheck
 
@@ -241,7 +283,7 @@ describe('CommandsDrawer', () => {
       expires_at: new Date(Date.now() + 3600_000).toISOString(),
     });
     const user = await openDrawer();
-    const card = screen.getByText('GetLog').closest('form')!;
+    const card = screen.getByText('GetLog').closest<HTMLElement>('[data-testid="cmd-card"]')!;
     // Checkbox is checked by default; request_id and location are
     // optional / read-only.
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
@@ -258,7 +300,9 @@ describe('CommandsDrawer', () => {
   it('GetDiagnostics surfaces an issue failure via toast and skips the OCPP send', async () => {
     issueDiagnostics.mockRejectedValueOnce(new Error('issue down'));
     const user = await openDrawer();
-    const card = screen.getByText('GetDiagnostics').closest('form')!;
+    const card = screen
+      .getByText('GetDiagnostics')
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
 
     expect(rpc).not.toHaveBeenCalled();
@@ -276,7 +320,9 @@ describe('CommandsDrawer', () => {
   it('shows a destructive toast when the RPC rejects', async () => {
     rpc.mockRejectedValueOnce(new Error('charger offline'));
     const user = await openDrawer();
-    const card = screen.getByText(/Clear authorization cache/i).closest('form')!;
+    const card = screen
+      .getByText(/Clear authorization cache/i)
+      .closest<HTMLElement>('[data-testid="cmd-card"]')!;
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));
     // Wait for the async error path to settle.
     await vi.waitFor(() =>
