@@ -55,7 +55,7 @@ export function SystemConfigPage() {
           title="Gateway configuration"
           queryKey="sys-gateway-config"
           fetcher={fetchGatewayConfig}
-          filters={['all', 'gateway', 'console', 'both', 'none']}
+          filters={['all', 'gateway', 'none']}
         />
       </TabsContent>
     </Tabs>
