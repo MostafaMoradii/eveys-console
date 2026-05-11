@@ -9,7 +9,7 @@ import {
   Square,
   Wrench,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
@@ -83,7 +83,20 @@ export function ChargerDetailPage() {
       </Alert>
     );
   }
-  if (sub.loading || !sub.snapshot || sub.snapshot.kind !== 'charge-point') {
+  // Merge the most recent delta into the rendered row so a
+  // BootNotification or StatusNotification visibly updates the page
+  // without waiting for the next snapshot refresh. The resolver
+  // re-fetches the full row from the gateway on each `cp.boot` /
+  // `cp.status` event (see apps/server/src/broker/queries.ts).
+  const cp = useMemo<ChargePointSummary | null>(() => {
+    if (!sub.snapshot || sub.snapshot.kind !== 'charge-point') return null;
+    if (sub.lastDelta && sub.lastDelta.kind === 'charge-point') {
+      return sub.lastDelta.row;
+    }
+    return sub.snapshot.row;
+  }, [sub.snapshot, sub.lastDelta]);
+
+  if (sub.loading || !cp) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
@@ -91,8 +104,6 @@ export function ChargerDetailPage() {
       </div>
     );
   }
-
-  const cp = sub.snapshot.row;
 
   return (
     <div className="space-y-4">

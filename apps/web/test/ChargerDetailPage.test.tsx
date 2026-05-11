@@ -151,6 +151,25 @@ describe('ChargerDetailPage — header heartbeat badge', () => {
     renderPage();
     expect(screen.queryByTestId('header-heartbeat')).toBeNull();
   });
+
+  // Regression: the page used to render `sub.snapshot.row` directly,
+  // so a fresh cp.boot / cp.status delta never showed up until the
+  // next snapshot refresh. The detail page now merges `lastDelta` in.
+  it('renders the lastDelta row (fresh BootNotification / StatusNotification) over the snapshot', () => {
+    nextSubResult = {
+      snapshot: {
+        kind: 'charge-point',
+        row: baseCp({ firmware_version: '1.0.0', last_status: 'Available' }),
+      },
+      lastDelta: {
+        kind: 'charge-point',
+        row: baseCp({ firmware_version: '2.5.0', last_status: 'Charging' }),
+      },
+    };
+    renderPage();
+    expect(screen.getByText(/firmware 2\.5\.0/)).toBeInTheDocument();
+    expect(screen.queryByText(/firmware 1\.0\.0/)).toBeNull();
+  });
 });
 
 describe('ChargerDetailPage — Hard Reset', () => {
