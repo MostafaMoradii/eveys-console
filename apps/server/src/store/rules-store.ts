@@ -260,8 +260,17 @@ function runPromtool(promtoolPath: string, file: string): Promise<ValidationResu
       stdout += chunk.toString('utf8');
     });
     proc.on('error', (err) => {
-      // ENOENT — promtool isn't on PATH. Common in dev; not fatal.
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      // ENOENT  → promtool isn't on PATH. Common in dev.
+      // EACCES  → promtool exists but isn't executable (broken Docker
+      //           layer perms, distroless `nonroot` uid mismatch, host
+      //           binary copied from a build cache without +x).
+      // ENOEXEC → wrong architecture (e.g. arm64 binary on amd64).
+      // In all three cases the operator's intent is "install the
+      // rule"; the safety net is gone but the rule body itself was
+      // already validated against the managed schema upstream. Skip
+      // validation, write through, surface the banner.
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'EACCES' || code === 'ENOEXEC') {
         resolve({ ok: true, skipped: true });
         return;
       }
