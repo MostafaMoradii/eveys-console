@@ -319,11 +319,13 @@ describe('SystemPage — alerts summary', () => {
 });
 
 describe('SystemPage — services placement', () => {
-  it('renders the Services pills after the metrics row in DOM order', async () => {
+  it('renders the Services pills above the alerts summary and metrics row', async () => {
     renderPage();
-    const metrics = await screen.findByTestId('metrics-row');
     const services = await screen.findByTestId('service-status-row');
-    expect(metrics.compareDocumentPosition(services)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const card = await screen.findByTestId('alerts-summary-card');
+    const metrics = await screen.findByTestId('metrics-row');
+    expect(services.compareDocumentPosition(card)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(services.compareDocumentPosition(metrics)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 });
 

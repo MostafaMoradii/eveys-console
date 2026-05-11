@@ -117,6 +117,10 @@ export function SystemPage() {
         </p>
       </div>
 
+      <section className="space-y-2" data-testid="service-status-row">
+        <ServiceStatusPills sys={sys} />
+      </section>
+
       <AlertsSummaryCard
         critical={severityCounts.critical}
         warning={severityCounts.warning}
@@ -214,11 +218,6 @@ export function SystemPage() {
           }
           to="/sys/alerts"
         />
-      </section>
-
-      <section className="space-y-2" data-testid="service-status-row">
-        <h3 className="text-sm font-medium text-muted-foreground">Services</h3>
-        <ServiceStatusPills sys={sys} />
       </section>
     </div>
   );
