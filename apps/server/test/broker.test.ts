@@ -28,30 +28,48 @@ class FakeKafka {
 interface FakeGatewayOptions {
   online?: boolean;
   vendor?: string;
+  last_status?: string;
+  connectors?: Array<{
+    connector_id: number;
+    status: string;
+    error_code: string | null;
+    last_changed_at: string | null;
+  }>;
 }
 
-function fakeGateway(opts: FakeGatewayOptions = {}): GatewayClient {
-  return {
-    listChargePoints: vi.fn().mockResolvedValue({ charge_points: [] }),
-    getChargePoint: vi.fn(async (cpId: string) => ({
-      cp_id: cpId,
-      online: opts.online ?? true,
-      pod_id: 'pod-1',
-      vendor: opts.vendor ?? 'ACME',
-      model: 'X1',
-      firmware_version: '1.0',
-      serial_number: 'SN1',
-      last_boot_at: null,
-      last_heartbeat_at: null,
-      last_status: 'Available',
-      last_seen_seq: 0,
-      connectors: [],
-    })),
+function makeFakeGateway(opts: FakeGatewayOptions = {}) {
+  const listSpy = vi.fn().mockResolvedValue({ charge_points: [] });
+  const getSpy = vi.fn(async (cpId: string) => ({
+    cp_id: cpId,
+    online: opts.online ?? true,
+    pod_id: 'pod-1',
+    vendor: opts.vendor ?? 'ACME',
+    model: 'X1',
+    firmware_version: '1.0',
+    serial_number: 'SN1',
+    last_boot_at: null,
+    last_heartbeat_at: null,
+    last_status: opts.last_status ?? 'Available',
+    last_seen_seq: 0,
+    connectors: opts.connectors ?? [],
+  }));
+  const gw = {
+    listChargePoints: listSpy,
+    getChargePoint: getSpy,
     listActiveTransactions: vi.fn().mockResolvedValue({ transactions: [] }),
     remoteStart: vi.fn(),
     remoteStop: vi.fn(),
     reset: vi.fn(),
-  } as unknown as GatewayClient;
+  };
+  return {
+    client: gw as unknown as GatewayClient,
+    listSpy,
+    getSpy,
+  };
+}
+
+function fakeGateway(opts: FakeGatewayOptions = {}): GatewayClient {
+  return makeFakeGateway(opts).client;
 }
 
 const silentLog: Logger = {
@@ -290,6 +308,192 @@ describe('Broker — charge-points (list) deltas', () => {
 
     const [, d] = deliver.mock.calls[0]!;
     expect(d.delta.op).toBe('remove');
+  });
+
+  it('forwards last_status + cp_id_contains + page + page_size to the gateway on snapshot', async () => {
+    const kafka = new FakeKafka();
+    const { client, listSpy } = makeFakeGateway();
+    listSpy.mockResolvedValueOnce({
+      charge_points: [],
+      pagination: { page: 2, page_size: 50, total: 873 },
+    });
+    const broker = new Broker(kafka as unknown as KafkaTail, client, silentLog);
+    broker.start();
+    broker.registerConnection('c1', vi.fn());
+    const { snapshot } = await broker.subscribe('c1', 'charge-points', {
+      last_status: 'Charging',
+      cp_id_contains: '617b5675',
+      page: 2,
+      page_size: 50,
+    });
+
+    expect(listSpy).toHaveBeenCalledOnce();
+    expect(listSpy.mock.calls[0][0]).toEqual({
+      last_status: 'Charging',
+      cp_id_contains: '617b5675',
+      page: 2,
+      page_size: 50,
+    });
+    // Server's pagination block flows into the snapshot.
+    if (snapshot.snapshot.kind === 'charge-points') {
+      expect(snapshot.snapshot.total).toBe(873);
+      expect(snapshot.snapshot.page).toBe(2);
+      expect(snapshot.snapshot.page_size).toBe(50);
+    }
+  });
+
+  it('emits remove when the cp_id does not match cp_id_contains', async () => {
+    const kafka = new FakeKafka();
+    const broker = new Broker(kafka as unknown as KafkaTail, fakeGateway(), silentLog);
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-points', { cp_id_contains: '617b' });
+
+    kafka.emit({
+      topic: 'cp.status',
+      cpId: 'cp_other_id',
+      cursor: 'k:cp.status:0:90',
+      timestamp: new Date(),
+      payload: { connectorId: 1, status: 'Available' },
+    });
+    await flushAsync();
+
+    const [, d] = deliver.mock.calls[0]!;
+    expect(d.delta.op).toBe('remove');
+  });
+
+  it('emits remove when the row no longer matches a last_status filter', async () => {
+    const kafka = new FakeKafka();
+    const broker = new Broker(
+      kafka as unknown as KafkaTail,
+      fakeGateway({ last_status: 'Available' }),
+      silentLog,
+    );
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-points', { last_status: 'Charging' });
+
+    kafka.emit({
+      topic: 'cp.status',
+      cpId: 'CP_S',
+      cursor: 'k:cp.status:0:12',
+      timestamp: new Date(),
+      payload: { connectorId: 1, status: 'Available' },
+    });
+    await flushAsync();
+
+    const [, d] = deliver.mock.calls[0]!;
+    expect(d.delta.op).toBe('remove');
+    expect(d.delta.cp_id).toBe('CP_S');
+  });
+
+  it('emits remove when the cp_id does not match cp_id_prefix', async () => {
+    const kafka = new FakeKafka();
+    const broker = new Broker(kafka as unknown as KafkaTail, fakeGateway(), silentLog);
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-points', { cp_id_prefix: 'cp_77' });
+
+    kafka.emit({
+      topic: 'cp.status',
+      cpId: 'cp_99_other',
+      cursor: 'k:cp.status:0:13',
+      timestamp: new Date(),
+      payload: { connectorId: 1, status: 'Available' },
+    });
+    await flushAsync();
+
+    const [, d] = deliver.mock.calls[0]!;
+    expect(d.delta.op).toBe('remove');
+  });
+
+  it('merges the cp.status event payload into row.connectors so the UI sees the fresh status before ClickHouse catches up', async () => {
+    const kafka = new FakeKafka();
+    // Gateway returns an empty connectors[] (the ingestor race we
+    // are trying to defend against). The event payload should be
+    // synthesised into the delivered row.
+    const broker = new Broker(
+      kafka as unknown as KafkaTail,
+      fakeGateway({ connectors: [] }),
+      silentLog,
+    );
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-points', {});
+
+    kafka.emit({
+      topic: 'cp.status',
+      cpId: 'CP_M',
+      cursor: 'k:cp.status:0:14',
+      timestamp: new Date('2026-05-11T10:00:00Z'),
+      payload: {
+        connectorId: 2,
+        status: 'Charging',
+        errorCode: 'NoError',
+        chargerReportedAt: '2026-05-11T09:59:55Z',
+      },
+    });
+    await flushAsync();
+
+    const [, d] = deliver.mock.calls[0]!;
+    expect(d.delta.op).toBe('upsert');
+    expect(d.delta.row.connectors).toEqual([
+      {
+        connector_id: 2,
+        status: 'Charging',
+        error_code: 'NoError',
+        last_changed_at: '2026-05-11T09:59:55Z',
+      },
+    ]);
+  });
+
+  it('does not overwrite a fresher connector entry from the gateway with an older cp.status event', async () => {
+    const kafka = new FakeKafka();
+    // Gateway already knows connector 1 is Charging as of t+1m.
+    // An older status event (t+0) arrives — should not regress it.
+    const broker = new Broker(
+      kafka as unknown as KafkaTail,
+      fakeGateway({
+        connectors: [
+          {
+            connector_id: 1,
+            status: 'Charging',
+            error_code: null,
+            last_changed_at: '2026-05-11T10:01:00Z',
+          },
+        ],
+      }),
+      silentLog,
+    );
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-points', {});
+
+    kafka.emit({
+      topic: 'cp.status',
+      cpId: 'CP_M',
+      cursor: 'k:cp.status:0:15',
+      timestamp: new Date('2026-05-11T10:01:30Z'),
+      payload: {
+        connectorId: 1,
+        status: 'Preparing',
+        errorCode: 'NoError',
+        chargerReportedAt: '2026-05-11T10:00:00Z',
+      },
+    });
+    await flushAsync();
+
+    const [, d] = deliver.mock.calls[0]!;
+    expect(d.delta.row.connectors[0]).toMatchObject({
+      connector_id: 1,
+      status: 'Charging',
+      last_changed_at: '2026-05-11T10:01:00Z',
+    });
   });
 });
 

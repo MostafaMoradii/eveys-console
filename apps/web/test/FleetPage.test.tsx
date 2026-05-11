@@ -233,8 +233,23 @@ describe('FleetPage — snapshot rendering', () => {
       a.getAttribute('href')?.startsWith('/inspect/charge-points/'),
     );
     expect(cpLinks.map((a) => a.textContent)).toEqual(['CP_A', 'CP_B', 'CP_C']);
-    // Heading reflects the row count.
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/Charge points — 3/);
+    // Heading shows "Charge points" with no total until the snapshot carries one.
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/Charge points/);
+  });
+
+  it('heading shows the server-reported total when the snapshot carries one', () => {
+    nextSubResult = {
+      snapshot: {
+        kind: 'charge-points',
+        rows: [baseRow('CP_A')],
+        next_cursor: null,
+        page: 1,
+        page_size: 100,
+        total: 873,
+      },
+    };
+    render(<FleetPage />);
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/873 total/);
   });
 
   it('renders pod_id (truncated) for online chargers and an em-dash for offline', () => {
@@ -317,31 +332,26 @@ describe('FleetPage — view toggle', () => {
 });
 
 describe('FleetPage — client-side filters', () => {
-  it('search filter cuts visible rows by cp_id / vendor / model', async () => {
-    const user = userEvent.setup();
+  it('search box debounces the typed value into cp_id_contains on the next subscribe', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     nextSubResult = {
       snapshot: {
         kind: 'charge-points',
-        rows: [
-          baseRow('CP_BERLIN_001', { vendor: 'Eveys' }),
-          baseRow('CP_LONDON_002', { vendor: 'OtherCo' }),
-          baseRow('CP_BERLIN_003', { vendor: 'Eveys' }),
-        ],
+        rows: [baseRow('CP_BERLIN_001')],
         next_cursor: null,
       },
     };
     render(<FleetPage />);
-    expect(screen.getAllByText(/CP_BERLIN_/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/CP_LONDON_002/).length).toBeGreaterThan(0);
+    subscriptionCalls.length = 0;
 
-    await user.type(screen.getByPlaceholderText(/filter loaded page/i), 'BERLIN');
+    await user.type(screen.getByPlaceholderText(/e.g. 617b5675/i), '617b5675');
+    // Debounced commit (250ms). Flush the timer.
+    await vi.advanceTimersByTimeAsync(300);
 
-    // The two BERLIN rows still show; the LONDON one is filtered out.
-    expect(screen.getByText('CP_BERLIN_001')).toBeInTheDocument();
-    expect(screen.getByText('CP_BERLIN_003')).toBeInTheDocument();
-    expect(screen.queryByText('CP_LONDON_002')).not.toBeInTheDocument();
-    // Heading should now show "X of Y shown".
-    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent(/2 of 3 shown/);
+    const last = subscriptionCalls.at(-1);
+    expect(last?.params.cp_id_contains).toBe('617b5675');
+    vi.useRealTimers();
   });
 
   it('faults-only filter narrows to chargers with fault or advisory severity', async () => {
@@ -391,29 +401,23 @@ describe('FleetPage — client-side filters', () => {
     expect(screen.getByText('CP_ADV')).toBeInTheDocument();
   });
 
-  it('status filter narrows by last_status', async () => {
+  it('status select pushes last_status into subscription params', async () => {
     const user = userEvent.setup();
     nextSubResult = {
       snapshot: {
         kind: 'charge-points',
-        rows: [
-          baseRow('CP_A', { last_status: 'Charging' }),
-          baseRow('CP_B', { last_status: 'Available' }),
-          baseRow('CP_C', { last_status: 'Charging' }),
-        ],
+        rows: [baseRow('CP_A')],
         next_cursor: null,
       },
     };
     render(<FleetPage />);
-    // The page has three native <select>s (online, vendor's
-    // datalist isn't a select, status, page-size); identify the
-    // status one by its current value "all" via the displayed text.
+    subscriptionCalls.length = 0;
+
     const statusSelect = selectByCurrentText(/Any/);
     await user.selectOptions(statusSelect, 'Charging');
 
-    expect(screen.getByText('CP_A')).toBeInTheDocument();
-    expect(screen.getByText('CP_C')).toBeInTheDocument();
-    expect(screen.queryByText('CP_B')).not.toBeInTheDocument();
+    const last = subscriptionCalls.at(-1);
+    expect(last?.params.last_status).toBe('Charging');
   });
 });
 
@@ -453,41 +457,47 @@ describe('FleetPage — server-side filter passthrough', () => {
     expect(last?.params.vendor).toBe('Eveys');
   });
 
-  it('changing page-size resets the cursor stack to page 1', async () => {
+  it('changing page-size resets to page 1 and updates page_size param', async () => {
     const user = userEvent.setup();
     nextSubResult = {
       snapshot: {
         kind: 'charge-points',
         rows: [baseRow('CP_A')],
-        next_cursor: 'cursor-page-2',
+        next_cursor: null,
+        page: 1,
+        page_size: 100,
+        total: 250,
       },
     };
     render(<FleetPage />);
     // Advance to page 2.
-    await user.click(screen.getByRole('button', { name: /next/i }));
+    await user.click(screen.getByRole('button', { name: /^next$/i }));
     // Now changing page-size resets to page 1.
     subscriptionCalls.length = 0;
     await user.selectOptions(screen.getByDisplayValue('100'), '50');
     const last = subscriptionCalls.at(-1);
-    expect(last?.params.cursor).toBeUndefined();
-    expect(last?.params.limit).toBe(50);
+    expect(last?.params.page).toBe(1);
+    expect(last?.params.page_size).toBe(50);
   });
 });
 
 describe('FleetPage — pagination', () => {
-  it('Next pushes the next_cursor into a cursor stack', async () => {
+  it('Next increments the page param', async () => {
     const user = userEvent.setup();
     nextSubResult = {
       snapshot: {
         kind: 'charge-points',
         rows: [baseRow('CP_A')],
-        next_cursor: 'cursor-2',
+        next_cursor: null,
+        page: 1,
+        page_size: 100,
+        total: 250,
       },
     };
     render(<FleetPage />);
     subscriptionCalls.length = 0;
-    await user.click(screen.getByRole('button', { name: /next/i }));
-    expect(subscriptionCalls.at(-1)?.params.cursor).toBe('cursor-2');
+    await user.click(screen.getByRole('button', { name: /^next$/i }));
+    expect(subscriptionCalls.at(-1)?.params.page).toBe(2);
   });
 
   it('Previous is disabled on page 1 and enabled on page 2+', async () => {
@@ -496,25 +506,49 @@ describe('FleetPage — pagination', () => {
       snapshot: {
         kind: 'charge-points',
         rows: [baseRow('CP_A')],
-        next_cursor: 'cursor-2',
+        next_cursor: null,
+        page: 1,
+        page_size: 100,
+        total: 250,
       },
     };
     render(<FleetPage />);
     expect(screen.getByRole('button', { name: /previous/i })).toBeDisabled();
-    await user.click(screen.getByRole('button', { name: /next/i }));
+    await user.click(screen.getByRole('button', { name: /^next$/i }));
     expect(screen.getByRole('button', { name: /previous/i })).not.toBeDisabled();
   });
 
-  it('Next is disabled when next_cursor is null', () => {
+  it('Next is disabled on the last page (page == pageCount)', () => {
     nextSubResult = {
       snapshot: {
         kind: 'charge-points',
         rows: [baseRow('CP_A')],
         next_cursor: null,
+        page: 1,
+        page_size: 100,
+        total: 50, // single page
       },
     };
     render(<FleetPage />);
-    expect(screen.getByRole('button', { name: /next/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^next$/i })).toBeDisabled();
+  });
+
+  it('Last page button jumps to the final page', async () => {
+    const user = userEvent.setup();
+    nextSubResult = {
+      snapshot: {
+        kind: 'charge-points',
+        rows: [baseRow('CP_A')],
+        next_cursor: null,
+        page: 1,
+        page_size: 100,
+        total: 873,
+      },
+    };
+    render(<FleetPage />);
+    subscriptionCalls.length = 0;
+    await user.click(screen.getByRole('button', { name: /last page/i }));
+    expect(subscriptionCalls.at(-1)?.params.page).toBe(9);
   });
 });
 
