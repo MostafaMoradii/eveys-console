@@ -44,7 +44,7 @@ vi.mock('@/hooks/use-managed-rules', () => ({
   }),
 }));
 
-import { RecommendedRulesPanel, RulesDocsStrip } from '@/components/RecommendedRulesPanel';
+import { RecommendedRulesPanel } from '@/components/RecommendedRulesPanel';
 import { RECOMMENDED_RULES } from '@/lib/recommended-rules';
 
 function withProviders(node: ReactNode) {
@@ -145,17 +145,5 @@ describe('RecommendedRulesPanel', () => {
     const uninstalls = screen.getAllByTestId('uninstall-recommended-rule');
     await user.click(uninstalls[0]!);
     expect(deleteMutate).toHaveBeenCalledWith(sample.name, expect.anything());
-  });
-});
-
-describe('RulesDocsStrip', () => {
-  it('starts collapsed and toggles the body open on click', async () => {
-    const user = userEvent.setup();
-    render(withProviders(<RulesDocsStrip />));
-    // Body is rendered but hidden via class — toggle changes that.
-    const toggle = screen.getByTestId('rules-docs-toggle');
-    expect(toggle).toHaveTextContent('Show');
-    await user.click(toggle);
-    expect(toggle).toHaveTextContent('Hide');
   });
 });

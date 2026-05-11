@@ -6,10 +6,8 @@
 // from a manual one after the fact — the operator can still edit it
 // later from the Managed-rules section below.
 
-import { BookOpen, CheckCircle2, Download, Loader2, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { CheckCircle2, Download, Loader2, Trash2 } from 'lucide-react';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,7 +18,6 @@ import {
   useManagedRules,
 } from '@/hooks/use-managed-rules';
 import { isInstalled, RECOMMENDED_RULES, type RecommendedRule } from '@/lib/recommended-rules';
-import { cn } from '@/lib/utils';
 
 export function RecommendedRulesPanel() {
   const { rules: installed, loading } = useManagedRules();
@@ -186,67 +183,4 @@ function severityVariant(s: string): 'destructive' | 'warning' | 'secondary' | '
   if (s === 'warning') return 'warning';
   if (s === 'info') return 'secondary';
   return 'muted';
-}
-
-// ---------------------------------------------------------------------------
-// On-page docs strip
-// ---------------------------------------------------------------------------
-// Operators on this tab need three things explained: how alerts flow,
-// what severity each level means, and where to look when a rule fires.
-// Render once at the top of the tab so the explanation is permanent
-// rather than tucked into a tooltip.
-
-export function RulesDocsStrip() {
-  const [open, setOpen] = useState(false);
-  return (
-    <Alert variant="default" data-testid="rules-docs-strip">
-      <BookOpen className="h-4 w-4" />
-      <AlertTitle className="flex items-center justify-between gap-2">
-        <span>How alerts work here</span>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="text-xs font-normal underline-offset-2 hover:underline"
-          data-testid="rules-docs-toggle"
-        >
-          {open ? 'Hide' : 'Show'}
-        </button>
-      </AlertTitle>
-      <AlertDescription className={cn('space-y-2 text-xs', !open && 'hidden')}>
-        <p>
-          A rule is a PromQL expression Prometheus evaluates on every scrape. When the expression is
-          true for the rule's <code className="font-mono">for:</code> duration, Prometheus pushes an
-          alert to Alertmanager, which forwards it to the receiver matching the alert's{' '}
-          <code className="font-mono">severity</code> label (Channels tab).
-        </p>
-        <p className="space-x-1">
-          <strong>Severity ladder:</strong>
-          <Badge variant="destructive" className="text-[10px]">
-            critical
-          </Badge>
-          <span>= page someone now ·</span>
-          <Badge variant="warning" className="text-[10px]">
-            warning
-          </Badge>
-          <span>= look at this in business hours ·</span>
-          <Badge variant="secondary" className="text-[10px]">
-            info
-          </Badge>
-          <span>= informational, no action expected.</span>
-        </p>
-        <p>
-          When a rule fires, jump to the <strong>Firing</strong> tab to see it with the operator's
-          starting context. Use <strong>Silences</strong> to mute a known-noisy alert during a
-          maintenance window. Use <strong>Channels</strong> to set where each severity is delivered
-          (Slack, email, webhook).
-        </p>
-        <p className="text-muted-foreground">
-          Console-managed rules are persisted to{' '}
-          <code className="font-mono">alerts-managed.yml</code>; bundled rules from{' '}
-          <code className="font-mono">deploy/observability/alerts.yml</code> also load but aren't
-          editable from here.
-        </p>
-      </AlertDescription>
-    </Alert>
-  );
 }

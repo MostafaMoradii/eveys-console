@@ -10,10 +10,11 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { BellRing } from 'lucide-react';
 
 import { ActiveSilencesPanel } from '@/components/ActiveSilencesPanel';
+import { AlertmanagerDocsStrip } from '@/components/AlertmanagerDocsStrip';
 import { ChannelsPanel } from '@/components/ChannelsPanel';
 import { FiringAlertsPanel } from '@/components/FiringAlertsPanel';
 import { ManagedRulesPanel } from '@/components/ManagedRulesPanel';
-import { RecommendedRulesPanel, RulesDocsStrip } from '@/components/RecommendedRulesPanel';
+import { RecommendedRulesPanel } from '@/components/RecommendedRulesPanel';
 import { RulesPanel } from '@/components/RulesPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFiringAlerts } from '@/hooks/use-firing-alerts';
@@ -53,6 +54,8 @@ export function AlertsPage() {
           </p>
         </div>
       </div>
+
+      <AlertmanagerDocsStrip />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as TabValue)} data-testid="alerts-tabs">
         <TabsList>
@@ -107,7 +110,6 @@ export function AlertsPage() {
         </TabsContent>
 
         <TabsContent value="rules" className="space-y-4">
-          <RulesDocsStrip />
           <RecommendedRulesPanel />
           <ManagedRulesPanel />
           <RulesPanel />
