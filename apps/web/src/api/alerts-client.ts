@@ -281,3 +281,79 @@ export async function fetchRules(token: string): Promise<RulesResponse> {
   if (!res.ok) throw new Error(`GET sys/alerts/rules ${res.status}`);
   return (await res.json()) as RulesResponse;
 }
+
+// ---------------------------------------------------------------------------
+// Managed rules CRUD
+// ---------------------------------------------------------------------------
+
+export interface ManagedAlertingRule {
+  name: string;
+  expr: string;
+  duration: string;
+  severity: 'critical' | 'warning' | 'info';
+  summary: string;
+  description: string;
+}
+
+export interface ManagedRulesResponse {
+  managed: ManagedAlertingRule[];
+  /** Set when the server's promtool wasn't available — write went
+   *  through without the safety net. The UI surfaces a banner. */
+  validation_skipped?: boolean;
+}
+
+export async function fetchManagedRules(token: string): Promise<ManagedRulesResponse> {
+  const res = await fetch(`${BASE}/sys/alerts/rules/managed`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 503) return { managed: [] };
+  if (!res.ok) throw new Error(`GET sys/alerts/rules/managed ${res.status}`);
+  return (await res.json()) as ManagedRulesResponse;
+}
+
+export async function createManagedRule(
+  token: string,
+  rule: ManagedAlertingRule,
+): Promise<ManagedRulesResponse> {
+  const res = await fetch(`${BASE}/sys/alerts/rules/managed`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(rule),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`POST sys/alerts/rules/managed ${res.status}: ${body}`);
+  }
+  return (await res.json()) as ManagedRulesResponse;
+}
+
+export async function updateManagedRule(
+  token: string,
+  rule: ManagedAlertingRule,
+): Promise<ManagedRulesResponse> {
+  const res = await fetch(`${BASE}/sys/alerts/rules/managed/${encodeURIComponent(rule.name)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(rule),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`PUT sys/alerts/rules/managed ${res.status}: ${body}`);
+  }
+  return (await res.json()) as ManagedRulesResponse;
+}
+
+export async function deleteManagedRule(
+  token: string,
+  name: string,
+): Promise<ManagedRulesResponse> {
+  const res = await fetch(`${BASE}/sys/alerts/rules/managed/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`DELETE sys/alerts/rules/managed ${res.status}: ${body}`);
+  }
+  return (await res.json()) as ManagedRulesResponse;
+}

@@ -12,6 +12,7 @@ import { BellRing } from 'lucide-react';
 import { ActiveSilencesPanel } from '@/components/ActiveSilencesPanel';
 import { ChannelsPanel } from '@/components/ChannelsPanel';
 import { FiringAlertsPanel } from '@/components/FiringAlertsPanel';
+import { ManagedRulesPanel } from '@/components/ManagedRulesPanel';
 import { RulesPanel } from '@/components/RulesPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFiringAlerts } from '@/hooks/use-firing-alerts';
@@ -104,7 +105,8 @@ export function AlertsPage() {
           <ChannelsPanel />
         </TabsContent>
 
-        <TabsContent value="rules">
+        <TabsContent value="rules" className="space-y-4">
+          <ManagedRulesPanel />
           <RulesPanel />
         </TabsContent>
       </Tabs>

@@ -89,6 +89,9 @@ vi.mock('@/components/ChannelsPanel', () => ({
 vi.mock('@/components/RulesPanel', () => ({
   RulesPanel: () => <div data-testid="rules-panel">stub</div>,
 }));
+vi.mock('@/components/ManagedRulesPanel', () => ({
+  ManagedRulesPanel: () => <div data-testid="managed-rules-panel">stub</div>,
+}));
 
 import { AlertsPage } from '@/pages/AlertsPage';
 
