@@ -23,6 +23,7 @@ import { useMemo, useState } from 'react';
 import { fetchAllChargePointTransactions, type TransactionRow } from '@/api/transactions-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useInvalidateOnCpEvents } from '@/hooks/use-invalidate-on-cp-events';
 import { computeStats, type ChargerStats, type StatsWindow } from '@/lib/stats';
 import { formatDurationMinutes, formatRelativeTime } from '@/lib/time';
 import { cn } from '@/lib/utils';
@@ -50,6 +51,15 @@ export function StatisticsCard({ cpId }: Props) {
     queryFn: () => fetchAllChargePointTransactions(token ?? '', cpId),
     refetchInterval: REFETCH_MS,
     enabled: !!token,
+  });
+
+  // Push refresh on tx-started so a new session's first kWh shows
+  // up here without the 30s poll lag. Closed-tx aggregation still
+  // catches up on the next regular poll.
+  useInvalidateOnCpEvents({
+    cpId,
+    queryKeys: [['cp-statistics', cpId]],
+    kinds: ['tx-started'],
   });
 
   const stats: ChargerStats | null = useMemo(() => {

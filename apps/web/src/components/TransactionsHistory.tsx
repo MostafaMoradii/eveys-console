@@ -37,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useInvalidateOnCpEvents } from '@/hooks/use-invalidate-on-cp-events';
 import { useSubscription } from '@/hooks/use-subscription';
 import { formatRelativeTime, formatUptime } from '@/lib/time';
 import { useConsoleClient } from '@/lib/ws-context';
@@ -137,6 +138,16 @@ export function TransactionsHistory({ cpId }: Props) {
     },
     refetchInterval: REFETCH_MS,
     enabled: !!token,
+  });
+
+  // Push refresh: every tx-started / status event arriving on the
+  // broker invalidates this list so a new row appears within ~100ms
+  // instead of waiting for the 5s poll. The poll stays on as a
+  // safety net.
+  useInvalidateOnCpEvents({
+    cpId,
+    queryKeys: [['cp-transactions', cpId]],
+    kinds: ['tx-started', 'status'],
   });
 
   // Subscribe to live MeterValues for the cp_id so open rows can show
