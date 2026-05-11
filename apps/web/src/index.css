@@ -1,3 +1,9 @@
+@import '@fontsource-variable/inter/index.css';
+/* Clash Display for headings. Sampled from eveys.com so the Console
+ * shares its display type with the brand site. Loaded from Fontshare
+ * to avoid adding another dependency. */
+@import url('https://api.fontshare.com/v2/css?f[]=clash-display@500,600,700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -31,6 +37,10 @@
     --foreground: var(--brand-slate);
     --card: 0 0% 100%;
     --card-foreground: var(--brand-slate);
+    /* Popovers sit one notch above card on light theme too, so a
+     * dropdown over a card still reads as a separate surface. */
+    --popover: 0 0% 100%;
+    --popover-foreground: var(--brand-slate);
     --primary: var(--brand-orange);
     --primary-foreground: 0 0% 100%;
     --secondary: 0 0% 92%;
@@ -64,6 +74,10 @@
     --foreground: 0 0% 92%;
     --card: 203 27% 13%; /* one notch up from background */
     --card-foreground: 0 0% 92%;
+    /* Lifted one more notch so Radix portals (Select, Dropdown,
+     * Sheet menus) read clearly even when they overlap a card. */
+    --popover: 203 27% 16%;
+    --popover-foreground: 0 0% 92%;
     --primary: var(--brand-orange);
     --primary-foreground: 0 0% 100%;
     --secondary: 203 22% 17%;
@@ -87,11 +101,60 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family:
+      'Inter Variable',
+      'Inter',
+      system-ui,
+      -apple-system,
+      sans-serif;
+    /* cv11: alternate single-storey g · ss01: open digits · ss03: open
+     * lowercase a. Inter's recommended dev-UI feature set; produces
+     * the cleaner numerics + letters you see in the simulator. */
     font-feature-settings:
+      'cv11',
+      'ss01',
+      'ss03',
       'rlig' 1,
       'calt' 1;
   }
+
+  /* Headings use Clash Display — sampled from the eveys.com brand
+   * site — with a tighter tracking that matches the wordmark.
+   * Falls back to Inter, then system. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: 'Clash Display', 'Inter Variable', system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* Convenience utility — when set on a column of numbers (tables,
+   * dashboards) digits line up at the same width. */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Live-indicator pulse — used on online dots / charging connector
+ * markers. 2-second cycle, ring fade only (no scale, avoids reflow). */
+@keyframes pulse-live {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--brand-green) / 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 6px hsl(var(--brand-green) / 0);
+  }
+}
+
+.pulse-live {
+  animation: pulse-live 2s ease-out infinite;
+  border-radius: 9999px;
 }
 
 @layer utilities {
