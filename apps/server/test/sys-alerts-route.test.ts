@@ -900,6 +900,79 @@ describe('POST /sys/alerts/channels', () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it('creates an email receiver with a valid address', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'email',
+        name: 'oncall-email',
+        to: 'oncall@example.com',
+        from: 'alerts@example.com',
+        smarthost: 'smtp.example.com:587',
+        require_tls: true,
+      },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('accepts a comma-separated to-list', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'email',
+        name: 'rota',
+        to: 'a@example.com, b@example.com',
+        from: 'alerts@example.com',
+        smarthost: 'smtp.example.com:587',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('rejects a malformed smarthost with a field-level detail message', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'email',
+        name: 'bad-smtp',
+        to: 'oncall@example.com',
+        from: 'alerts@example.com',
+        smarthost: 'smtp.example.com', // missing :port
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as {
+      error: string;
+      detail: { fieldErrors?: Record<string, string[]> };
+    };
+    expect(body.error).toBe('invalid_body');
+    expect(body.detail.fieldErrors?.smarthost?.[0]).toMatch(/host:port/);
+  });
+
+  it('creates a webhook receiver with a bearer token', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'webhook',
+        name: 'opsgenie',
+        url: 'https://api.opsgenie.com/v1/json/alertmanager',
+        http_bearer_token: 'eyJhbGciOi-fake-jwt',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const cfg = await ctx.store.read();
+    const wh = cfg.channels[0] as Extract<(typeof cfg.channels)[number], { type: 'webhook' }>;
+    expect(wh.http_bearer_token).toBe('eyJhbGciOi-fake-jwt');
+  });
 });
 
 describe('PUT /sys/alerts/channels/:name', () => {

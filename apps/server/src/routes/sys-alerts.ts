@@ -589,12 +589,32 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
     title: z.string().max(1024).optional(),
     text: z.string().max(4096).optional(),
   });
+  // Email recipient (`to`) accepts a single address or a comma-
+  // separated list — Alertmanager passes them through to the SMTP
+  // RCPT TO. Loose check: every comma-split chunk must contain an
+  // `@` with stuff on both sides; tight enough to catch typos,
+  // permissive enough not to reject real-world addresses.
+  const emailListSchema = z
+    .string()
+    .min(3)
+    .max(1024)
+    .refine((v) => v.split(',').every((part) => /\S+@\S+\.\S+/.test(part.trim())), {
+      message: 'expected one or more email addresses, comma-separated',
+    });
   const emailBody = z.object({
     type: z.literal('email'),
     name: channelNameSchema,
-    to: z.string().min(3).max(256),
-    from: z.string().min(3).max(256),
-    smarthost: z.string().min(3).max(256),
+    to: emailListSchema,
+    from: z
+      .string()
+      .min(3)
+      .max(256)
+      .regex(/\S+@\S+\.\S+/, 'expected an email address'),
+    smarthost: z
+      .string()
+      .min(3)
+      .max(256)
+      .regex(/^\S+:\d{1,5}$/, 'expected host:port (e.g. smtp.example.com:587)'),
     auth_username: z.string().max(256).optional(),
     auth_password: z.string().max(1024).optional(),
     require_tls: z.boolean().optional(),
@@ -605,6 +625,7 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
     url: z.string().url(),
     http_basic_auth_username: z.string().max(256).optional(),
     http_basic_auth_password: z.string().max(1024).optional(),
+    http_bearer_token: z.string().max(4096).optional(),
   });
   const channelBody = z.discriminatedUnion('type', [slackBody, emailBody, webhookBody]);
 
@@ -633,11 +654,9 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
         await reloadAlertmanager(app, deps);
         return reply.code(201).send(maskedResponse(next));
       } catch (err) {
-        deps.logger?.warn(
-          { err: err instanceof Error ? err.message : String(err) },
-          'channels.add.failed',
-        );
-        return reply.code(500).send({ error: 'channels_write_failed' });
+        const detail = err instanceof Error ? err.message : String(err);
+        deps.logger?.warn({ err: detail }, 'channels.add.failed');
+        return reply.code(500).send({ error: 'channels_write_failed', detail });
       }
     },
   );
@@ -1088,6 +1107,10 @@ function mergeKeepSecrets(current: Channel, next: Channel): Channel {
         if (cur.http_basic_auth_password)
           out.http_basic_auth_password = cur.http_basic_auth_password;
         else delete (out as { http_basic_auth_password?: string }).http_basic_auth_password;
+      }
+      if (!next.http_bearer_token || next.http_bearer_token.includes('••••')) {
+        if (cur.http_bearer_token) out.http_bearer_token = cur.http_bearer_token;
+        else delete (out as { http_bearer_token?: string }).http_bearer_token;
       }
       return out;
     }

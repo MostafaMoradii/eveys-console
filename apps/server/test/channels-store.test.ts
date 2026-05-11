@@ -100,6 +100,40 @@ describe('ChannelsStore — round-trip', () => {
     expect(out.channels[0]).toEqual(ch);
   });
 
+  it('round-trips a webhook receiver with bearer-token auth', async () => {
+    const ch: Channel = {
+      type: 'webhook',
+      name: 'opsgenie',
+      url: 'https://api.opsgenie.com/v1/json/alertmanager',
+      http_bearer_token: 'eyJhbGciOi-fake-jwt-for-test',
+    };
+    await store.updateChannels([ch], 'opsgenie');
+    // Confirm the on-disk YAML carries the Alertmanager-shape
+    // `authorization` block, not a `basic_auth` block.
+    const text = await readFile(cfgPath, 'utf8');
+    expect(text).toContain('type: Bearer');
+    expect(text).toContain('credentials: eyJhbGciOi-fake-jwt-for-test');
+    expect(text).not.toContain('basic_auth');
+    // And it round-trips.
+    const out = await store.read();
+    expect(out.channels[0]).toEqual(ch);
+  });
+
+  it('bearer wins when both basic_auth and bearer are set on the same channel', async () => {
+    const ch: Channel = {
+      type: 'webhook',
+      name: 'mixed',
+      url: 'https://example/hook',
+      http_basic_auth_username: 'u',
+      http_basic_auth_password: 'p',
+      http_bearer_token: 'tok',
+    };
+    await store.updateChannels([ch], 'mixed');
+    const text = await readFile(cfgPath, 'utf8');
+    expect(text).toContain('type: Bearer');
+    expect(text).not.toContain('basic_auth');
+  });
+
   it('preserves multiple receivers in order', async () => {
     const a: Channel = { type: 'slack', name: 'a', api_url: 'https://hooks/x', channel: '#a' };
     const b: Channel = {
@@ -163,6 +197,19 @@ describe('ChannelsStore — readMasked', () => {
     const masked = out.channels[0] as Extract<Channel, { type: 'email' }>;
     expect(masked.auth_password).toBe('••••word');
     expect(masked.auth_password).not.toContain('secret');
+  });
+
+  it('masks the webhook bearer token', async () => {
+    const ch: Channel = {
+      type: 'webhook',
+      name: 'opsgenie',
+      url: 'https://api.opsgenie.com/v1/hook',
+      http_bearer_token: 'eyJhbGciOi-fake-jwt-tail-1234',
+    };
+    await store.updateChannels([ch], 'opsgenie');
+    const out = await store.readMasked();
+    const masked = out.channels[0] as Extract<Channel, { type: 'webhook' }>;
+    expect(masked.http_bearer_token).toBe('••••1234');
   });
 
   it('masks the webhook basic_auth password', async () => {

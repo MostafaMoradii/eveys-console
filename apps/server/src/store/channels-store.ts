@@ -51,8 +51,13 @@ export interface ChannelWebhook {
   type: 'webhook';
   name: string;
   url: string;
+  /** Basic-auth on the outbound webhook. Mutually exclusive with
+   *  bearer-token; if both are set the bearer wins. */
   http_basic_auth_username?: string;
   http_basic_auth_password?: string;
+  /** Bearer-token on the outbound webhook. Serialized to
+   *  Alertmanager's `http_config.authorization.{type,credentials}`. */
+  http_bearer_token?: string;
 }
 
 export type Channel = ChannelSlack | ChannelEmail | ChannelWebhook;
@@ -159,6 +164,7 @@ function maskSecrets(c: Channel): Channel {
       const out: ChannelWebhook = { ...c, url: maskUrl(c.url) };
       if (c.http_basic_auth_password)
         out.http_basic_auth_password = maskValue(c.http_basic_auth_password);
+      if (c.http_bearer_token) out.http_bearer_token = maskValue(c.http_bearer_token);
       return out;
     }
   }
@@ -216,6 +222,7 @@ interface AlertmanagerReceiver {
     url: string;
     http_config?: {
       basic_auth?: { username: string; password: string };
+      authorization?: { type: string; credentials: string };
     };
     send_resolved?: boolean;
   }>;
@@ -274,6 +281,10 @@ function receiverToChannel(r: AlertmanagerReceiver): Channel | null {
       out.http_basic_auth_username = ba.username;
       out.http_basic_auth_password = ba.password;
     }
+    const auth = webhook.http_config?.authorization;
+    if (auth && typeof auth.credentials === 'string' && auth.type.toLowerCase() === 'bearer') {
+      out.http_bearer_token = auth.credentials;
+    }
     return out;
   }
   return null;
@@ -329,26 +340,36 @@ function channelToReceiver(c: Channel): AlertmanagerReceiver {
           },
         ],
       };
-    case 'webhook':
+    case 'webhook': {
+      // Auth selection — bearer wins when both are set; the form
+      // shouldn't let that happen, but the contract is explicit.
+      let httpConfig:
+        | {
+            basic_auth?: { username: string; password: string };
+            authorization?: { type: string; credentials: string };
+          }
+        | undefined;
+      if (c.http_bearer_token) {
+        httpConfig = { authorization: { type: 'Bearer', credentials: c.http_bearer_token } };
+      } else if (c.http_basic_auth_username && c.http_basic_auth_password) {
+        httpConfig = {
+          basic_auth: {
+            username: c.http_basic_auth_username,
+            password: c.http_basic_auth_password,
+          },
+        };
+      }
       return {
         name: c.name,
         webhook_configs: [
           {
             url: c.url,
-            ...(c.http_basic_auth_username && c.http_basic_auth_password
-              ? {
-                  http_config: {
-                    basic_auth: {
-                      username: c.http_basic_auth_username,
-                      password: c.http_basic_auth_password,
-                    },
-                  },
-                }
-              : {}),
+            ...(httpConfig ? { http_config: httpConfig } : {}),
             send_resolved: true,
           },
         ],
       };
+    }
   }
 }
 
