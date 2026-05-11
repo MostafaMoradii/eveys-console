@@ -88,6 +88,53 @@ describe('CommandsDrawer', () => {
     }
   });
 
+  it('RemoteStart sends id_tag (trimmed) and omits an empty connector_id', async () => {
+    const user = await openDrawer();
+    const card = screen.getByText('RemoteStart').closest<HTMLElement>('[data-testid="cmd-card"]')!;
+    const idTagInput = within(card).getByPlaceholderText(/authorised tag/i);
+    await user.type(idTagInput, '  TAG-42  ');
+    await user.click(within(card).getByRole('button', { name: /^Send$/i }));
+    expect(rpc).toHaveBeenCalledWith('remote-start', {
+      cp_id: 'cp_test',
+      id_tag: 'TAG-42',
+    });
+  });
+
+  it('RemoteStart includes connector_id when provided', async () => {
+    const user = await openDrawer();
+    const card = screen.getByText('RemoteStart').closest<HTMLElement>('[data-testid="cmd-card"]')!;
+    await user.type(within(card).getByPlaceholderText(/authorised tag/i), 'TAG');
+    const connectorInput = within(card).getByPlaceholderText('—');
+    await user.type(connectorInput, '2');
+    await user.click(within(card).getByRole('button', { name: /^Send$/i }));
+    expect(rpc).toHaveBeenCalledWith('remote-start', {
+      cp_id: 'cp_test',
+      id_tag: 'TAG',
+      connector_id: 2,
+    });
+  });
+
+  it('RemoteStop sends transaction_id', async () => {
+    const user = await openDrawer();
+    const card = screen.getByText('RemoteStop').closest<HTMLElement>('[data-testid="cmd-card"]')!;
+    await user.type(within(card).getByPlaceholderText('0'), '42');
+    await user.click(within(card).getByRole('button', { name: /^Send$/i }));
+    expect(rpc).toHaveBeenCalledWith('remote-stop', { cp_id: 'cp_test', transaction_id: 42 });
+  });
+
+  it('Reset defaults to Soft and sends the selected type', async () => {
+    const user = await openDrawer();
+    const card = screen.getByText('Reset').closest<HTMLElement>('[data-testid="cmd-card"]')!;
+    await user.click(within(card).getByRole('button', { name: /^Send$/i }));
+    expect(rpc).toHaveBeenCalledWith('reset', { cp_id: 'cp_test', type: 'Soft' });
+
+    rpc.mockClear();
+    const select = within(card).getByRole('combobox');
+    await user.selectOptions(select, 'Hard');
+    await user.click(within(card).getByRole('button', { name: /^Send$/i }));
+    expect(rpc).toHaveBeenCalledWith('reset', { cp_id: 'cp_test', type: 'Hard' });
+  });
+
   it('TriggerMessage builds the right payload (with optional connector_id omitted)', async () => {
     const user = await openDrawer();
     const card = screen

@@ -37,8 +37,8 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 // Mock the heavyweight child panels — each has its own test file.
-vi.mock('@/components/CommandsDrawer', () => ({
-  CommandsDrawer: ({ trigger }: { trigger: ReactNode }) => <div>{trigger}</div>,
+vi.mock('@/components/CommandsConsole', () => ({
+  CommandsConsole: () => <div data-testid="mock-commands-console" />,
 }));
 vi.mock('@/components/DeviceEventsPanel', () => ({
   DeviceEventsPanel: () => <div data-testid="mock-device-events" />,
@@ -179,84 +179,12 @@ describe('ChargerDetailPage — header heartbeat badge', () => {
   });
 });
 
-describe('ChargerDetailPage — Hard Reset', () => {
-  it('clicking the button opens an AlertDialog without firing the RPC', async () => {
+describe('ChargerDetailPage — Commands tab', () => {
+  it('Commands tab renders the inline CommandsConsole', async () => {
     const user = userEvent.setup();
     nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
     renderPage();
     await openCommandsTab(user);
-    expect(screen.queryByTestId('hard-reset-dialog')).toBeNull();
-    await user.click(screen.getByTestId('hard-reset-button'));
-    expect(screen.getByTestId('hard-reset-dialog')).toBeInTheDocument();
-    expect(rpcSpy).not.toHaveBeenCalled();
-  });
-
-  it('confirming the dialog fires reset with type=Hard', async () => {
-    const user = userEvent.setup();
-    nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
-    renderPage();
-    await openCommandsTab(user);
-    await user.click(screen.getByTestId('hard-reset-button'));
-    await user.click(screen.getByTestId('hard-reset-confirm'));
-    expect(rpcSpy).toHaveBeenCalledTimes(1);
-    expect(rpcSpy).toHaveBeenCalledWith('reset', { cp_id: 'cp_TEST', type: 'Hard' });
-  });
-
-  it('cancelling the dialog leaves the charger untouched', async () => {
-    const user = userEvent.setup();
-    nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
-    renderPage();
-    await openCommandsTab(user);
-    await user.click(screen.getByTestId('hard-reset-button'));
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(rpcSpy).not.toHaveBeenCalled();
-  });
-});
-
-describe('ChargerDetailPage — RemoteStart id_tag', () => {
-  it('RemoteStart is disabled until an id_tag is typed', async () => {
-    const user = userEvent.setup();
-    nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
-    renderPage();
-    await openCommandsTab(user);
-    const btn = screen.getByTestId('remote-start-button');
-    expect(btn).toBeDisabled();
-    await user.type(screen.getByTestId('remote-start-idtag'), 'TAG-1234');
-    expect(btn).not.toBeDisabled();
-  });
-
-  it('forwards the typed id_tag to the RPC', async () => {
-    const user = userEvent.setup();
-    nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
-    renderPage();
-    await openCommandsTab(user);
-    await user.type(screen.getByTestId('remote-start-idtag'), 'TAG-9999');
-    await user.click(screen.getByTestId('remote-start-button'));
-    expect(rpcSpy).toHaveBeenCalledWith('remote-start', {
-      cp_id: 'cp_TEST',
-      id_tag: 'TAG-9999',
-    });
-  });
-
-  it('trims whitespace from the typed id_tag before sending', async () => {
-    const user = userEvent.setup();
-    nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
-    renderPage();
-    await openCommandsTab(user);
-    await user.type(screen.getByTestId('remote-start-idtag'), '  TAG-1  ');
-    await user.click(screen.getByTestId('remote-start-button'));
-    expect(rpcSpy).toHaveBeenCalledWith('remote-start', {
-      cp_id: 'cp_TEST',
-      id_tag: 'TAG-1',
-    });
-  });
-
-  it('whitespace-only input keeps the RemoteStart button disabled', async () => {
-    const user = userEvent.setup();
-    nextSubResult = { snapshot: { kind: 'charge-point', row: baseCp() } };
-    renderPage();
-    await openCommandsTab(user);
-    await user.type(screen.getByTestId('remote-start-idtag'), '   ');
-    expect(screen.getByTestId('remote-start-button')).toBeDisabled();
+    expect(screen.getByTestId('mock-commands-console')).toBeInTheDocument();
   });
 });

@@ -61,11 +61,209 @@ export function CommandsDrawer({ cpId, trigger }: CommandsDrawerProps) {
     }
   };
 
-  // Mints a one-shot upload URL via the Console's diagnostics receiver
-  // and returns it. Failure surfaces a toast and re-throws so the caller
-  // can short-circuit the OCPP send. Used by the diagnostics + log forms
-  // when "Generate one-time upload URL" is checked.
-  const issueUrl = async (
+  const issueUrl = useIssueUrl(cpId, token);
+
+  return (
+    <Sheet>
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
+      <SheetContent side="right" className="flex w-full flex-col gap-4 sm:max-w-md">
+        <SheetHeader>
+          <SheetTitle>Commands · {cpId}</SheetTitle>
+          <SheetDescription>
+            OCPP commands the gateway forwards to the charger. Each one routes through the current
+            WebSocket; outcomes appear as toasts.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="flex flex-1 flex-col gap-6 overflow-y-auto pr-2">
+          <CommandsList
+            busy={busy}
+            send={send}
+            issueUrl={issueUrl}
+            getConfigResult={getConfigResult}
+            setGetConfigResult={setGetConfigResult}
+          />
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/** Shared body of the Commands surface — used both by the legacy
+ *  Sheet-anchored CommandsDrawer and by the inline CommandsConsole.
+ *  Keeps every per-command form unchanged; lifts only the wiring so
+ *  the same forms can drive either a toast-based pipeline (drawer)
+ *  or a transcript-based one (console). */
+export function CommandsList({
+  busy,
+  send,
+  issueUrl,
+  getConfigResult,
+  setGetConfigResult,
+}: {
+  busy: string | null;
+  send: (
+    method: string,
+    params: Record<string, unknown>,
+    onResult?: (result: unknown) => void,
+  ) => Promise<void>;
+  issueUrl: IssueFn;
+  getConfigResult: {
+    keys: { key: string; value: string; readonly?: boolean }[];
+    unknown: string[];
+  } | null;
+  setGetConfigResult: (
+    r: { keys: { key: string; value: string; readonly?: boolean }[]; unknown: string[] } | null,
+  ) => void;
+}) {
+  return (
+    <>
+      <Section title="Lifecycle">
+        <RemoteStartForm busy={busy} send={send} />
+        <RemoteStopForm busy={busy} send={send} />
+        <ResetForm busy={busy} send={send} />
+      </Section>
+
+      <Section title="Diagnostics">
+        <TriggerMessageForm busy={busy} send={send} />
+        <UnlockConnectorForm busy={busy} send={send} />
+        <GetDiagnosticsForm busy={busy} send={send} issueUrl={issueUrl} />
+        <GetLogForm busy={busy} send={send} issueUrl={issueUrl} />
+      </Section>
+
+      <Section title="Configuration">
+        <GetConfigurationForm
+          busy={busy}
+          send={send}
+          setResult={(r) => setGetConfigResult(r)}
+          result={getConfigResult}
+        />
+        <ChangeConfigurationForm busy={busy} send={send} />
+        <SimpleForm
+          method="clear-cache"
+          label="Clear authorization cache"
+          hint="Drops the on-charger Authorize cache. The next swipe re-queries the gateway."
+          busy={busy}
+          send={send}
+        />
+      </Section>
+
+      <Section title="Reservations">
+        <ReserveNowForm busy={busy} send={send} />
+        <CancelReservationForm busy={busy} send={send} />
+      </Section>
+
+      <Section title="Vendor">
+        <DataTransferForm busy={busy} send={send} />
+      </Section>
+    </>
+  );
+}
+
+function RemoteStartForm({ busy, send }: CmdFormProps) {
+  const [idTag, setIdTag] = useState('');
+  const [connectorId, setConnectorId] = useState('');
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = idTag.trim();
+    if (!trimmed) return;
+    const params: Record<string, unknown> = { id_tag: trimmed };
+    if (connectorId.trim()) {
+      const n = Number(connectorId);
+      if (Number.isFinite(n) && n > 0) params.connector_id = n;
+    }
+    void send('remote-start', params);
+  };
+  return (
+    <CmdCard
+      title="RemoteStart"
+      hint="Start a charging session on behalf of an authorised id_tag. Backend Authorize still runs."
+    >
+      <form onSubmit={submit} className="space-y-2">
+        <Field label="id_tag" required>
+          <Input
+            required
+            value={idTag}
+            onChange={(e) => setIdTag(e.target.value)}
+            placeholder="authorised tag"
+          />
+        </Field>
+        <Field label="connector_id" hint="optional — charger picks if omitted">
+          <Input
+            type="number"
+            min="1"
+            value={connectorId}
+            onChange={(e) => setConnectorId(e.target.value)}
+            placeholder="—"
+          />
+        </Field>
+        <SubmitButton busy={busy} method="remote-start" />
+      </form>
+    </CmdCard>
+  );
+}
+
+function RemoteStopForm({ busy, send }: CmdFormProps) {
+  const [txId, setTxId] = useState('');
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const n = Number(txId);
+    if (!Number.isFinite(n)) return;
+    void send('remote-stop', { transaction_id: n });
+  };
+  return (
+    <CmdCard
+      title="RemoteStop"
+      hint="Stop a specific transaction. Use 0 to stop the charger's active tx (charger-side discretion)."
+    >
+      <form onSubmit={submit} className="space-y-2">
+        <Field label="transaction_id" required hint="0 = active transaction">
+          <Input
+            type="number"
+            required
+            value={txId}
+            onChange={(e) => setTxId(e.target.value)}
+            placeholder="0"
+          />
+        </Field>
+        <SubmitButton busy={busy} method="remote-stop" />
+      </form>
+    </CmdCard>
+  );
+}
+
+function ResetForm({ busy, send }: CmdFormProps) {
+  const [type, setType] = useState<'Soft' | 'Hard'>('Soft');
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void send('reset', { type });
+  };
+  return (
+    <CmdCard
+      title="Reset"
+      hint="Soft = graceful restart (keeps active tx in spec-defined cases). Hard = terminate without stop."
+    >
+      <form onSubmit={submit} className="space-y-2">
+        <Field label="type" required>
+          <Select value={type} onChange={(e) => setType(e.target.value as 'Soft' | 'Hard')}>
+            <option value="Soft">Soft</option>
+            <option value="Hard">Hard</option>
+          </Select>
+        </Field>
+        <SubmitButton busy={busy} method="reset" />
+      </form>
+    </CmdCard>
+  );
+}
+
+/** Mints a one-shot upload URL via the Console's diagnostics receiver
+ *  and returns it. Failure surfaces a toast and re-throws so the caller
+ *  can short-circuit the OCPP send. Used by the diagnostics + log forms
+ *  when "Generate one-time upload URL" is checked. Both the drawer and
+ *  the inline console wire this in the same way. */
+export function useIssueUrl(cpId: string, token: string | null): IssueFn {
+  const { toast } = useToast();
+  return async (
     command: 'GetDiagnostics' | 'GetLog',
     requestId?: number,
   ): Promise<{ url: string; request_id: number }> => {
@@ -83,56 +281,6 @@ export function CommandsDrawer({ cpId, trigger }: CommandsDrawerProps) {
       throw err;
     }
   };
-
-  return (
-    <Sheet>
-      <SheetTrigger asChild>{trigger}</SheetTrigger>
-      <SheetContent side="right" className="flex w-full flex-col gap-4 sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>Commands · {cpId}</SheetTitle>
-          <SheetDescription>
-            OCPP commands the gateway forwards to the charger. Each one routes through the current
-            WebSocket; outcomes appear as toasts.
-          </SheetDescription>
-        </SheetHeader>
-
-        <div className="flex flex-1 flex-col gap-6 overflow-y-auto pr-2">
-          <Section title="Diagnostics">
-            <TriggerMessageForm busy={busy} send={send} />
-            <UnlockConnectorForm busy={busy} send={send} />
-            <GetDiagnosticsForm busy={busy} send={send} issueUrl={issueUrl} />
-            <GetLogForm busy={busy} send={send} issueUrl={issueUrl} />
-          </Section>
-
-          <Section title="Configuration">
-            <GetConfigurationForm
-              busy={busy}
-              send={send}
-              setResult={(r) => setGetConfigResult(r)}
-              result={getConfigResult}
-            />
-            <ChangeConfigurationForm busy={busy} send={send} />
-            <SimpleForm
-              method="clear-cache"
-              label="Clear authorization cache"
-              hint="Drops the on-charger Authorize cache. The next swipe re-queries the gateway."
-              busy={busy}
-              send={send}
-            />
-          </Section>
-
-          <Section title="Reservations">
-            <ReserveNowForm busy={busy} send={send} />
-            <CancelReservationForm busy={busy} send={send} />
-          </Section>
-
-          <Section title="Vendor">
-            <DataTransferForm busy={busy} send={send} />
-          </Section>
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
 }
 
 // ---- shared layout ---------------------------------------------------------
@@ -468,7 +616,7 @@ function CancelReservationForm({ busy, send }: CmdFormProps) {
   );
 }
 
-interface IssueFn {
+export interface IssueFn {
   (
     command: 'GetDiagnostics' | 'GetLog',
     requestId?: number,

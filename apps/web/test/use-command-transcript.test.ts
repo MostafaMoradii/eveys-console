@@ -1,0 +1,132 @@
+// Unit tests for the command-transcript hook. Pin: send appends a
+// pending entry, completion mutates it in place with outcome / status
+// / elapsed, RPC reject surfaces an error entry, pause buffers
+// completions and resume flushes, clear empties.
+
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { useCommandTranscript } from '@/hooks/use-command-transcript';
+
+function makeClient() {
+  return {
+    rpc: vi.fn(async (_method: string, _params: Record<string, unknown>) => {
+      return { status: 'Accepted' };
+    }),
+  };
+}
+
+describe('useCommandTranscript', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('appends a pending entry on send and resolves to ok + accepted', async () => {
+    const client = makeClient();
+    const { result } = renderHook(() => useCommandTranscript(client, 'cp_TEST'));
+
+    await act(async () => {
+      await result.current.send('reset', { type: 'Soft' });
+    });
+
+    expect(result.current.entries).toHaveLength(1);
+    const e = result.current.entries[0]!;
+    expect(e.method).toBe('reset');
+    expect(e.request).toEqual({ cp_id: 'cp_TEST', type: 'Soft' });
+    expect(e.phase).toBe('ok');
+    expect(e.outcome).toBe('accepted');
+    expect(e.status).toBe('Accepted');
+    expect(typeof e.elapsedMs).toBe('number');
+  });
+
+  it('maps an "Occupied" response to soft-reject', async () => {
+    const client = makeClient();
+    client.rpc.mockResolvedValueOnce({ status: 'Occupied' });
+    const { result } = renderHook(() => useCommandTranscript(client, 'cp_TEST'));
+
+    await act(async () => {
+      await result.current.send('reserve-now', { connector_id: 1 });
+    });
+    expect(result.current.entries[0]!.outcome).toBe('soft-reject');
+    expect(result.current.entries[0]!.status).toBe('Occupied');
+  });
+
+  it('maps a "Rejected" response to rejected', async () => {
+    const client = makeClient();
+    client.rpc.mockResolvedValueOnce({ status: 'Rejected' });
+    const { result } = renderHook(() => useCommandTranscript(client, 'cp_TEST'));
+
+    await act(async () => {
+      await result.current.send('remote-stop', { transaction_id: 0 });
+    });
+    expect(result.current.entries[0]!.outcome).toBe('rejected');
+  });
+
+  it('surfaces a transport error on rpc reject', async () => {
+    const client = makeClient();
+    client.rpc.mockRejectedValueOnce(new Error('ws closed'));
+    const { result } = renderHook(() => useCommandTranscript(client, 'cp_TEST'));
+
+    await act(async () => {
+      await result.current.send('reset', { type: 'Hard' });
+    });
+    const e = result.current.entries[0]!;
+    expect(e.phase).toBe('error');
+    expect(e.outcome).toBe('error');
+    expect(e.error).toBe('ws closed');
+  });
+
+  it('clear() empties the entries list', async () => {
+    const client = makeClient();
+    const { result } = renderHook(() => useCommandTranscript(client, 'cp_TEST'));
+    await act(async () => {
+      await result.current.send('reset', { type: 'Soft' });
+    });
+    expect(result.current.entries).toHaveLength(1);
+    act(() => result.current.clear());
+    expect(result.current.entries).toHaveLength(0);
+  });
+
+  it('tracks inFlight while pending and drops on completion', async () => {
+    const client = makeClient();
+    // Hold the promise so we can inspect mid-flight.
+    let resolve: ((value: unknown) => void) | undefined;
+    client.rpc.mockReturnValueOnce(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    const { result } = renderHook(() => useCommandTranscript(client, 'cp_TEST'));
+
+    let sendPromise: Promise<void> | undefined;
+    act(() => {
+      sendPromise = result.current.send('reset', { type: 'Soft' });
+    });
+    expect(result.current.inFlight.has('reset')).toBe(true);
+
+    await act(async () => {
+      resolve!({ status: 'Accepted' });
+      await sendPromise;
+    });
+    expect(result.current.inFlight.has('reset')).toBe(false);
+  });
+
+  it('pause buffers completions; resume flushes them into the list', async () => {
+    const client = makeClient();
+    const { result } = renderHook(() => useCommandTranscript(client, 'cp_TEST'));
+    // Pause BEFORE the send so the completion lands in the buffer.
+    act(() => result.current.pause());
+
+    await act(async () => {
+      await result.current.send('reset', { type: 'Soft' });
+    });
+    // The pending entry is in the list (the append happens at send
+    // start, not at completion). What's buffered is the completion
+    // patch — phase / status / etc — until resume is called.
+    await waitFor(() => expect(result.current.entries).toHaveLength(1));
+    expect(result.current.entries[0]!.phase).toBe('pending');
+
+    act(() => result.current.resume());
+    await waitFor(() => expect(result.current.entries[0]!.phase).toBe('ok'));
+  });
+});
