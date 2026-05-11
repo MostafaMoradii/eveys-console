@@ -9,11 +9,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   fetchConsoleConfig,
+  fetchConsoleAdminConfig,
   fetchGatewayConfig,
   fetchGatewayAdminConfig,
   setGatewayAdminConfig,
+  setConsoleAdminConfig,
   clearGatewayAdminOverride,
+  clearConsoleAdminOverride,
   type ConfigEntry,
+  type ConsoleAdminConfig,
   type GatewayAdminConfig,
   type SysConfig,
 } from '@/api/config-client';
@@ -21,6 +25,7 @@ import {
 let consoleResult: { data?: SysConfig; error?: Error } = {};
 let gatewayResult: { data?: SysConfig; error?: Error } = {};
 let adminResult: { data?: GatewayAdminConfig; error?: Error } = {};
+let consoleAdminResult: { data?: ConsoleAdminConfig; error?: Error } = {};
 
 vi.mock('@/api/config-client', () => ({
   fetchConsoleConfig: vi.fn(async (): Promise<SysConfig> => {
@@ -35,13 +40,25 @@ vi.mock('@/api/config-client', () => ({
     if (adminResult.error) throw adminResult.error;
     return adminResult.data as GatewayAdminConfig;
   }),
+  fetchConsoleAdminConfig: vi.fn(async (): Promise<ConsoleAdminConfig> => {
+    if (consoleAdminResult.error) throw consoleAdminResult.error;
+    return consoleAdminResult.data as ConsoleAdminConfig;
+  }),
   setGatewayAdminConfig: vi.fn(
     async (_token: string, _updates: Record<string, unknown>): Promise<GatewayAdminConfig> =>
       adminResult.data as GatewayAdminConfig,
   ),
+  setConsoleAdminConfig: vi.fn(
+    async (_token: string, _k: string, _v: unknown): Promise<ConsoleAdminConfig> =>
+      consoleAdminResult.data as ConsoleAdminConfig,
+  ),
   clearGatewayAdminOverride: vi.fn(
     async (_token: string, _key: string): Promise<GatewayAdminConfig> =>
       adminResult.data as GatewayAdminConfig,
+  ),
+  clearConsoleAdminOverride: vi.fn(
+    async (_token: string, _key: string): Promise<ConsoleAdminConfig> =>
+      consoleAdminResult.data as ConsoleAdminConfig,
   ),
 }));
 
@@ -218,10 +235,19 @@ beforeEach(() => {
   consoleResult = { data: consoleConfig };
   gatewayResult = { data: gatewayConfig };
   adminResult = { data: adminConfig };
+  consoleAdminResult = {
+    data: {
+      entries: consoleConfig.entries,
+      overridable_keys: ['LOG_LEVEL', 'PROMETHEUS_URL', 'ALERTMANAGER_URL'],
+    },
+  };
   toast.mockReset();
   vi.mocked(setGatewayAdminConfig).mockClear();
   vi.mocked(clearGatewayAdminOverride).mockClear();
   vi.mocked(fetchGatewayAdminConfig).mockClear();
+  vi.mocked(fetchConsoleAdminConfig).mockClear();
+  vi.mocked(setConsoleAdminConfig).mockClear();
+  vi.mocked(clearConsoleAdminOverride).mockClear();
   // Reset the URL between tests so tab-state from one test doesn't
   // leak into the next via window.history.
   window.history.replaceState(null, '', '/');
@@ -590,12 +616,12 @@ describe('SystemConfigPage — Gateway tab inline-edit', () => {
     expect(lastCall.description).toMatch(/out of range/i);
   });
 
-  it('does NOT render inline editors on the Console tab', async () => {
+  it('Console tab now fetches its own admin allowlist, not the gateway one', async () => {
     renderPage();
     await screen.findByText('PORT');
-    expect(screen.queryByLabelText(/^edit log_level$/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/^toggle webhook_enable_cp_boot$/i)).not.toBeInTheDocument();
-    // The Console tab MUST NOT trigger the admin-config fetch.
+    // Console-side admin endpoint hit; gateway-side untouched on the
+    // Console tab.
+    expect(fetchConsoleAdminConfig).toHaveBeenCalled();
     expect(fetchGatewayAdminConfig).not.toHaveBeenCalled();
   });
 });

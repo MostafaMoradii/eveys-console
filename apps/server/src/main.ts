@@ -46,8 +46,10 @@ import { registerMetricsRoute } from './routes/metrics.js';
 import { registerSysAlertsRoute } from './routes/sys-alerts.js';
 import { registerSysChargePointTransactionsRoute } from './routes/sys-charge-point-transactions.js';
 import { registerSysConfigRoute } from './routes/sys-config.js';
+import { registerSysConsoleAdminConfigRoute } from './routes/sys-console-admin-config.js';
 import { registerSysGatewayAdminConfigRoute } from './routes/sys-gateway-admin-config.js';
 import { registerSysGatewayConfigRoute } from './routes/sys-gateway-config.js';
+import { OverrideStore } from './store/override-store.js';
 import { registerSysStatusRoute } from './routes/sys-status.js';
 import { registerSysTransactionsRoute } from './routes/sys-transactions.js';
 import { registerWsRoute } from './routes/ws.js';
@@ -105,6 +107,8 @@ async function main() {
   const diagnosticsStore = new DiagnosticsStore(config.DIAGNOSTICS_DATA_DIR);
   const channelsStore = new ChannelsStore(config.ALERTMANAGER_CONFIG_PATH);
   const rulesStore = new RulesStore(config.ALERTS_RULES_CONFIG_PATH, config.PROMTOOL_PATH);
+  const overrideStore = new OverrideStore(`${config.DIAGNOSTICS_DATA_DIR}/console-overrides.json`);
+  await overrideStore.load();
   // Seed the managed Alertmanager + rules configs on first boot so
   // the observability containers have files to start against. Each
   // seed is empty + the synthetic shell needed to be valid; the
@@ -133,7 +137,8 @@ async function main() {
   await registerMetricsRoute(app);
   await registerAuthRoutes(app, { pow, users });
   await registerSysStatusRoute(app, { broker, gateway, kafka, startedAt });
-  await registerSysConfigRoute(app, { config });
+  await registerSysConfigRoute(app, { config, overrideStore });
+  await registerSysConsoleAdminConfigRoute(app, { config, overrideStore, logger });
   await registerSysGatewayConfigRoute(app, { gateway });
   await registerSysGatewayAdminConfigRoute(app, { gateway });
   await registerSysChargePointTransactionsRoute(app, { gateway });

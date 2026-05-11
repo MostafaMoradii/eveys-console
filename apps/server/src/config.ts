@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const schema = z.object({
+export const configSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65535).default(8090),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -113,7 +113,7 @@ const schema = z.object({
   CONSOLE_PUBLIC_BASE_URL: z.string().optional(),
 });
 
-export type Config = z.infer<typeof schema>;
+export type Config = z.infer<typeof configSchema>;
 
 const PLACEHOLDER_SECRETS = new Set([
   'replace-me-with-a-real-secret-of-at-least-16-bytes',
@@ -125,7 +125,7 @@ const PLACEHOLDER_SECRETS = new Set([
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const parsed = schema.safeParse(env);
+  const parsed = configSchema.safeParse(env);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `  ${i.path.join('.') || '(root)'}: ${i.message}`)

@@ -1,16 +1,19 @@
 // Configuration introspection. JWT-protected; returns the per-key metadata
-// (description, range, mutable, restart impact) plus the effective value at
-// boot. Sensitive keys (JWT_SECRET, GATEWAY_TOKEN, CONSOLE_USERS) are masked.
+// (description, range, mutable, restart impact) plus the effective value.
+// Sensitive keys (JWT_SECRET, GATEWAY_TOKEN, CONSOLE_USERS) are masked.
 //
-// Read-only by design: editing live config is out of scope for v1.
-// To change a value: edit the relevant env var or .env file and restart the
-// indicated process. The `restart` field on each entry tells you which.
+// Read-only display. Mutation goes through /sys/admin/console-config for
+// allowlisted keys; non-allowlisted keys remain env/restart only.
 
 import type { Config } from '../config.js';
 import { describeConfig, type ConfigEntry } from '../config-meta.js';
+import type { OverrideStore } from '../store/override-store.js';
 
 interface RouteDeps {
   config: Config;
+  /** Optional — older callers (tests) can omit. When present,
+   *  rendered entries reflect any active overrides. */
+  overrideStore?: OverrideStore;
 }
 
 export interface SysConfigResponse {
@@ -39,7 +42,7 @@ export async function registerSysConfigRoute(app: any, deps: RouteDeps) {
 
   app.get('/sys/config', { preHandler: requireAuth }, async (): Promise<SysConfigResponse> => {
     return {
-      entries: describeConfig(deps.config),
+      entries: describeConfig(deps.config, process.env, deps.overrideStore),
       scope: 'console',
       loaded_at: loadedAt,
     };
