@@ -35,6 +35,20 @@ vi.mock('@/lib/ws-context', () => ({
   }),
 }));
 
+// The new useInvalidateOnCpEvents helper calls useSubscription;
+// stub it here so the StatisticsCard test doesn't have to stand up
+// the WS broker. Card behaviour around the push-invalidate is
+// covered separately by use-invalidate-on-cp-events.test.ts.
+vi.mock('@/hooks/use-subscription', () => ({
+  useSubscription: () => ({
+    loading: false,
+    error: null,
+    snapshot: null,
+    lastDelta: null,
+    cursor: null,
+  }),
+}));
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { StatisticsCard, formatEnergy } from '@/components/StatisticsCard';
