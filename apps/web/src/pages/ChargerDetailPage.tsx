@@ -44,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toaster';
 import { useSubscription } from '@/hooks/use-subscription';
 import { chargePointFaultLevel, connectorFaultLevel, faultedConnectors } from '@/lib/fault';
@@ -111,35 +112,73 @@ export function ChargerDetailPage() {
 
       <FaultBanner cp={cp} />
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle>Commands</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Commands cp={cp} runRpc={runRpc} isPhone={isPhone} />
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList className="flex w-full flex-wrap justify-start gap-1">
+          <TabsTrigger value="overview" data-testid="detail-tab-overview">
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="connectors" data-testid="detail-tab-connectors">
+            Connectors
+            <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-mono">
+              {cp.connectors.length}
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="events" data-testid="detail-tab-events">
+            Events
+          </TabsTrigger>
+          <TabsTrigger value="transactions" data-testid="detail-tab-transactions">
+            Transactions
+          </TabsTrigger>
+          <TabsTrigger value="commands" data-testid="detail-tab-commands">
+            Commands
+          </TabsTrigger>
+          <TabsTrigger value="diagnostics" data-testid="detail-tab-diagnostics">
+            Diagnostics
+          </TabsTrigger>
+        </TabsList>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle>Connectors</CardTitle>
-        </CardHeader>
-        <CardContent className={isPhone ? 'p-0' : undefined}>
-          {isPhone ? (
-            <ConnectorCards connectors={cp.connectors} />
-          ) : (
-            <ConnectorTable connectors={cp.connectors} />
-          )}
-        </CardContent>
-      </Card>
+        <TabsContent value="overview" className="space-y-4">
+          <StatisticsCard cpId={cp.cp_id} />
+        </TabsContent>
 
-      <StatisticsCard cpId={cp.cp_id} />
+        <TabsContent value="connectors">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle>Connectors</CardTitle>
+            </CardHeader>
+            <CardContent className={isPhone ? 'p-0' : undefined}>
+              {isPhone ? (
+                <ConnectorCards connectors={cp.connectors} />
+              ) : (
+                <ConnectorTable connectors={cp.connectors} />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <DeviceEventsPanel cpId={cp.cp_id} />
+        <TabsContent value="events">
+          <DeviceEventsPanel cpId={cp.cp_id} />
+        </TabsContent>
 
-      <TransactionsHistory cpId={cp.cp_id} />
+        <TabsContent value="transactions">
+          <TransactionsHistory cpId={cp.cp_id} />
+        </TabsContent>
 
-      <DiagnosticsHistory cpId={cp.cp_id} />
+        <TabsContent value="commands">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle>Commands</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Commands cp={cp} runRpc={runRpc} isPhone={isPhone} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="diagnostics">
+          <DiagnosticsHistory cpId={cp.cp_id} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
