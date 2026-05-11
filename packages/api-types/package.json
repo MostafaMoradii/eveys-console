@@ -19,6 +19,7 @@
   "scripts": {
     "generate": "node ./scripts/generate.mjs",
     "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
