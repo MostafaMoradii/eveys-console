@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
+import { ChargerSpecChips } from '@/components/ChargerSpecChips';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -550,8 +551,13 @@ function FleetTableRow({
           <ConnectorsSummary connectors={row.connectors} />
         </TableCell>
         <TableCell className="text-sm">
-          {row.vendor ?? '—'}
-          {row.model ? <span className="text-muted-foreground"> / {row.model}</span> : null}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span>
+              {row.vendor ?? '—'}
+              {row.model ? <span className="text-muted-foreground"> / {row.model}</span> : null}
+            </span>
+            <ChargerSpecChips model={row.model} compact />
+          </div>
         </TableCell>
         <TableCell className="font-mono text-xs">{row.firmware_version ?? '—'}</TableCell>
         <TableCell className="text-xs text-muted-foreground">
@@ -599,6 +605,10 @@ function FleetCard({ row }: { row: ChargePointSummary }) {
           <Badge variant={row.online ? 'success' : 'muted'} className="shrink-0">
             {row.online ? 'online' : 'offline'}
           </Badge>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ChargerSpecChips model={row.model} />
         </div>
 
         <div>

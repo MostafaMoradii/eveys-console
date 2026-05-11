@@ -13,6 +13,7 @@ import { useState } from 'react';
 
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
+import { ChargerSpecChips } from '@/components/ChargerSpecChips';
 import { CommandsDrawer } from '@/components/CommandsDrawer';
 import { DeviceEventsPanel } from '@/components/DeviceEventsPanel';
 import { DiagnosticsHistory } from '@/components/DiagnosticsHistory';
@@ -193,7 +194,10 @@ function Header({ cp }: { cp: ChargePointSummary }) {
   return (
     <div className="space-y-2">
       <div>
-        <h2 className="break-all font-mono text-lg font-semibold sm:text-xl">{cp.cp_id}</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="break-all font-mono text-lg font-semibold sm:text-xl">{cp.cp_id}</h2>
+          <ChargerSpecChips model={cp.model} />
+        </div>
         <p className="text-sm text-muted-foreground">
           {cp.vendor ?? '—'} / {cp.model ?? '—'} · firmware {cp.firmware_version ?? '?'}
         </p>
