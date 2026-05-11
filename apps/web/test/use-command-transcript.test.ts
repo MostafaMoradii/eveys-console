@@ -6,7 +6,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useCommandTranscript } from '@/hooks/use-command-transcript';
+import {
+  __resetTranscriptStoresForTests,
+  useCommandTranscript,
+} from '@/hooks/use-command-transcript';
 
 function makeClient() {
   return {
@@ -19,6 +22,10 @@ function makeClient() {
 describe('useCommandTranscript', () => {
   beforeEach(() => {
     vi.useRealTimers();
+    // Per-cp_id transcript stores live at module scope so they
+    // survive component unmount. Wipe between tests so one spec's
+    // entries don't leak into the next.
+    __resetTranscriptStoresForTests();
   });
 
   it('appends a pending entry on send and resolves to ok + accepted', async () => {
@@ -109,6 +116,34 @@ describe('useCommandTranscript', () => {
       await sendPromise;
     });
     expect(result.current.inFlight.has('reset')).toBe(false);
+  });
+
+  it('survives component unmount + remount for the same cp_id', async () => {
+    // Live tracking across tab switches and route navigation: the
+    // operator fires a command on cp_A, navigates away, comes back —
+    // the entry is still there. Module-level store + useSyncExternalStore.
+    const client = makeClient();
+    const a1 = renderHook(() => useCommandTranscript(client, 'cp_A'));
+    await act(async () => {
+      await a1.result.current.send('reset', { type: 'Soft' });
+    });
+    expect(a1.result.current.entries).toHaveLength(1);
+    a1.unmount();
+
+    const a2 = renderHook(() => useCommandTranscript(client, 'cp_A'));
+    expect(a2.result.current.entries).toHaveLength(1);
+    expect(a2.result.current.entries[0]!.method).toBe('reset');
+  });
+
+  it('keeps each cp_id transcript isolated', async () => {
+    const client = makeClient();
+    const a = renderHook(() => useCommandTranscript(client, 'cp_A'));
+    await act(async () => {
+      await a.result.current.send('reset', { type: 'Soft' });
+    });
+    const b = renderHook(() => useCommandTranscript(client, 'cp_B'));
+    // cp_B should start empty even though cp_A has an entry.
+    expect(b.result.current.entries).toHaveLength(0);
   });
 
   it('pause buffers completions; resume flushes them into the list', async () => {
