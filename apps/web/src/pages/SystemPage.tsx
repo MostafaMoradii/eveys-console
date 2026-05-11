@@ -5,8 +5,8 @@ import { useMemo } from 'react';
 
 import type { ChargePointSummary, TransactionSummary } from '@eveys-console/protocol';
 
+import { fetchSysKpis } from '@/api/kpis-client';
 import { fetchSysStatus } from '@/api/sys-client';
-import { AlertsPanel } from '@/components/AlertsPanel';
 import { MetricTile } from '@/components/MetricTile';
 import { ServiceStatusPills } from '@/components/ServiceStatusPills';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -14,24 +14,20 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useFiringAlerts } from '@/hooks/use-firing-alerts';
 import { useSilences } from '@/hooks/use-silences';
 import { useSubscription } from '@/hooks/use-subscription';
-import { computeAlerts } from '@/lib/alerts';
 import { countFaults } from '@/lib/fault';
 import { useConsoleClient } from '@/lib/ws-context';
 
-// Layout note: the operator's resting question on this page is "is
-// anything on fire?" — so an alerts summary card comes first, then the
-// four headline counts, then the small service-status pills. The
-// detailed firing-alerts list and silences management moved to the
-// dedicated /sys/alerts page; the dashboard keeps its scannable shape.
+// Dashboard layout (top → bottom):
+//   1. Heading + last-refresh hint
+//   2. Alerts summary card — firing count by severity + link to /sys/alerts
+//      (no list of individual alerts; that's what /sys/alerts is for)
+//   3. KPI tiles — six headline counts in one row of /sys/kpis
+//   4. Services pills — gateway / Kafka / WS broker state
 //
-// The client-derived AlertsPanel (computed from charge-points data
-// already on this page) stays here because it answers a different
-// question: "what would I notice if Alertmanager were down?" — and
-// because it costs nothing extra to render given the data is loaded.
-//
-// Recent-activity section intentionally omitted in v1 — no aggregated
-// event-log subscription, and synthesising from last_heartbeat_at
-// would conflate heartbeats with lifecycle events.
+// The previous version inlined a client-derived AlertsPanel that
+// expanded into one row per offline device, which blows up on real
+// fleets and duplicates what /sys/alerts already renders better. We
+// keep the summary, drop the list.
 
 export function SystemPage() {
   const { token } = useConsoleClient();
@@ -42,25 +38,40 @@ export function SystemPage() {
     enabled: !!token,
   });
 
-  // Re-use the same charge-points subscription FleetPage uses so the
-  // numbers on this page agree with what an operator would see if
-  // they switched tabs. 500 is the cap FaultsCard used in the old
-  // layout — plenty of headroom for current deployments.
+  // Gateway-side rollup. One round-trip on a 10 s cadence — faster
+  // than the legacy 30 s firing-alerts poll because the tiles are
+  // what the operator's eyes land on first, but slower than the 5 s
+  // /sys/status poll so we don't hammer the gateway over counts.
+  const kpisQuery = useQuery({
+    queryKey: ['sys-kpis'],
+    queryFn: () => fetchSysKpis(token!),
+    refetchInterval: 10_000,
+    enabled: !!token,
+  });
+
+  // Fallbacks: the gateway might not yet have /sys/kpis deployed.
+  // Keep the client-side counts running so the page degrades to the
+  // pre-refactor numbers when `kpis.unavailable === true`.
   const cpSub = useSubscription('charge-points', { limit: 500 });
   const cpRows: ChargePointSummary[] =
     cpSub.snapshot && cpSub.snapshot.kind === 'charge-points' ? cpSub.snapshot.rows : [];
-
   const txSub = useSubscription('transactions-active', {});
   const activeTxRows: TransactionSummary[] =
     txSub.snapshot && txSub.snapshot.kind === 'transactions-active' ? txSub.snapshot.rows : [];
 
-  const alerts = useMemo(
-    () => computeAlerts({ charge_points: cpRows, sys_status: sysQuery.data ?? null }),
-    [cpRows, sysQuery.data],
-  );
-
   const firing = useFiringAlerts();
   const silences = useSilences();
+  const severityCounts = useMemo(() => {
+    let critical = 0;
+    let warning = 0;
+    let info = 0;
+    for (const a of firing.alerts) {
+      if (a.severity === 'critical') critical++;
+      else if (a.severity === 'warning') warning++;
+      else info++;
+    }
+    return { critical, warning, info };
+  }, [firing.alerts]);
 
   if (sysQuery.isLoading) {
     return (
@@ -82,81 +93,126 @@ export function SystemPage() {
   }
 
   const sys = sysQuery.data;
+  const kpis = kpisQuery.data;
+  const kpisUnavailable = !kpis || kpis.unavailable;
 
-  const onlineCount = cpRows.filter((cp) => cp.online).length;
-  const totalCount = cpRows.length;
+  // Prefer gateway counts; fall back to client-side aggregation when
+  // the rollup endpoint isn't available yet (older gateway deploy or
+  // transient upstream failure).
+  const onlineCount =
+    kpis?.online_count ?? (cpSub.loading ? null : cpRows.filter((cp) => cp.online).length);
+  const totalCount = kpis?.total_count ?? (cpSub.loading ? null : cpRows.length);
+  const activeSessions = kpis?.active_tx_count ?? (txSub.loading ? null : activeTxRows.length);
   const faults = countFaults(cpRows);
-  const activeSessions = activeTxRows.length;
+  const faultsCount = kpis?.faulted_count ?? (cpSub.loading ? null : faults.fault);
+  const txToday = kpis?.tx_today_count ?? null;
+  const energy24h = kpis?.energy_24h_wh ?? null;
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold">System status</h2>
-        <p className="text-sm text-muted-foreground">Live; refreshes every 5 seconds.</p>
+        <p className="text-sm text-muted-foreground">
+          Live; counts refresh every 10 seconds, service pings every 5.
+        </p>
       </div>
 
       <AlertsSummaryCard
-        firingCount={firing.alerts.length}
+        critical={severityCounts.critical}
+        warning={severityCounts.warning}
+        info={severityCounts.info}
         silencedCount={silences.silences.length}
         unavailable={firing.unavailable}
         loading={firing.loading}
       />
 
-      <AlertsPanel alerts={alerts} loading={cpSub.loading} error={cpSub.error ?? null} />
-
       <section
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
         data-testid="metrics-row"
       >
         <MetricTile
           testId="metric-chargers"
           label="Chargers online"
-          value={cpSub.loading ? '…' : String(onlineCount)}
-          hint={cpSub.loading ? 'loading…' : `of ${totalCount} known`}
-          tone={!cpSub.loading && totalCount > 0 && onlineCount === 0 ? 'warning' : 'default'}
+          value={onlineCount === null ? '…' : String(onlineCount)}
+          hint={totalCount === null ? 'loading…' : `of ${totalCount} known`}
+          tone={
+            onlineCount !== null && totalCount !== null && totalCount > 0 && onlineCount === 0
+              ? 'warning'
+              : 'default'
+          }
           to="/inspect/charge-points"
         />
         <MetricTile
           testId="metric-sessions"
           label="Active sessions"
-          value={txSub.loading ? '…' : String(activeSessions)}
+          value={activeSessions === null ? '…' : String(activeSessions)}
           hint={
-            txSub.loading
+            activeSessions === null
               ? 'loading…'
               : activeSessions === 1
                 ? '1 charger charging'
                 : `${activeSessions} chargers charging`
           }
-          tone={!txSub.loading && activeSessions > 0 ? 'success' : 'default'}
+          tone={activeSessions !== null && activeSessions > 0 ? 'success' : 'default'}
           to="/inspect/transactions"
         />
         <MetricTile
           testId="metric-faults"
           label="Faults"
-          value={cpSub.loading ? '…' : String(faults.fault)}
+          value={faultsCount === null ? '…' : String(faultsCount)}
           hint={
-            cpSub.loading
+            faultsCount === null
               ? 'loading…'
               : faults.advisory > 0
                 ? `${faults.advisory} advisory`
                 : 'no advisories'
           }
-          tone={faults.fault > 0 ? 'danger' : faults.advisory > 0 ? 'warning' : 'default'}
+          tone={(faultsCount ?? 0) > 0 ? 'danger' : faults.advisory > 0 ? 'warning' : 'default'}
           to="/inspect/charge-points"
           search={{ faults: true }}
         />
         <MetricTile
+          testId="metric-tx-today"
+          label="Transactions today"
+          value={txToday === null ? (kpisUnavailable ? '—' : '…') : String(txToday)}
+          hint={
+            txToday === null
+              ? kpisUnavailable
+                ? 'gateway rollup unavailable'
+                : 'loading…'
+              : 'since UTC midnight'
+          }
+          to="/inspect/transactions"
+        />
+        <MetricTile
           testId="metric-energy"
           label="24h energy"
-          // We don't have a fleet-wide aggregate endpoint yet, and the
-          // active-tx subscription only knows in-flight sessions —
-          // not the closed ones that dominate a 24 h window. Rendering
-          // a real-but-wrong number would be worse than not rendering
-          // one, so we show the dash and an honest hint. Tracked in
-          // issue #63 for a follow-up once the gateway exposes a
-          // rollup.
-          value="—"
-          hint="data not available yet"
+          value={energy24h === null ? '—' : formatKwh(energy24h)}
+          hint={energy24h === null ? 'rollup not deployed yet' : 'last 24h'}
+        />
+        <MetricTile
+          testId="metric-alerts"
+          label="Firing alerts"
+          value={
+            firing.unavailable
+              ? '—'
+              : firing.loading
+                ? '…'
+                : String(severityCounts.critical + severityCounts.warning + severityCounts.info)
+          }
+          hint={
+            firing.unavailable
+              ? 'Alertmanager not configured'
+              : `${severityCounts.critical} critical · ${severityCounts.warning} warning`
+          }
+          tone={
+            severityCounts.critical > 0
+              ? 'danger'
+              : severityCounts.warning > 0
+                ? 'warning'
+                : 'default'
+          }
+          to="/sys/alerts"
         />
       </section>
 
@@ -168,22 +224,34 @@ export function SystemPage() {
   );
 }
 
+function formatKwh(wh: number): string {
+  const kwh = wh / 1000;
+  if (kwh < 10) return `${kwh.toFixed(1)} kWh`;
+  if (kwh < 1000) return `${kwh.toFixed(0)} kWh`;
+  return `${(kwh / 1000).toFixed(1)} MWh`;
+}
+
 // Compact at-a-glance summary card linking to /sys/alerts for detail.
-// Two numbers — firing, silenced — both pulled from the same hooks the
-// alerts page uses, so the counts stay in sync within a poll cycle.
-// When Alertmanager isn't configured we render a softer "not
-// configured" hint rather than 0 / 0 (which would imply healthy).
+// Shows the severity breakdown so the operator can tell at a glance
+// whether to drop everything (critical) or read it later (warning /
+// info). No list of individual alerts — that's what the dedicated
+// /sys/alerts page is for.
 function AlertsSummaryCard({
-  firingCount,
+  critical,
+  warning,
+  info,
   silencedCount,
   unavailable,
   loading,
 }: {
-  firingCount: number;
+  critical: number;
+  warning: number;
+  info: number;
   silencedCount: number;
   unavailable: boolean;
   loading: boolean;
 }) {
+  const total = critical + warning + info;
   return (
     <Link
       to="/sys/alerts"
@@ -194,7 +262,13 @@ function AlertsSummaryCard({
         <CardContent className="flex items-center justify-between gap-3 p-4">
           <div className="flex items-center gap-3">
             <BellRing
-              className={firingCount > 0 && !unavailable ? 'h-5 w-5 text-destructive' : 'h-5 w-5'}
+              className={
+                critical > 0 && !unavailable
+                  ? 'h-5 w-5 text-destructive'
+                  : warning > 0 && !unavailable
+                    ? 'h-5 w-5 text-amber-500'
+                    : 'h-5 w-5 text-muted-foreground'
+              }
             />
             <div>
               <p className="text-sm font-medium">Alertmanager</p>
@@ -203,9 +277,11 @@ function AlertsSummaryCard({
                   ? 'loading…'
                   : unavailable
                     ? 'not configured'
-                    : firingCount === 0 && silencedCount === 0
+                    : total === 0 && silencedCount === 0
                       ? 'all clear — no alerts firing'
-                      : `${firingCount} firing · ${silencedCount} silenced`}
+                      : total === 0
+                        ? `0 firing · ${silencedCount} silenced`
+                        : `${critical} critical · ${warning} warning · ${info} info${silencedCount > 0 ? ` · ${silencedCount} silenced` : ''}`}
               </p>
             </div>
           </div>

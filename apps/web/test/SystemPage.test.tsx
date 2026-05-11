@@ -31,6 +31,29 @@ vi.mock('@/api/sys-client', async (orig) => {
   };
 });
 
+// KPIs rollup stub. Default: unavailable so the page falls back to
+// client-side counts, matching most legacy tests' expectations.
+let kpisStub: {
+  online_count: number | null;
+  total_count: number | null;
+  active_tx_count: number | null;
+  tx_today_count: number | null;
+  faulted_count: number | null;
+  energy_24h_wh: number | null;
+  unavailable: boolean;
+} = {
+  online_count: null,
+  total_count: null,
+  active_tx_count: null,
+  tx_today_count: null,
+  faulted_count: null,
+  energy_24h_wh: null,
+  unavailable: true,
+};
+vi.mock('@/api/kpis-client', () => ({
+  fetchSysKpis: vi.fn(async () => kpisStub),
+}));
+
 interface SubStub<T> {
   loading?: boolean;
   error?: string | null;
@@ -195,6 +218,15 @@ beforeEach(() => {
   txSubStub = { snapshot: { kind: 'transactions-active', rows: [] } };
   firingStub = { alerts: [], unavailable: false, loading: false, error: null };
   silencesStub = { silences: [], unavailable: false, loading: false, error: null };
+  kpisStub = {
+    online_count: null,
+    total_count: null,
+    active_tx_count: null,
+    tx_today_count: null,
+    faulted_count: null,
+    energy_24h_wh: null,
+    unavailable: true,
+  };
   vi.setSystemTime(new Date('2026-05-10T12:00:00.000Z'));
 });
 
@@ -205,30 +237,23 @@ afterEach(() => {
 
 // ---- tests ---------------------------------------------------------------
 
-describe('SystemPage — alerts strip', () => {
-  it('renders an AlertsPanel once sys_status loads', async () => {
-    cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
-    renderPage();
-    expect(await screen.findByTestId('alerts-panel')).toBeInTheDocument();
-  });
-
-  it('places the AlertsPanel above the metrics row in DOM order', async () => {
-    cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
-    renderPage();
-    const panel = await screen.findByTestId('alerts-panel');
-    const metrics = await screen.findByTestId('metrics-row');
-    // compareDocumentPosition: 4 = panel precedes metrics.
-    expect(panel.compareDocumentPosition(metrics)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-  });
-
-  it('renders an alerts summary card linking to /sys/alerts', async () => {
+describe('SystemPage — alerts summary', () => {
+  it('renders the alerts summary card linking to /sys/alerts', async () => {
     cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
     renderPage();
     const card = await screen.findByTestId('alerts-summary-card');
     expect(card.getAttribute('href')).toBe('/sys/alerts');
   });
 
-  it('summary card reports counts when firing alerts are present', async () => {
+  it('places the alerts summary above the metrics row in DOM order', async () => {
+    cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
+    renderPage();
+    const card = await screen.findByTestId('alerts-summary-card');
+    const metrics = await screen.findByTestId('metrics-row');
+    expect(card.compareDocumentPosition(metrics)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('shows the severity breakdown when firing alerts are present', async () => {
     firingStub = {
       alerts: [
         {
@@ -238,6 +263,7 @@ describe('SystemPage — alerts strip', () => {
           detail: 'gateway scrape failing',
         },
         { id: 'fp-2', severity: 'warning', title: 'WSAuthFailureSpike', detail: '4401 elevated' },
+        { id: 'fp-3', severity: 'info', title: 'BackgroundJob', detail: 'noisy' },
       ],
       unavailable: false,
       loading: false,
@@ -246,10 +272,12 @@ describe('SystemPage — alerts strip', () => {
     cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
     renderPage();
     const card = await screen.findByTestId('alerts-summary-card');
-    expect(card.textContent).toContain('2 firing');
+    expect(card.textContent).toContain('1 critical');
+    expect(card.textContent).toContain('1 warning');
+    expect(card.textContent).toContain('1 info');
   });
 
-  it('summary card shows "not configured" hint when Alertmanager is unavailable', async () => {
+  it('shows "not configured" hint when Alertmanager is unavailable', async () => {
     firingStub = { alerts: [], unavailable: true, loading: false, error: null };
     cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
     renderPage();
@@ -257,7 +285,14 @@ describe('SystemPage — alerts strip', () => {
     expect(card.textContent?.toLowerCase()).toContain('not configured');
   });
 
-  it('passes the right alerts to AlertsPanel when a faulted charger is in the snapshot', async () => {
+  it('shows the all-clear hint when Alertmanager is configured but quiet', async () => {
+    cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
+    renderPage();
+    const card = await screen.findByTestId('alerts-summary-card');
+    expect(card.textContent?.toLowerCase()).toContain('all clear');
+  });
+
+  it('does not render the legacy AlertsPanel list (avoiding the offline-device pile-up)', async () => {
     cpSubStub = {
       snapshot: {
         kind: 'charge-points',
@@ -277,17 +312,18 @@ describe('SystemPage — alerts strip', () => {
       },
     };
     renderPage();
-    await screen.findByTestId('alerts-panel');
-    const rows = screen.getAllByTestId('alerts-row');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!).toHaveAttribute('data-alert-id', 'charger-faulted:CP_FAULT');
-    expect(rows[0]!).toHaveAttribute('data-severity', 'critical');
+    await screen.findByTestId('alerts-summary-card');
+    expect(screen.queryByTestId('alerts-panel')).toBeNull();
+    expect(screen.queryByTestId('alerts-row')).toBeNull();
   });
+});
 
-  it('shows the empty alerts state when sys_status is healthy and the fleet has no faults', async () => {
-    cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
+describe('SystemPage — services placement', () => {
+  it('renders the Services pills after the metrics row in DOM order', async () => {
     renderPage();
-    expect(await screen.findByTestId('alerts-empty')).toHaveTextContent(/All clear/i);
+    const metrics = await screen.findByTestId('metrics-row');
+    const services = await screen.findByTestId('service-status-row');
+    expect(metrics.compareDocumentPosition(services)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 });
 
@@ -355,9 +391,11 @@ describe('SystemPage — headline metrics', () => {
 
   it('shows an em-dash and an honest hint on the 24h energy tile (no fleet aggregate yet)', async () => {
     renderPage();
+    // The energy rollup isn't backed yet; tile renders an em-dash and
+    // a hint pointing to the missing rollup.
     const tile = await screen.findByTestId('metric-energy');
     expect(within(tile).getByText('—')).toBeInTheDocument();
-    expect(within(tile).getByText(/data not available/i)).toBeInTheDocument();
+    expect(within(tile).getByText(/rollup not deployed/i)).toBeInTheDocument();
   });
 
   it('faults tile links to the fleet view with the faults filter pre-engaged', async () => {
