@@ -89,6 +89,118 @@ export interface SilencesResponse {
   unavailable: boolean;
 }
 
+/** Per-rule fields surfaced to the UI. Mirrors Prometheus's
+ *  `/api/v1/rules` response with a flatter shape. The browser narrows
+ *  this into its own type at the boundary. */
+export interface RuleEntry {
+  name: string;
+  type: 'alerting' | 'recording' | 'unknown';
+  /** PromQL expression. */
+  expr: string;
+  /** `for:` duration like '5m'. Empty string when the rule has no
+   *  pending window (recording rules, or alerts without `for:`). */
+  duration: string;
+  severity: string | null;
+  summary: string | null;
+  description: string | null;
+  /** 'inactive' / 'pending' / 'firing' for alerting rules; 'ok' for
+   *  recording rules. Mirrors Prometheus's state field. */
+  state: string;
+  /** ISO-8601 of last evaluation. */
+  last_evaluation: string | null;
+  /** Wall-clock duration of last evaluation as Prometheus emits it
+   *  (seconds, as a string fraction in the v1 API). */
+  evaluation_time: string | null;
+  health: string | null;
+}
+
+export interface RuleGroup {
+  name: string;
+  file: string;
+  interval: number | null;
+  rules: RuleEntry[];
+}
+
+export interface RulesResponse {
+  groups: RuleGroup[];
+  unavailable: boolean;
+}
+
+/** Map Prometheus's `/api/v1/rules` response to the Console's shape.
+ *  Malformed entries are silently skipped (rather than dropping the
+ *  whole response). Exported so the route test can exercise the
+ *  mapping in isolation, same pattern as mapSilence / mapFiringAlert. */
+export function mapRulesResponse(raw: unknown): RulesResponse {
+  if (!isObject(raw)) return { groups: [], unavailable: true };
+  const data = isObject(raw.data) ? raw.data : null;
+  if (!data) return { groups: [], unavailable: true };
+  const groupsRaw = Array.isArray(data.groups) ? data.groups : [];
+  const groups: RuleGroup[] = [];
+  for (const g of groupsRaw) {
+    if (!isObject(g)) continue;
+    const name = isString(g.name) ? g.name : '';
+    const file = isString(g.file) ? g.file : '';
+    if (!name) continue;
+    const rulesRaw = Array.isArray(g.rules) ? g.rules : [];
+    const rules: RuleEntry[] = [];
+    for (const r of rulesRaw) {
+      const mapped = mapRuleEntry(r);
+      if (mapped) rules.push(mapped);
+    }
+    groups.push({
+      name,
+      file,
+      interval: typeof g.interval === 'number' ? g.interval : null,
+      rules,
+    });
+  }
+  return { groups, unavailable: false };
+}
+
+function mapRuleEntry(raw: unknown): RuleEntry | null {
+  if (!isObject(raw)) return null;
+  const name = raw.name;
+  if (!isString(name)) return null;
+  const annotations = isObject(raw.annotations) ? raw.annotations : {};
+  const labels = isObject(raw.labels) ? raw.labels : {};
+  const type =
+    raw.type === 'alerting' || raw.type === 'recording'
+      ? (raw.type as RuleEntry['type'])
+      : 'unknown';
+  const durationRaw = raw.duration;
+  const duration =
+    typeof durationRaw === 'number' && Number.isFinite(durationRaw)
+      ? formatDuration(durationRaw)
+      : isString(durationRaw)
+        ? durationRaw
+        : '';
+  return {
+    name,
+    type,
+    expr: isString(raw.query) ? raw.query : '',
+    duration,
+    severity: isString(labels.severity) ? labels.severity : null,
+    summary: isString(annotations.summary) ? annotations.summary : null,
+    description: isString(annotations.description) ? annotations.description : null,
+    state: isString(raw.state) ? raw.state : 'ok',
+    last_evaluation: isString(raw.lastEvaluation) ? raw.lastEvaluation : null,
+    evaluation_time: isString(raw.evaluationTime) ? raw.evaluationTime : null,
+    health: isString(raw.health) ? raw.health : null,
+  };
+}
+
+/** Format a Prometheus `for:` duration (in seconds) as the
+ *  compact form the alerts.yml uses ('5m', '1h', '30s'). Mirrors the
+ *  shape the operator types in the rule file so the Rules tab matches
+ *  the source. */
+function formatDuration(seconds: number): string {
+  if (seconds <= 0) return '';
+  if (seconds % 86_400 === 0) return `${seconds / 86_400}d`;
+  if (seconds % 3600 === 0) return `${seconds / 3600}h`;
+  if (seconds % 60 === 0) return `${seconds / 60}m`;
+  return `${seconds}s`;
+}
+
 // Cap so a runaway Alertmanager (or a fleet-wide outage with hundreds
 // of rules firing at once) can't blow up the panel render. 100 is
 // well past what an operator can usefully scan; beyond that they need
@@ -660,6 +772,80 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
           'channels.test.failed',
         );
         return reply.code(502).send({ error: 'alertmanager_unreachable' });
+      }
+    },
+  );
+
+  // ==========================================================================
+  // Default-receiver switch
+  // ==========================================================================
+  //
+  // Updates only ManagedConfig.default_channel, leaves channels untouched.
+  // null body clears the default (falls back to the synthetic
+  // __console_default__ receiver — alerts fire but go nowhere).
+
+  app.put(
+    '/sys/alerts/channels/default',
+    { preHandler: requireAuth },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (req: any, reply: any) => {
+      if (!deps.channelsStore) return reply.code(503).send({ error: 'channels_disabled' });
+      const body = z.object({ name: z.string().nullable() }).safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      try {
+        const cfg = await deps.channelsStore.read();
+        const nextName = body.data.name;
+        if (nextName !== null && !cfg.channels.some((c) => c.name === nextName)) {
+          return reply.code(404).send({ error: 'not_found' });
+        }
+        const next = await deps.channelsStore.updateChannels(cfg.channels, nextName ?? '');
+        await reloadAlertmanager(app, deps);
+        return reply.code(200).send(maskedResponse(next));
+      } catch (err) {
+        deps.logger?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'channels.default.failed',
+        );
+        return reply.code(500).send({ error: 'channels_write_failed' });
+      }
+    },
+  );
+
+  // ==========================================================================
+  // Rules — read-only proxy of Prometheus's /api/v1/rules
+  // ==========================================================================
+  //
+  // The Rules tab shows what's evaluating. Fail-soft: unavailable
+  // envelope on missing config or upstream wobble, same shape as the
+  // firing-alerts route.
+
+  app.get(
+    '/sys/alerts/rules',
+    { preHandler: requireAuth },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (_req: any, reply: any) => {
+      const base = app.config.PROMETHEUS_URL;
+      if (!base) {
+        return reply.code(200).send({ groups: [], unavailable: true });
+      }
+      try {
+        const url = `${String(base).replace(/\/+$/, '')}/api/v1/rules`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+        if (!res.ok) {
+          deps.logger?.warn(
+            { upstream: 'prometheus', status: res.status },
+            'rules.upstream-bad-status',
+          );
+          return reply.code(200).send({ groups: [], unavailable: true });
+        }
+        const raw = (await res.json()) as unknown;
+        return reply.code(200).send(mapRulesResponse(raw));
+      } catch (err) {
+        deps.logger?.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          'rules.fetch-failed',
+        );
+        return reply.code(200).send({ groups: [], unavailable: true });
       }
     },
   );

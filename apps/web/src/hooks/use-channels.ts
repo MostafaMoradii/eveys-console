@@ -8,6 +8,7 @@ import {
   createChannel,
   deleteChannel,
   fetchChannels,
+  setDefaultChannel,
   testChannel,
   updateChannel,
   type Channel,
@@ -79,5 +80,14 @@ export function useTestChannel() {
   const { token } = useConsoleClient();
   return useMutation<void, Error, string>({
     mutationFn: (name) => testChannel(token!, name),
+  });
+}
+
+export function useSetDefaultChannel() {
+  const { token } = useConsoleClient();
+  const invalidate = useInvalidateChannels();
+  return useMutation<ChannelsResponse, Error, string | null>({
+    mutationFn: (name) => setDefaultChannel(token!, name),
+    onSuccess: () => invalidate(),
   });
 }

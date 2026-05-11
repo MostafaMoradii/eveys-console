@@ -223,3 +223,61 @@ export async function testChannel(token: string, name: string): Promise<void> {
   const body = await res.text();
   throw new Error(`POST sys/alerts/channels/.../test ${res.status}: ${body}`);
 }
+
+// ---------------------------------------------------------------------------
+// Default-receiver switch
+// ---------------------------------------------------------------------------
+
+export async function setDefaultChannel(
+  token: string,
+  name: string | null,
+): Promise<ChannelsResponse> {
+  const res = await fetch(`${BASE}/sys/alerts/channels/default`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`PUT sys/alerts/channels/default ${res.status}: ${body}`);
+  }
+  return (await res.json()) as ChannelsResponse;
+}
+
+// ---------------------------------------------------------------------------
+// Rules
+// ---------------------------------------------------------------------------
+
+export interface RuleEntry {
+  name: string;
+  type: 'alerting' | 'recording' | 'unknown';
+  expr: string;
+  duration: string;
+  severity: string | null;
+  summary: string | null;
+  description: string | null;
+  state: string;
+  last_evaluation: string | null;
+  evaluation_time: string | null;
+  health: string | null;
+}
+
+export interface RuleGroup {
+  name: string;
+  file: string;
+  interval: number | null;
+  rules: RuleEntry[];
+}
+
+export interface RulesResponse {
+  groups: RuleGroup[];
+  unavailable: boolean;
+}
+
+export async function fetchRules(token: string): Promise<RulesResponse> {
+  const res = await fetch(`${BASE}/sys/alerts/rules`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`GET sys/alerts/rules ${res.status}`);
+  return (await res.json()) as RulesResponse;
+}

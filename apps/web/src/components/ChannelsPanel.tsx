@@ -44,6 +44,7 @@ import {
   useChannels,
   useCreateChannel,
   useDeleteChannel,
+  useSetDefaultChannel,
   useTestChannel,
   useUpdateChannel,
 } from '@/hooks/use-channels';
@@ -215,6 +216,7 @@ function ChannelRow({
   onDelete: () => void;
 }) {
   const test = useTestChannel();
+  const setDefault = useSetDefaultChannel();
   const { toast } = useToast();
   const subtitle = summariseChannel(channel);
   const Icon = iconFor(channel.type);
@@ -240,6 +242,28 @@ function ChannelRow({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {!isDefault ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs text-muted-foreground hover:text-foreground"
+            disabled={setDefault.isPending}
+            data-testid="set-default-channel-button"
+            onClick={() => {
+              setDefault.mutate(channel.name, {
+                onSuccess: () => toast({ title: `Default receiver is now ${channel.name}` }),
+                onError: (err) =>
+                  toast({
+                    variant: 'destructive',
+                    title: `Couldn't switch default to ${channel.name}`,
+                    description: err.message,
+                  }),
+              });
+            }}
+          >
+            Set as default
+          </Button>
+        ) : null}
         <Button
           variant="outline"
           size="sm"

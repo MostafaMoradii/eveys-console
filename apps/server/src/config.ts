@@ -54,6 +54,11 @@ const schema = z.object({
   // alongside the SQLite + diagnostics uploads.
   ALERTMANAGER_CONFIG_PATH: z.string().default('./data/alertmanager-managed.yml'),
 
+  // Base URL of Prometheus for the Rules tab on /sys/alerts. Optional —
+  // when unset, /sys/alerts/rules returns the unavailable envelope and
+  // the Rules tab renders its "Prometheus not configured" hint.
+  PROMETHEUS_URL: z.string().url().optional(),
+
   // Kafka tail
   KAFKA_BROKERS: z
     .string()

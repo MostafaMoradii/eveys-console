@@ -12,7 +12,7 @@ import { BellRing } from 'lucide-react';
 import { ActiveSilencesPanel } from '@/components/ActiveSilencesPanel';
 import { ChannelsPanel } from '@/components/ChannelsPanel';
 import { FiringAlertsPanel } from '@/components/FiringAlertsPanel';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { RulesPanel } from '@/components/RulesPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFiringAlerts } from '@/hooks/use-firing-alerts';
 import { useSilences } from '@/hooks/use-silences';
@@ -105,25 +105,9 @@ export function AlertsPage() {
         </TabsContent>
 
         <TabsContent value="rules">
-          <PlaceholderCard
-            title="Rules"
-            body="Alert rule definitions live in deploy/observability/alerts.yml. Read-only display coming in a follow-up; for now inspect the file directly or hit Prometheus' /api/v1/rules."
-          />
+          <RulesPanel />
         </TabsContent>
       </Tabs>
     </div>
-  );
-}
-
-function PlaceholderCard({ title, body }: { title: string; body: string }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">{body}</p>
-      </CardContent>
-    </Card>
   );
 }
