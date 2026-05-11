@@ -77,6 +77,17 @@ vi.mock('@/hooks/use-firing-alerts', () => ({
   useFiringAlerts: () => firingStub,
 }));
 
+let silencesStub: {
+  silences: Array<{ id: string }>;
+  unavailable: boolean;
+  loading: boolean;
+  error: Error | null;
+} = { silences: [], unavailable: false, loading: false, error: null };
+
+vi.mock('@/hooks/use-silences', () => ({
+  useSilences: () => silencesStub,
+}));
+
 // Stub the router's <Link> so the cp-link inside AlertsPanel and the
 // tiles render as plain anchors.
 vi.mock('@tanstack/react-router', () => ({
@@ -183,6 +194,7 @@ beforeEach(() => {
   cpSubStub = { snapshot: { kind: 'charge-points', rows: [] } };
   txSubStub = { snapshot: { kind: 'transactions-active', rows: [] } };
   firingStub = { alerts: [], unavailable: false, loading: false, error: null };
+  silencesStub = { silences: [], unavailable: false, loading: false, error: null };
   vi.setSystemTime(new Date('2026-05-10T12:00:00.000Z'));
 });
 
@@ -209,15 +221,14 @@ describe('SystemPage — alerts strip', () => {
     expect(panel.compareDocumentPosition(metrics)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it('places the FiringAlertsPanel above the (client-derived) AlertsPanel', async () => {
+  it('renders an alerts summary card linking to /sys/alerts', async () => {
     cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
     renderPage();
-    const firing = await screen.findByTestId('firing-alerts-panel');
-    const derived = await screen.findByTestId('alerts-panel');
-    expect(firing.compareDocumentPosition(derived)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const card = await screen.findByTestId('alerts-summary-card');
+    expect(card.getAttribute('href')).toBe('/sys/alerts');
   });
 
-  it('passes firing alerts through to the FiringAlertsPanel', async () => {
+  it('summary card reports counts when firing alerts are present', async () => {
     firingStub = {
       alerts: [
         {
@@ -226,22 +237,24 @@ describe('SystemPage — alerts strip', () => {
           title: 'GatewayDown',
           detail: 'gateway scrape failing',
         },
+        { id: 'fp-2', severity: 'warning', title: 'WSAuthFailureSpike', detail: '4401 elevated' },
       ],
       unavailable: false,
       loading: false,
       error: null,
     };
+    cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
     renderPage();
-    const rows = await screen.findAllByTestId('firing-alerts-row');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!).toHaveAttribute('data-alert-id', 'fp-1');
-    expect(rows[0]!).toHaveAttribute('data-severity', 'critical');
+    const card = await screen.findByTestId('alerts-summary-card');
+    expect(card.textContent).toContain('2 firing');
   });
 
-  it('renders the unavailable hint when the firing-alerts hook reports unavailable', async () => {
+  it('summary card shows "not configured" hint when Alertmanager is unavailable', async () => {
     firingStub = { alerts: [], unavailable: true, loading: false, error: null };
+    cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
     renderPage();
-    expect(await screen.findByTestId('firing-alerts-unavailable')).toBeInTheDocument();
+    const card = await screen.findByTestId('alerts-summary-card');
+    expect(card.textContent?.toLowerCase()).toContain('not configured');
   });
 
   it('passes the right alerts to AlertsPanel when a faulted charger is in the snapshot', async () => {

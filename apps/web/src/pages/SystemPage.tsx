@@ -1,16 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { AlertCircle, BellRing, Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 
 import type { ChargePointSummary, TransactionSummary } from '@eveys-console/protocol';
 
 import { fetchSysStatus } from '@/api/sys-client';
-import { ActiveSilencesPanel } from '@/components/ActiveSilencesPanel';
 import { AlertsPanel } from '@/components/AlertsPanel';
-import { FiringAlertsPanel } from '@/components/FiringAlertsPanel';
 import { MetricTile } from '@/components/MetricTile';
 import { ServiceStatusPills } from '@/components/ServiceStatusPills';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Card, CardContent } from '@/components/ui/card';
 import { useFiringAlerts } from '@/hooks/use-firing-alerts';
 import { useSilences } from '@/hooks/use-silences';
 import { useSubscription } from '@/hooks/use-subscription';
@@ -19,25 +19,19 @@ import { countFaults } from '@/lib/fault';
 import { useConsoleClient } from '@/lib/ws-context';
 
 // Layout note: the operator's resting question on this page is "is
-// anything on fire?" — so alerts come first at full width, then the
-// four headline counts, then the small service-status pills. The old
-// 3-column tile grid pushed a variable-length alerts list into a
-// fixed-size cell, which broke as soon as more than a couple of
-// alerts fired.
+// anything on fire?" — so an alerts summary card comes first, then the
+// four headline counts, then the small service-status pills. The
+// detailed firing-alerts list and silences management moved to the
+// dedicated /sys/alerts page; the dashboard keeps its scannable shape.
 //
-// Two alert panels, stacked: the Alertmanager-backed "Firing alerts"
-// panel on top (durable; survives the operator closing the tab) and
-// the client-derived "Active alerts" below it (zero-infrastructure;
-// derived from the data already on the page). Kept independent on
-// purpose so the source of each row is visible — the two panels
-// answer different questions on different time horizons.
+// The client-derived AlertsPanel (computed from charge-points data
+// already on this page) stays here because it answers a different
+// question: "what would I notice if Alertmanager were down?" — and
+// because it costs nothing extra to render given the data is loaded.
 //
-// Recent-activity section intentionally omitted in v1. We don't have
-// an aggregated event-log subscription today; the closest derivation
-// (sort chargers by last_heartbeat_at) would be misleading because it
-// confuses "heartbeat received" with "lifecycle event happened". When
-// we add a server-side event tail we'll wire it in here. Tracked in
-// issue #63.
+// Recent-activity section intentionally omitted in v1 — no aggregated
+// event-log subscription, and synthesising from last_heartbeat_at
+// would conflate heartbeats with lifecycle events.
 
 export function SystemPage() {
   const { token } = useConsoleClient();
@@ -101,16 +95,11 @@ export function SystemPage() {
         <p className="text-sm text-muted-foreground">Live; refreshes every 5 seconds.</p>
       </div>
 
-      <FiringAlertsPanel
-        alerts={firing.alerts}
+      <AlertsSummaryCard
+        firingCount={firing.alerts.length}
+        silencedCount={silences.silences.length}
         unavailable={firing.unavailable}
         loading={firing.loading}
-      />
-
-      <ActiveSilencesPanel
-        silences={silences.silences}
-        unavailable={silences.unavailable}
-        loading={silences.loading}
       />
 
       <AlertsPanel alerts={alerts} loading={cpSub.loading} error={cpSub.error ?? null} />
@@ -176,5 +165,53 @@ export function SystemPage() {
         <ServiceStatusPills sys={sys} />
       </section>
     </div>
+  );
+}
+
+// Compact at-a-glance summary card linking to /sys/alerts for detail.
+// Two numbers — firing, silenced — both pulled from the same hooks the
+// alerts page uses, so the counts stay in sync within a poll cycle.
+// When Alertmanager isn't configured we render a softer "not
+// configured" hint rather than 0 / 0 (which would imply healthy).
+function AlertsSummaryCard({
+  firingCount,
+  silencedCount,
+  unavailable,
+  loading,
+}: {
+  firingCount: number;
+  silencedCount: number;
+  unavailable: boolean;
+  loading: boolean;
+}) {
+  return (
+    <Link
+      to="/sys/alerts"
+      className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      data-testid="alerts-summary-card"
+    >
+      <Card className="transition-colors hover:border-primary/40 hover:bg-muted/40">
+        <CardContent className="flex items-center justify-between gap-3 p-4">
+          <div className="flex items-center gap-3">
+            <BellRing
+              className={firingCount > 0 && !unavailable ? 'h-5 w-5 text-destructive' : 'h-5 w-5'}
+            />
+            <div>
+              <p className="text-sm font-medium">Alertmanager</p>
+              <p className="text-xs text-muted-foreground">
+                {loading
+                  ? 'loading…'
+                  : unavailable
+                    ? 'not configured'
+                    : firingCount === 0 && silencedCount === 0
+                      ? 'all clear — no alerts firing'
+                      : `${firingCount} firing · ${silencedCount} silenced`}
+              </p>
+            </div>
+          </div>
+          <span className="text-xs text-muted-foreground">Open alerts →</span>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }

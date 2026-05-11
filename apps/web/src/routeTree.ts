@@ -5,6 +5,7 @@
 import { createRootRoute, createRoute } from '@tanstack/react-router';
 
 import { ConsoleShell } from './components/AppShell';
+import { AlertsPage } from './pages/AlertsPage';
 import { ChargerDetailPage } from './pages/ChargerDetailPage';
 import { FleetPage } from './pages/FleetPage';
 import { OcppConformancePage } from './pages/OcppConformancePage';
@@ -73,8 +74,32 @@ const ocppConformanceRoute = createRoute({
   component: OcppConformancePage,
 });
 
+export interface AlertsPageSearch {
+  /** Deep-link to a specific tab on the alerts page. The page treats
+   *  any unknown value as 'firing' (the default landing tab). */
+  tab?: 'firing' | 'silences' | 'channels' | 'rules';
+}
+
+const ALERTS_TABS = ['firing', 'silences', 'channels', 'rules'] as const;
+type AlertsTab = (typeof ALERTS_TABS)[number];
+
+const alertsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/sys/alerts',
+  component: AlertsPage,
+  validateSearch: (raw: Record<string, unknown>): AlertsPageSearch => {
+    const out: AlertsPageSearch = {};
+    const v = raw.tab;
+    if (typeof v === 'string' && (ALERTS_TABS as readonly string[]).includes(v)) {
+      out.tab = v as AlertsTab;
+    }
+    return out;
+  },
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
+  alertsRoute,
   inspectChargePointsRoute,
   chargerDetailRoute,
   transactionsRoute,
