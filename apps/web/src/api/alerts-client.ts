@@ -148,6 +148,10 @@ export interface ChannelWebhook {
   url: string;
   http_basic_auth_username?: string;
   http_basic_auth_password?: string;
+  /** Bearer token for the Authorization header on the outbound
+   *  webhook. Mutually exclusive with basic-auth; server picks
+   *  bearer when both are set. */
+  http_bearer_token?: string;
 }
 
 export type Channel = ChannelSlack | ChannelEmail | ChannelWebhook;

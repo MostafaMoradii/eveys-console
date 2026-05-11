@@ -564,23 +564,38 @@ function WebhookForm({
 }: FormBaseProps & { initial: ChannelWebhook | undefined }) {
   const [name, setName] = useState(initial?.name ?? '');
   const [url, setUrl] = useState(initial?.url ?? '');
+  // Default auth-mode is whichever the existing channel has; new
+  // channels start on "none" so a quick webhook with no auth is one
+  // less field to skip past.
+  const initialAuthMode: 'none' | 'basic' | 'bearer' = initial?.http_bearer_token
+    ? 'bearer'
+    : initial?.http_basic_auth_username || initial?.http_basic_auth_password
+      ? 'basic'
+      : 'none';
+  const [authMode, setAuthMode] = useState<'none' | 'basic' | 'bearer'>(initialAuthMode);
   const [user, setUser] = useState(initial?.http_basic_auth_username ?? '');
   const [pass, setPass] = useState(initial?.http_basic_auth_password ?? '');
+  const [bearer, setBearer] = useState(initial?.http_bearer_token ?? '');
 
   const submit = useChannelSubmit(isEdit, onClose);
   const valid = name.trim() && url.trim();
 
   return (
     <FormShell
-      onSubmit={() =>
-        submit.go({
-          type: 'webhook',
-          name: name.trim(),
-          url: url.trim(),
-          ...(user.trim() ? { http_basic_auth_username: user.trim() } : {}),
-          ...(pass ? { http_basic_auth_password: pass } : {}),
-        })
-      }
+      onSubmit={() => {
+        const base = { type: 'webhook' as const, name: name.trim(), url: url.trim() };
+        const withAuth: ChannelWebhook =
+          authMode === 'basic'
+            ? {
+                ...base,
+                ...(user.trim() ? { http_basic_auth_username: user.trim() } : {}),
+                ...(pass ? { http_basic_auth_password: pass } : {}),
+              }
+            : authMode === 'bearer'
+              ? { ...base, ...(bearer ? { http_bearer_token: bearer } : {}) }
+              : base;
+        submit.go(withAuth);
+      }}
       onClose={onClose}
       isPending={submit.isPending}
       error={submit.error}
@@ -602,20 +617,49 @@ function WebhookForm({
         testId="webhook-url"
         placeholder="https://events.example.com/hook"
       />
-      <Field
-        label="Basic-auth username (optional)"
-        value={user}
-        onChange={setUser}
-        testId="webhook-user"
-      />
-      <Field
-        label="Basic-auth password (optional)"
-        hint="Masked — clear to keep existing value"
-        value={pass}
-        onChange={setPass}
-        testId="webhook-pass"
-        type="password"
-      />
+      <div className="flex flex-col gap-1">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          Auth mode
+        </span>
+        <select
+          value={authMode}
+          onChange={(e) => setAuthMode(e.currentTarget.value as 'none' | 'basic' | 'bearer')}
+          data-testid="webhook-auth-mode"
+          className="h-9 rounded-md border bg-background px-2 text-sm"
+        >
+          <option value="none">None</option>
+          <option value="basic">Basic auth</option>
+          <option value="bearer">Bearer token</option>
+        </select>
+      </div>
+      {authMode === 'basic' ? (
+        <>
+          <Field
+            label="Basic-auth username"
+            value={user}
+            onChange={setUser}
+            testId="webhook-user"
+          />
+          <Field
+            label="Basic-auth password"
+            hint="Masked — clear to keep existing value"
+            value={pass}
+            onChange={setPass}
+            testId="webhook-pass"
+            type="password"
+          />
+        </>
+      ) : null}
+      {authMode === 'bearer' ? (
+        <Field
+          label="Bearer token"
+          hint="Sent as `Authorization: Bearer <token>` · Masked — clear to keep existing value"
+          value={bearer}
+          onChange={setBearer}
+          testId="webhook-bearer"
+          type="password"
+        />
+      ) : null}
     </FormShell>
   );
 }
