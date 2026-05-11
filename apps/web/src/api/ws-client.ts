@@ -24,14 +24,37 @@ export interface ConsoleClientOpts {
    *  AppShell uses this to clear the stored token so the user lands on
    *  the login page instead of a silent reconnect loop. */
   onAuthRejected?: () => void;
+  /** Called whenever the client picks up diagnostic state (last close
+   *  code, reconnect attempt count). The header's connection-status
+   *  indicator surfaces these for operators trying to triage a stuck
+   *  connection without DevTools. */
+  onDiagnostics?: (diag: ConnectionDiagnostics) => void;
   log?: (msg: string, ctx?: Record<string, unknown>) => void;
 }
 
 export type ConnectionStatus = 'connecting' | 'open' | 'closed';
 
+export interface ConnectionDiagnostics {
+  /** Last close code observed on the socket, or null if the socket has
+   *  never closed in this client's lifetime. 1000/1001 are clean closes;
+   *  anything else is a real signal. */
+  lastCloseCode: number | null;
+  /** Last close reason string the server included, if any. */
+  lastCloseReason: string | null;
+  /** Number of reconnect attempts since the last successful open. */
+  reconnectAttempt: number;
+}
+
 /** Server-side close code emitted when JWT verification fails on
  *  handshake. Defined in `apps/server/src/routes/ws.ts`. */
 export const WS_AUTH_REJECTED_CODE = 4401;
+
+/** Close codes that mean "clean shutdown" — no diagnostic warning. */
+const CLEAN_CLOSE_CODES = new Set([1000, 1001]);
+
+/** Reconnect-delay (ms) at which we surface a "still trying" warning to
+ *  the operator. Below this we stay quiet — short blips are normal. */
+const SLOW_RECONNECT_WARN_THRESHOLD_MS = 5_000;
 
 export type SubscriptionHandlers = {
   onSnapshot: (snapshot: SnapshotForQuery, cursor: string) => void;
@@ -76,6 +99,8 @@ export class ConsoleClient {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private explicitlyClosed = false;
+  private lastCloseCode: number | null = null;
+  private lastCloseReason: string | null = null;
 
   constructor(private readonly opts: ConsoleClientOpts) {}
 
@@ -142,6 +167,7 @@ export class ConsoleClient {
     socket.onopen = () => {
       this.reconnectAttempt = 0;
       this.setStatus('open');
+      this.emitDiagnostics();
       this.opts.log?.('ws.open');
       // Re-send all pending subscribes (queued before open) and re-establish
       // active subscriptions (lost across reconnect).
@@ -191,7 +217,19 @@ export class ConsoleClient {
 
     socket.onclose = (ev) => {
       this.setStatus('closed');
+      this.lastCloseCode = ev.code;
+      this.lastCloseReason = ev.reason || null;
       this.opts.log?.('ws.close', { code: ev.code, reason: ev.reason });
+      // Non-clean close: surface to the operator's console with the
+      // close code + the attempt counter. 4401 already gets its own
+      // dedicated warning below; clean codes (1000/1001) stay silent.
+      if (!CLEAN_CLOSE_CODES.has(ev.code) && ev.code !== WS_AUTH_REJECTED_CODE) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[ws] close code=${ev.code} reason=${JSON.stringify(ev.reason || '')} attempt=${this.reconnectAttempt}`,
+        );
+      }
+      this.emitDiagnostics();
       this.failPendingRpcsOnDisconnect();
       // 4401 = server rejected the JWT. Reconnecting with the same
       // token is pointless — let the app clear it and bounce to login.
@@ -299,6 +337,24 @@ export class ConsoleClient {
     const jitter = Math.random() * 250;
     const delay = base + jitter;
     this.opts.log?.('ws.reconnect.scheduled', { delay, attempt: this.reconnectAttempt });
+    // Once the backoff stretches past a few seconds, surface what's
+    // happening so the operator sees "still trying to reconnect"
+    // rather than wondering whether the page is dead.
+    if (delay >= SLOW_RECONNECT_WARN_THRESHOLD_MS) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[ws] still trying to reconnect — attempt ${this.reconnectAttempt}, next in ${Math.round(delay)}ms (last close code=${this.lastCloseCode ?? 'unknown'})`,
+      );
+    }
+    this.emitDiagnostics();
     this.reconnectTimer = setTimeout(() => this.openSocket(), delay);
+  }
+
+  private emitDiagnostics() {
+    this.opts.onDiagnostics?.({
+      lastCloseCode: this.lastCloseCode,
+      lastCloseReason: this.lastCloseReason,
+      reconnectAttempt: this.reconnectAttempt,
+    });
   }
 }

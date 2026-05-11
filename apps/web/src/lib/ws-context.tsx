@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import { ConsoleClient, type ConnectionStatus } from '../api/ws-client';
+import { ConsoleClient, type ConnectionDiagnostics, type ConnectionStatus } from '../api/ws-client';
 import { CONSOLE_WS_URL as WS_URL } from './console-url';
 
 const TOKEN_KEY = 'eveys-console.token';
@@ -17,15 +17,23 @@ const TOKEN_KEY = 'eveys-console.token';
 interface ConsoleClientContextValue {
   client: ConsoleClient;
   status: ConnectionStatus;
+  diagnostics: ConnectionDiagnostics;
   token: string | null;
   setToken: (t: string | null) => void;
 }
+
+const INITIAL_DIAG: ConnectionDiagnostics = {
+  lastCloseCode: null,
+  lastCloseReason: null,
+  reconnectAttempt: 0,
+};
 
 const ctx = createContext<ConsoleClientContextValue | null>(null);
 
 export function ConsoleClientProvider({ children }: { children: ReactNode }) {
   const [token, setTokenState] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [status, setStatus] = useState<ConnectionStatus>('closed');
+  const [diagnostics, setDiagnostics] = useState<ConnectionDiagnostics>(INITIAL_DIAG);
 
   // setToken is read by the auth-rejected handler created inside useMemo
   // below. Holding the latest function in a ref keeps the handler stable
@@ -41,6 +49,7 @@ export function ConsoleClientProvider({ children }: { children: ReactNode }) {
       url: WS_URL,
       token,
       onStatus: setStatus,
+      onDiagnostics: setDiagnostics,
       onAuthRejected: () => {
         // Server rejected the JWT (expired / signed by a previous
         // process / wrong audience). Clear local state so the gate
@@ -68,7 +77,9 @@ export function ConsoleClientProvider({ children }: { children: ReactNode }) {
 
   setTokenRef.current = setToken;
 
-  return <ctx.Provider value={{ client, status, token, setToken }}>{children}</ctx.Provider>;
+  return (
+    <ctx.Provider value={{ client, status, diagnostics, token, setToken }}>{children}</ctx.Provider>
+  );
 }
 
 export function useConsoleClient(): ConsoleClientContextValue {

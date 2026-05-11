@@ -119,4 +119,83 @@ describe('ConsoleClient', () => {
     vi.advanceTimersByTime(60_000);
     expect(lastSocket).toBe(firstSocket);
   });
+
+  it('emits diagnostics on open and close', () => {
+    const onDiagnostics = vi.fn();
+    const client = new ConsoleClient({
+      url: 'ws://localhost:8090/ws',
+      token: 'good-token',
+      onDiagnostics,
+    });
+
+    client.connect();
+    lastSocket?.onopen?.({});
+    // After open: lastCloseCode null, attempt zero.
+    expect(onDiagnostics).toHaveBeenLastCalledWith({
+      lastCloseCode: null,
+      lastCloseReason: null,
+      reconnectAttempt: 0,
+    });
+
+    vi.useFakeTimers();
+    lastSocket?.onclose?.({ code: 1006, reason: '' });
+    // After close: lastCloseCode 1006, reason null (empty string normalised),
+    // attempt incremented by scheduleReconnect.
+    expect(onDiagnostics).toHaveBeenLastCalledWith({
+      lastCloseCode: 1006,
+      lastCloseReason: null,
+      reconnectAttempt: 1,
+    });
+  });
+
+  it('warns to the console when a non-clean close happens', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const client = new ConsoleClient({
+      url: 'ws://localhost:8090/ws',
+      token: 'good-token',
+    });
+
+    vi.useFakeTimers();
+    client.connect();
+    lastSocket?.onclose?.({ code: 1006, reason: '' });
+
+    expect(warn).toHaveBeenCalled();
+    const msg = warn.mock.calls[0]?.[0] ?? '';
+    expect(String(msg)).toContain('code=1006');
+  });
+
+  it('stays quiet on a clean (1000) close', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const client = new ConsoleClient({
+      url: 'ws://localhost:8090/ws',
+      token: 'good-token',
+    });
+
+    vi.useFakeTimers();
+    client.connect();
+    client.close();
+    lastSocket?.onclose?.({ code: 1000, reason: 'client.close' });
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('emits a "still trying" warning once the reconnect backoff stretches past 5s', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const client = new ConsoleClient({
+      url: 'ws://localhost:8090/ws',
+      token: 'good-token',
+    });
+
+    vi.useFakeTimers();
+    client.connect();
+    // A few non-clean closes in a row; backoff doubles each time.
+    // The "still trying" message uses the word "trying"; the per-close
+    // warning uses "code=". Filter to distinguish.
+    for (let i = 0; i < 6; i++) {
+      lastSocket?.onclose?.({ code: 1006, reason: '' });
+      vi.runOnlyPendingTimers();
+    }
+    const trying = warn.mock.calls.filter((args) => String(args[0] ?? '').includes('still trying'));
+    expect(trying.length).toBeGreaterThan(0);
+  });
 });

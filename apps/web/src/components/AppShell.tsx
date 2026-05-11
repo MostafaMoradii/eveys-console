@@ -37,7 +37,7 @@ import { useConsoleClient } from '@/lib/ws-context';
 import { cn } from '@/lib/utils';
 
 export function ConsoleShell() {
-  const { status, setToken } = useConsoleClient();
+  const { status, diagnostics, setToken } = useConsoleClient();
   const router = useRouterState();
   const path = router.location.pathname;
 
@@ -95,7 +95,12 @@ export function ConsoleShell() {
           <span className="hidden font-semibold sm:inline">OCPP Gateway · System Console</span>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          <ConnectionStatusIndicator status={status} variant={statusVariant} />
+          <ConnectionStatusIndicator
+            status={status}
+            variant={statusVariant}
+            lastCloseCode={diagnostics.lastCloseCode}
+            reconnectAttempt={diagnostics.reconnectAttempt}
+          />
           <ThemeToggle />
           {/* Sign-out: full pill with icon+label at `sm+`, icon-only
               below. The aria-label keeps it accessible either way.
@@ -164,9 +169,13 @@ export function ConsoleShell() {
 function ConnectionStatusIndicator({
   status,
   variant,
+  lastCloseCode,
+  reconnectAttempt,
 }: {
   status: string;
   variant: 'success' | 'warning' | 'destructive';
+  lastCloseCode: number | null;
+  reconnectAttempt: number;
 }) {
   const dotColour =
     variant === 'success'
@@ -174,10 +183,27 @@ function ConnectionStatusIndicator({
       : variant === 'warning'
         ? 'bg-amber-500'
         : 'bg-destructive';
+  // Surface diagnostic state as data attributes (not visible text yet —
+  // we don't want to clutter the header). DevTools or future tooling
+  // can read these without scraping the console log.
+  const diagAttrs = {
+    'data-ws-status': status,
+    'data-ws-last-close-code': lastCloseCode === null ? '' : String(lastCloseCode),
+    'data-ws-reconnect-attempt': String(reconnectAttempt),
+  };
+  const titleSuffix =
+    lastCloseCode !== null
+      ? ` (last close ${lastCloseCode}${reconnectAttempt > 0 ? `, attempt ${reconnectAttempt}` : ''})`
+      : '';
   return (
     <>
       {/* `sm+`: labelled pill, same as before. */}
-      <Badge variant={variant} className="hidden text-xs sm:inline-flex">
+      <Badge
+        variant={variant}
+        className="hidden text-xs sm:inline-flex"
+        title={`WebSocket: ${status}${titleSuffix}`}
+        {...diagAttrs}
+      >
         ws: {status}
       </Badge>
       {/* below `sm`: dot with title for long-press / hover. The
@@ -186,7 +212,8 @@ function ConnectionStatusIndicator({
         className={cn('inline-block h-2 w-2 shrink-0 rounded-full sm:hidden', dotColour)}
         role="img"
         aria-label={`WebSocket ${status}`}
-        title={`WebSocket: ${status}`}
+        title={`WebSocket: ${status}${titleSuffix}`}
+        {...diagAttrs}
       />
     </>
   );
