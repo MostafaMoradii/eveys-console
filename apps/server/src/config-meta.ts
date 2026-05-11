@@ -200,6 +200,17 @@ const META: Record<keyof Config, KeyMeta> = {
     sensitive: false,
   },
 
+  ALERTMANAGER_CONFIG_PATH: {
+    description:
+      'Path to the Alertmanager config file the Console manages via the /sys/alerts Channels tab. Compose mounts this file into the Alertmanager container.',
+    category: 'observability',
+    mutable: true,
+    restart: 'console',
+    range: 'filesystem path readable + writable by the Console.',
+    default: './data/alertmanager-managed.yml',
+    sensitive: false,
+  },
+
   KAFKA_BROKERS: {
     description: 'CSV of Kafka bootstrap brokers the Console tails for live events.',
     category: 'kafka',

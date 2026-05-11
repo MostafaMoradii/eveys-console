@@ -54,8 +54,16 @@ services:
       # `{ alerts: [], unavailable: true }`), so leaving this set
       # while the profile is down is harmless.
       ALERTMANAGER_URL: ${ALERTMANAGER_URL:-http://alertmanager:9093}
+      # Path inside the container where the Console writes the
+      # managed Alertmanager config. The Alertmanager service below
+      # mounts the same named volume read-only and points its
+      # --config.file at it, so writes from the Channels tab take
+      # effect on the next /-/reload.
+      ALERTMANAGER_CONFIG_PATH: /data/alertmanager-managed.yml
     ports:
       - '8090:8090'
+    volumes:
+      - console-data:/data
     healthcheck:
       test:
         [
@@ -119,13 +127,31 @@ services:
     ports:
       - '9093:9093'
     volumes:
-      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # Read the Console-managed config. The Console writes
+      # /data/alertmanager-managed.yml in its container; the same
+      # named volume is mounted here read-only. The bundled file
+      # under ./observability/alertmanager.yml stays as a documented
+      # seed; the Console copies it on first boot if the managed file
+      # doesn't exist yet.
+      - console-data:/etc/alertmanager-managed:ro
+      - ./observability/alertmanager.yml:/etc/alertmanager-seed/alertmanager.yml:ro
       - alertmanager-data:/alertmanager
     command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--config.file=/etc/alertmanager-managed/alertmanager-managed.yml'
       - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+      # Lifecycle endpoint needed for POST /-/reload after Console writes.
+      - '--web.enable-lifecycle'
+    depends_on:
+      server:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   prometheus-data:
   alertmanager-data:
+  # Shared between Console (writable) and Alertmanager (read-only).
+  # Holds the managed Alertmanager config plus the diagnostics SQLite
+  # + uploads from the existing data dir. Survives `docker compose
+  # down`; cleared by `docker compose down -v`.
+  console-data:
