@@ -120,6 +120,21 @@ export class ChannelsStore {
     await this.write(next);
     return next;
   }
+
+  /** Write an empty managed config if the file doesn't exist yet.
+   *  Called once at startup so the Alertmanager container has a valid
+   *  --config.file to start against on a fresh deployment. No-op when
+   *  the file is already there. */
+  async seedIfMissing(): Promise<boolean> {
+    try {
+      await readFile(this.path, 'utf8');
+      return false;
+    } catch (err) {
+      if (!isNoEntry(err)) throw err;
+      await this.write({ channels: [], default_channel: '' });
+      return true;
+    }
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -216,7 +231,8 @@ function parseManagedYaml(text: string): ManagedConfig {
     const c = receiverToChannel(r);
     if (c) channels.push(c);
   }
-  const defaultChannel = raw.route?.receiver === NULL_RECEIVER_NAME ? '' : (raw.route?.receiver ?? '');
+  const defaultChannel =
+    raw.route?.receiver === NULL_RECEIVER_NAME ? '' : (raw.route?.receiver ?? '');
   return { channels, default_channel: defaultChannel };
 }
 
@@ -342,7 +358,10 @@ function channelToReceiver(c: Channel): AlertmanagerReceiver {
 
 function isNoEntry(err: unknown): boolean {
   return (
-    typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === 'ENOENT'
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code: string }).code === 'ENOENT'
   );
 }
 

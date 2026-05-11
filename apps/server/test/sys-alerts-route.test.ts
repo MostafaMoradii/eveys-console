@@ -940,7 +940,12 @@ describe('PUT /sys/alerts/channels/:name', () => {
     });
     expect(res.statusCode).toBe(200);
     const cfg = await ctx.store.read();
-    const ch = cfg.channels[0] as { type: 'slack'; api_url: string; title?: string; channel: string };
+    const ch = cfg.channels[0] as {
+      type: 'slack';
+      api_url: string;
+      title?: string;
+      channel: string;
+    };
     expect(ch.api_url).toBe('https://hooks.slack.com/services/T1/B2/REAL-SECRET');
     expect(ch.title).toBe('new title');
     expect(ch.channel).toBe('#ocpp');

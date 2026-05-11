@@ -705,10 +705,7 @@ function mergeKeepSecrets(current: Channel, next: Channel): Channel {
       const cur = current as Extract<Channel, { type: 'webhook' }>;
       const out: Channel = {
         ...next,
-        url:
-          next.url && !next.url.includes('••••')
-            ? next.url
-            : cur.url,
+        url: next.url && !next.url.includes('••••') ? next.url : cur.url,
       };
       if (!next.http_basic_auth_password || next.http_basic_auth_password.includes('••••')) {
         if (cur.http_basic_auth_password)

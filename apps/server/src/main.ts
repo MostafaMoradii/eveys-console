@@ -103,6 +103,19 @@ async function main() {
   const pow = new PowVerifier(config);
   const diagnosticsStore = new DiagnosticsStore(config.DIAGNOSTICS_DATA_DIR);
   const channelsStore = new ChannelsStore(config.ALERTMANAGER_CONFIG_PATH);
+  // Seed the managed Alertmanager config on first boot so the
+  // Alertmanager container has a file to start against. The seed is
+  // an empty channels list + the synthetic fallback receiver; the
+  // operator adds real receivers through the Channels tab.
+  try {
+    await channelsStore.seedIfMissing();
+    logger.info({ path: config.ALERTMANAGER_CONFIG_PATH }, 'alertmanager.config.seeded');
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'alertmanager.config.seed-failed',
+    );
+  }
 
   const startedAt = new Date();
   await registerHealthRoutes(app);

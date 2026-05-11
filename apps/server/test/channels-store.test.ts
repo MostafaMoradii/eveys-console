@@ -25,6 +25,24 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+describe('ChannelsStore — seedIfMissing', () => {
+  it('creates an empty managed file when none exists', async () => {
+    const created = await store.seedIfMissing();
+    expect(created).toBe(true);
+    const text = await readFile(cfgPath, 'utf8');
+    expect(text).toContain('Managed by the Console');
+    expect(text).toContain('__console_default__');
+  });
+
+  it('is a no-op when the file already exists', async () => {
+    await writeFile(cfgPath, 'existing: content', 'utf8');
+    const created = await store.seedIfMissing();
+    expect(created).toBe(false);
+    const text = await readFile(cfgPath, 'utf8');
+    expect(text).toBe('existing: content');
+  });
+});
+
 describe('ChannelsStore — empty / missing', () => {
   it('returns an empty config when the file does not exist', async () => {
     const cfg = await store.read();
