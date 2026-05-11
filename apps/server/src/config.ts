@@ -47,6 +47,13 @@ const schema = z.object({
   // error toast.
   ALERTMANAGER_URL: z.string().url().optional(),
 
+  // Path to the Alertmanager config file the Console manages. Compose
+  // mounts this file into the Alertmanager container as its
+  // --config.file; the Console reads + writes it through the Channels
+  // tab on /sys/alerts. Defaults to `./data/alertmanager-managed.yml`
+  // alongside the SQLite + diagnostics uploads.
+  ALERTMANAGER_CONFIG_PATH: z.string().default('./data/alertmanager-managed.yml'),
+
   // Kafka tail
   KAFKA_BROKERS: z
     .string()
