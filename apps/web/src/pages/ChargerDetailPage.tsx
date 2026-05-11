@@ -22,9 +22,20 @@ import { StatisticsCard } from '@/components/StatisticsCard';
 import { TransactionsHistory } from '@/components/TransactionsHistory';
 import { canRemoteStart, canRemoteStop, canReset } from '@/lib/charger-state';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
@@ -207,6 +218,11 @@ function Header({ cp }: { cp: ChargePointSummary }) {
         <Badge variant="secondary" className="font-mono text-xs">
           last_status: {cp.last_status ?? '—'}
         </Badge>
+        {cp.last_heartbeat_at ? (
+          <Badge variant="secondary" className="font-mono text-xs" data-testid="header-heartbeat">
+            heartbeat: <TimeAgo iso={cp.last_heartbeat_at} className="ml-1" />
+          </Badge>
+        ) : null}
         {cp.pod_id ? (
           <Badge variant="secondary" className="font-mono text-xs" title={cp.pod_id}>
             pod: {cp.pod_id.length > 12 ? `${cp.pod_id.slice(0, 12)}…` : cp.pod_id}
@@ -238,8 +254,18 @@ interface CommandsProps {
 // the disclosure adds a deliberate second tap. Stop and Reset stay
 // one tap away because they're the actions an on-call engineer
 // actually needs from a phone.
+//
+// Hard Reset is gated behind an AlertDialog because it terminates any
+// active transaction without storing the final meter value — the click
+// must be deliberate. Soft Reset stays one-tap because it's recoverable.
+//
+// RemoteStart requires an id_tag — the operator types/pastes the value
+// that's allow-listed in the backend. No fake default; the button is
+// disabled until something's typed.
 function Commands({ cp, runRpc, isPhone }: CommandsProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const [hardResetOpen, setHardResetOpen] = useState(false);
+  const [idTag, setIdTag] = useState('');
   const showRemoteStart = !isPhone || moreOpen;
 
   // Button availability is derived from connector state — no point
@@ -248,6 +274,13 @@ function Commands({ cp, runRpc, isPhone }: CommandsProps) {
   const stopAv = canRemoteStop(cp);
   const startAv = canRemoteStart(cp);
   const resetAv = canReset(cp);
+  const trimmedTag = idTag.trim();
+  const remoteStartReady = startAv.enabled && trimmedTag.length > 0;
+  const remoteStartTitle = !startAv.enabled
+    ? startAv.reason
+    : trimmedTag.length === 0
+      ? 'Type an authorised id_tag to enable'
+      : undefined;
 
   return (
     <div className={cn('flex gap-2', isPhone ? 'flex-col' : 'flex-wrap')}>
@@ -269,15 +302,36 @@ function Commands({ cp, runRpc, isPhone }: CommandsProps) {
       >
         <RotateCcw className="h-4 w-4" /> Soft Reset
       </Button>
+      <Button
+        variant="outline"
+        onClick={() => setHardResetOpen(true)}
+        disabled={!resetAv.enabled}
+        title={resetAv.reason}
+        className={isPhone ? 'w-full' : undefined}
+        data-testid="hard-reset-button"
+      >
+        <RotateCcw className="h-4 w-4" /> Hard Reset
+      </Button>
       {showRemoteStart ? (
-        <Button
-          onClick={() => runRpc('remote-start', { cp_id: cp.cp_id, id_tag: 'OPERATOR' })}
-          disabled={!startAv.enabled}
-          title={startAv.reason}
-          className={isPhone ? 'w-full' : undefined}
-        >
-          <Play className="h-4 w-4" /> RemoteStart
-        </Button>
+        <div className={cn('flex gap-2', isPhone ? 'flex-col' : 'flex-row items-center')}>
+          <Input
+            value={idTag}
+            onChange={(e) => setIdTag(e.currentTarget.value)}
+            placeholder="id_tag"
+            aria-label="id_tag for RemoteStart"
+            className={cn('font-mono text-xs', isPhone ? 'w-full' : 'h-9 w-[140px]')}
+            data-testid="remote-start-idtag"
+          />
+          <Button
+            onClick={() => runRpc('remote-start', { cp_id: cp.cp_id, id_tag: trimmedTag })}
+            disabled={!remoteStartReady}
+            title={remoteStartTitle}
+            className={isPhone ? 'w-full' : undefined}
+            data-testid="remote-start-button"
+          >
+            <Play className="h-4 w-4" /> RemoteStart
+          </Button>
+        </div>
       ) : null}
       <CommandsDrawer
         cpId={cp.cp_id}
@@ -306,6 +360,30 @@ function Commands({ cp, runRpc, isPhone }: CommandsProps) {
           )}
         </Button>
       ) : null}
+
+      <AlertDialog open={hardResetOpen} onOpenChange={setHardResetOpen}>
+        <AlertDialogContent data-testid="hard-reset-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hard Reset {cp.cp_id}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The charger will power-cycle immediately. Any active transaction is terminated without
+              storing the final meter value. Use this only when Soft Reset has failed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setHardResetOpen(false);
+                void runRpc('reset', { cp_id: cp.cp_id, type: 'Hard' });
+              }}
+              data-testid="hard-reset-confirm"
+            >
+              Hard Reset
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
