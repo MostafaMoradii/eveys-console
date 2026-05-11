@@ -102,6 +102,9 @@ importers:
       '@eveys-console/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@fontsource-variable/inter':
+        specifier: ^5.2.8
+        version: 5.2.8
       '@radix-ui/react-alert-dialog':
         specifier: 1.1.4
         version: 1.1.4(@types/react-dom@18.3.5(@types/react@18.3.18))(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -810,6 +813,9 @@ packages:
 
   '@fastify/websocket@11.0.1':
     resolution: {integrity: sha512-44yam5+t1I9v09hWBYO+ezV88+mb9Se2BjgERtzB/68+0mGeTfFkjBeDBe2y+ZdiPpeO2rhevhdnfrBm5mqH+Q==}
+
+  '@fontsource-variable/inter@5.2.8':
+    resolution: {integrity: sha512-kOfP2D+ykbcX/P3IFnokOhVRNoTozo5/JxhAIVYLpea/UBmCQ/YWPBfWIDuBImXX/15KH+eKh4xpEUyS2sQQGQ==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -3531,6 +3537,8 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  '@fontsource-variable/inter@5.2.8': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
