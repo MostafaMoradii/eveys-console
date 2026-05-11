@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
 import { ChargerSpecChips } from '@/components/ChargerSpecChips';
+import { TimeAgo } from '@/components/TimeAgo';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -805,7 +806,7 @@ function ConnectorDetail({
                 )}
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">
-                {c.last_changed_at ?? '—'}
+                <TimeAgo iso={c.last_changed_at} />
               </TableCell>
             </TableRow>
           ))}
