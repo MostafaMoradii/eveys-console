@@ -123,6 +123,12 @@ export const snapshotForQuery = z.union([
     // Cursor-paginated snapshot: pass back to subscribe to get the
     // next page. `null` means "you're on the last page".
     next_cursor: z.string().nullable().optional(),
+    // Page-paginated snapshot: present when the subscription used
+    // `page`/`page_size` instead of `cursor`. `total` lets the UI
+    // render "Showing 1–100 of 873" without an extra round-trip.
+    page: z.number().int().positive().optional(),
+    page_size: z.number().int().positive().optional(),
+    total: z.number().int().nonnegative().optional(),
   }),
   z.object({ kind: z.literal('charge-point'), row: chargePointSummary }),
   z.object({ kind: z.literal('transactions-active'), rows: z.array(transactionSummary) }),

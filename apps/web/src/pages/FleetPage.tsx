@@ -73,19 +73,15 @@ export function FleetPage() {
   }, [savedView]);
   const view: ViewMode = isPhone ? 'grid' : savedView;
 
-  // Server-side filters — pushed into the subscription params.
+  // Server-side filters — pushed into the subscription params so they
+  // cut the whole device set, not just the loaded page. The server
+  // accepts `online`, `vendor`, `last_status`, `cp_id_contains`.
   const [onlineFilter, setOnlineFilter] = useState<OnlineFilter>('all');
   const [vendorFilter, setVendorFilter] = useState<string>('');
-  const [pageSize, setPageSize] = useState<number>(100);
-  // Cursor stack so Previous can pop. The server's pagination is
-  // forward-only (cursor-based, no total), so we record where each
-  // page started.
-  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
-  const currentCursor = cursorStack[cursorStack.length - 1] ?? null;
-
-  // Client-side filters — applied to the loaded page only.
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<(typeof STATUSES)[number]>('all');
+  const [pageSize, setPageSize] = useState<number>(100);
+  const [page, setPage] = useState<number>(1);
 
   // `faultsOnly` mirrors the `?faults=1` search param so the
   // SystemPage Faults tile can deep-link straight to a filtered view
@@ -106,28 +102,48 @@ export function FleetPage() {
     });
   };
 
+  // Debounce the typed search box so each keystroke doesn't re-
+  // subscribe. The committed value is what flows to the server as
+  // `cp_id_contains`.
+  const [searchCommitted, setSearchCommitted] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearchCommitted(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Any server-side filter change invalidates the current page — go
+  // back to page 1 so the operator doesn't end up looking at an empty
+  // page that exists only in the previous filter set.
+  useEffect(() => {
+    setPage(1);
+  }, [onlineFilter, vendorFilter, statusFilter, searchCommitted, pageSize]);
+
   // Build subscription params. Re-subscribes when any of these change
   // (use-subscription stringifies params and uses that as a dep).
   const subParams = useMemo<Record<string, string | number | boolean>>(() => {
-    const p: Record<string, string | number | boolean> = { limit: pageSize };
+    const p: Record<string, string | number | boolean> = { page, page_size: pageSize };
     if (onlineFilter === 'online') p.online = true;
     if (onlineFilter === 'offline') p.online = false;
     if (vendorFilter.trim()) p.vendor = vendorFilter.trim();
-    if (currentCursor) p.cursor = currentCursor;
+    if (statusFilter !== 'all') p.last_status = statusFilter;
+    if (searchCommitted) p.cp_id_contains = searchCommitted;
     return p;
-  }, [onlineFilter, vendorFilter, pageSize, currentCursor]);
+  }, [onlineFilter, vendorFilter, statusFilter, searchCommitted, pageSize, page]);
 
   const sub = useSubscription('charge-points', subParams);
 
-  // Apply the latest delta on top of the snapshot. Server-side
-  // filters keep the page focused; client-side filters (search,
-  // status) cut further within the loaded page.
-  const { allRows, nextCursor } = useMemo<{
+  // Apply the latest delta on top of the snapshot. Filtering happens
+  // server-side; the only client-side cut left is the faults-only
+  // toggle, applied below. `total` / `serverPageSize` come from the
+  // gateway's page-mode response and drive the "Showing N–M of T"
+  // line in the footer.
+  const { allRows, total, serverPageSize } = useMemo<{
     allRows: ChargePointSummary[];
-    nextCursor: string | null;
+    total: number | null;
+    serverPageSize: number | null;
   }>(() => {
     if (!sub.snapshot || sub.snapshot.kind !== 'charge-points') {
-      return { allRows: [], nextCursor: null };
+      return { allRows: [], total: null, serverPageSize: null };
     }
     const byId = new Map<string, ChargePointSummary>(sub.snapshot.rows.map((r) => [r.cp_id, r]));
     if (sub.lastDelta && sub.lastDelta.kind === 'charge-points') {
@@ -137,7 +153,8 @@ export function FleetPage() {
     }
     return {
       allRows: Array.from(byId.values()).sort((a, b) => a.cp_id.localeCompare(b.cp_id)),
-      nextCursor: 'next_cursor' in sub.snapshot ? (sub.snapshot.next_cursor ?? null) : null,
+      total: typeof sub.snapshot.total === 'number' ? sub.snapshot.total : null,
+      serverPageSize: typeof sub.snapshot.page_size === 'number' ? sub.snapshot.page_size : null,
     };
   }, [sub.snapshot, sub.lastDelta]);
 
@@ -148,31 +165,14 @@ export function FleetPage() {
     [allRows],
   );
 
+  // Only the faults-only toggle filters client-side now — it's a
+  // computed predicate over per-connector error codes that the
+  // gateway list endpoint doesn't expose directly. Search, status,
+  // online and vendor are all server-side.
   const rows = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return allRows.filter((r) => {
-      if (term) {
-        const haystack = (
-          (r.cp_id ?? '') +
-          ' ' +
-          (r.vendor ?? '') +
-          ' ' +
-          (r.model ?? '') +
-          ' ' +
-          (r.serial_number ?? '')
-        ).toLowerCase();
-        if (!haystack.includes(term)) return false;
-      }
-      if (statusFilter !== 'all' && r.last_status !== statusFilter) return false;
-      if (faultsOnly && chargePointFaultLevel(r) === 'ok') return false;
-      return true;
-    });
-  }, [allRows, search, statusFilter, faultsOnly]);
-
-  const onApplyFilters = () => {
-    // Any server-side filter change resets the cursor stack to page 1.
-    setCursorStack([null]);
-  };
+    if (!faultsOnly) return allRows;
+    return allRows.filter((r) => chargePointFaultLevel(r) !== 'ok');
+  }, [allRows, faultsOnly]);
 
   if (sub.error) {
     return (
@@ -196,8 +196,8 @@ export function FleetPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">
-            Charge points — {rows.length}
-            {rows.length !== allRows.length ? ` of ${allRows.length}` : ''} shown
+            Charge points
+            {total !== null ? ` — ${total} total` : ''}
           </h2>
           <p className="text-sm text-muted-foreground">
             Live; updates on every BootNotification and StatusNotification.
@@ -212,13 +212,9 @@ export function FleetPage() {
       <FilterBar
         isPhone={isPhone}
         onlineFilter={onlineFilter}
-        onOnlineChange={(v) => {
-          setOnlineFilter(v);
-          onApplyFilters();
-        }}
+        onOnlineChange={setOnlineFilter}
         vendorFilter={vendorFilter}
         onVendorChange={setVendorFilter}
-        onVendorCommit={onApplyFilters}
         knownVendors={knownVendors}
         statusFilter={statusFilter}
         onStatusChange={setStatusFilter}
@@ -232,15 +228,11 @@ export function FleetPage() {
 
       <Pagination
         pageSize={pageSize}
-        onPageSizeChange={(n) => {
-          setPageSize(n);
-          onApplyFilters();
-        }}
-        canGoBack={cursorStack.length > 1}
-        onBack={() => setCursorStack((s) => s.slice(0, -1))}
-        canGoNext={!!nextCursor}
-        onNext={() => (nextCursor ? setCursorStack((s) => [...s, nextCursor]) : undefined)}
-        pageNumber={cursorStack.length}
+        onPageSizeChange={setPageSize}
+        page={page}
+        onPageChange={setPage}
+        total={total}
+        serverPageSize={serverPageSize}
         loadedRowCount={rows.length}
       />
     </div>
@@ -253,7 +245,6 @@ interface FilterBarProps {
   onOnlineChange: (v: OnlineFilter) => void;
   vendorFilter: string;
   onVendorChange: (v: string) => void;
-  onVendorCommit: () => void;
   knownVendors: string[];
   statusFilter: (typeof STATUSES)[number];
   onStatusChange: (v: (typeof STATUSES)[number]) => void;
@@ -319,7 +310,6 @@ function FilterFields({
   onOnlineChange,
   vendorFilter,
   onVendorChange,
-  onVendorCommit,
   knownVendors,
   statusFilter,
   onStatusChange,
@@ -332,13 +322,13 @@ function FilterFields({
   const fieldFull = stretch ? 'w-full' : '';
   return (
     <>
-      <FilterField label="Search" hint="cp_id, vendor, model, serial" stretch={stretch}>
+      <FilterField label="cp_id search" hint="server-side · substring" stretch={stretch}>
         <div className={cn('relative', fieldFull)}>
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => onSearchChange(e.currentTarget.value)}
-            placeholder="filter loaded page…"
+            placeholder="e.g. 617b5675"
             className={cn('h-9 pl-8', stretch ? 'w-full' : 'w-[260px]')}
           />
         </div>
@@ -356,15 +346,11 @@ function FilterFields({
         </Select>
       </FilterField>
 
-      <FilterField label="Vendor" hint="server-side" stretch={stretch}>
+      <FilterField label="Vendor" hint="server-side · exact match" stretch={stretch}>
         <Input
           list="vendor-options"
           value={vendorFilter}
           onChange={(e) => onVendorChange(e.currentTarget.value)}
-          onBlur={onVendorCommit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') onVendorCommit();
-          }}
           placeholder="any"
           className={cn('h-9', stretch ? 'w-full' : 'w-[160px]')}
         />
@@ -375,7 +361,7 @@ function FilterFields({
         </datalist>
       </FilterField>
 
-      <FilterField label="Status" hint="loaded page" stretch={stretch}>
+      <FilterField label="Status" hint="server-side" stretch={stretch}>
         <Select
           value={statusFilter}
           onChange={(e) => onStatusChange(e.currentTarget.value as (typeof STATUSES)[number])}
@@ -389,7 +375,7 @@ function FilterFields({
         </Select>
       </FilterField>
 
-      <FilterField label="Faults" hint="status=Faulted or error_code≠NoError" stretch={stretch}>
+      <FilterField label="Faults" hint="loaded page" stretch={stretch}>
         <Button
           variant={faultsOnly ? 'default' : 'outline'}
           size="sm"
@@ -847,27 +833,42 @@ function ConnectorDetail({
 interface PaginationProps {
   pageSize: number;
   onPageSizeChange: (n: number) => void;
-  canGoBack: boolean;
-  onBack: () => void;
-  canGoNext: boolean;
-  onNext: () => void;
-  pageNumber: number;
-  /** Number of rows currently rendered (post client-side filters).
-   *  Shown alongside the page number so the operator has a concrete
-   *  count rather than just "Page N" with no scale. */
+  page: number;
+  onPageChange: (n: number) => void;
+  /** Server-reported total row count under the current filter set.
+   *  `null` while the first snapshot is still loading. */
+  total: number | null;
+  /** Server-echoed page_size from the snapshot, used to compute the
+   *  pageCount + 1-based row range. Falls back to the local
+   *  `pageSize` when the snapshot omits it (cursor-mode legacy). */
+  serverPageSize: number | null;
+  /** Rows currently rendered after the faults-only toggle. */
   loadedRowCount: number;
 }
 
 function Pagination({
   pageSize,
   onPageSizeChange,
-  canGoBack,
-  onBack,
-  canGoNext,
-  onNext,
-  pageNumber,
+  page,
+  onPageChange,
+  total,
+  serverPageSize,
   loadedRowCount,
 }: PaginationProps) {
+  const effectivePageSize = serverPageSize ?? pageSize;
+  const pageCount =
+    total !== null && effectivePageSize > 0
+      ? Math.max(1, Math.ceil(total / effectivePageSize))
+      : null;
+  const firstRow = total === 0 ? 0 : (page - 1) * effectivePageSize + 1;
+  const lastRow =
+    total !== null
+      ? Math.min(total, (page - 1) * effectivePageSize + loadedRowCount)
+      : (page - 1) * effectivePageSize + loadedRowCount;
+
+  const canGoBack = page > 1;
+  const canGoNext = pageCount !== null ? page < pageCount : loadedRowCount >= effectivePageSize;
+
   // Stacks vertically below `sm` so each row gets enough horizontal
   // space; horizontal at sm+ to keep the desktop layout compact.
   return (
@@ -885,15 +886,39 @@ function Pagination({
           <option value="500">500</option>
         </Select>
       </div>
-      <div className="flex items-center justify-between gap-2 sm:justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
         <span>
-          Showing {loadedRowCount} {loadedRowCount === 1 ? 'row' : 'rows'} · Page {pageNumber}
+          {total !== null ? (
+            <>
+              Showing{' '}
+              <span className="font-medium text-foreground">{firstRow.toLocaleString()}</span>–
+              <span className="font-medium text-foreground">{lastRow.toLocaleString()}</span> of{' '}
+              <span className="font-medium text-foreground">{total.toLocaleString()}</span>
+            </>
+          ) : (
+            <>
+              Showing {loadedRowCount} {loadedRowCount === 1 ? 'row' : 'rows'}
+            </>
+          )}
+          {' · Page '}
+          <span className="font-medium text-foreground">{page}</span>
+          {pageCount !== null ? ` of ${pageCount.toLocaleString()}` : ''}
         </span>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            onClick={onBack}
+            onClick={() => onPageChange(1)}
+            disabled={!canGoBack}
+            className="h-9 sm:h-7"
+            aria-label="First page"
+          >
+            « First
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(page - 1)}
             disabled={!canGoBack}
             className="h-9 sm:h-7"
           >
@@ -902,12 +927,24 @@ function Pagination({
           <Button
             variant="outline"
             size="sm"
-            onClick={onNext}
+            onClick={() => onPageChange(page + 1)}
             disabled={!canGoNext}
             className="h-9 sm:h-7"
           >
             Next <ChevronRight className="h-3.5 w-3.5" />
           </Button>
+          {pageCount !== null ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(pageCount)}
+              disabled={page >= pageCount}
+              className="h-9 sm:h-7"
+              aria-label="Last page"
+            >
+              Last »
+            </Button>
+          ) : null}
         </div>
       </div>
     </div>

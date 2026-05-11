@@ -40,14 +40,33 @@ interface QueryResolver {
 
 const chargePoints: QueryResolver = {
   async snapshot(params, gateway) {
-    const filter: { online?: boolean; vendor?: string; limit?: number; cursor?: string } = {};
+    const filter: {
+      online?: boolean;
+      vendor?: string;
+      last_status?: string;
+      cp_id_prefix?: string;
+      cp_id_contains?: string;
+      limit?: number;
+      cursor?: string;
+      page?: number;
+      page_size?: number;
+    } = {};
     if (typeof params.online === 'boolean') filter.online = params.online;
     if (typeof params.vendor === 'string') filter.vendor = params.vendor;
+    if (typeof params.last_status === 'string') filter.last_status = params.last_status;
+    if (typeof params.cp_id_prefix === 'string') filter.cp_id_prefix = params.cp_id_prefix;
+    if (typeof params.cp_id_contains === 'string') filter.cp_id_contains = params.cp_id_contains;
     if (typeof params.limit === 'number') filter.limit = params.limit;
     if (typeof params.cursor === 'string') filter.cursor = params.cursor;
+    if (typeof params.page === 'number') filter.page = params.page;
+    if (typeof params.page_size === 'number') filter.page_size = params.page_size;
+    // The gateway returns a `pagination` block in page-mode and a
+    // `next_cursor` field in cursor-mode (never both). Surface both
+    // to the UI so the same snapshot kind backs either flow.
     const data = (await gateway.listChargePoints(filter)) as {
       charge_points: ChargePointSummary[];
       next_cursor?: string | null;
+      pagination?: { page?: number; page_size?: number; total?: number };
     };
     const cursor = `gw:cp-list:${Date.now()}`;
     const snapshot: SnapshotForQuery = {
@@ -55,6 +74,13 @@ const chargePoints: QueryResolver = {
       rows: data.charge_points,
       next_cursor: data.next_cursor ?? null,
     };
+    if (data.pagination) {
+      if (typeof data.pagination.page === 'number') snapshot.page = data.pagination.page;
+      if (typeof data.pagination.page_size === 'number') {
+        snapshot.page_size = data.pagination.page_size;
+      }
+      if (typeof data.pagination.total === 'number') snapshot.total = data.pagination.total;
+    }
     return { cursor, snapshot };
   },
   async deltasFromEvent(params, event, gateway) {
@@ -74,6 +100,17 @@ const chargePoints: QueryResolver = {
       return [];
     }
 
+    // The gateway sources `connectors[]` from ClickHouse (`cp_status`),
+    // which the ingestor fills in batches. Right after a charger emits
+    // a StatusNotification the ingestor hasn't necessarily flushed
+    // yet, so the re-fetch can come back with stale (or empty) per-
+    // connector state. Patch the just-arrived event into the row so
+    // the UI shows the fresh value immediately; the next refetch will
+    // confirm it once ClickHouse catches up.
+    if (event.topic === 'cp.status') {
+      row = mergeConnectorFromStatusEvent(row, event);
+    }
+
     if (typeof params.online === 'boolean' && row.online !== params.online) {
       return [
         {
@@ -90,6 +127,38 @@ const chargePoints: QueryResolver = {
         },
       ];
     }
+    if (typeof params.last_status === 'string' && row.last_status !== params.last_status) {
+      return [
+        {
+          cursor: event.cursor,
+          delta: { kind: 'charge-points', op: 'remove', cp_id: row.cp_id },
+        },
+      ];
+    }
+    if (
+      typeof params.cp_id_prefix === 'string' &&
+      params.cp_id_prefix.length > 0 &&
+      !row.cp_id.startsWith(params.cp_id_prefix)
+    ) {
+      return [
+        {
+          cursor: event.cursor,
+          delta: { kind: 'charge-points', op: 'remove', cp_id: row.cp_id },
+        },
+      ];
+    }
+    if (
+      typeof params.cp_id_contains === 'string' &&
+      params.cp_id_contains.length > 0 &&
+      !row.cp_id.toLowerCase().includes(params.cp_id_contains.toLowerCase())
+    ) {
+      return [
+        {
+          cursor: event.cursor,
+          delta: { kind: 'charge-points', op: 'remove', cp_id: row.cp_id },
+        },
+      ];
+    }
     return [
       {
         cursor: event.cursor,
@@ -98,6 +167,41 @@ const chargePoints: QueryResolver = {
     ];
   },
 };
+
+// Apply a cp.status event's per-connector payload to the row so the
+// UI doesn't have to wait for the gateway's ClickHouse-backed
+// connectors[] to catch up. Idempotent: if the row already carries a
+// newer entry for the same connector, the event is dropped.
+function mergeConnectorFromStatusEvent(
+  row: ChargePointSummary,
+  event: KafkaEvent,
+): ChargePointSummary {
+  const p = event.payload as Record<string, unknown> | null;
+  if (!p || typeof p !== 'object') return row;
+  const connectorId = Number(p.connectorId ?? NaN);
+  if (!Number.isFinite(connectorId)) return row;
+  const status = typeof p.status === 'string' ? p.status : null;
+  if (!status) return row;
+  const reportedAt =
+    typeof p.chargerReportedAt === 'string' && p.chargerReportedAt
+      ? p.chargerReportedAt
+      : event.timestamp.toISOString();
+  const errorCode = typeof p.errorCode === 'string' && p.errorCode !== '' ? p.errorCode : null;
+
+  const existing = row.connectors.find((c) => c.connector_id === connectorId);
+  if (existing && existing.last_changed_at && existing.last_changed_at >= reportedAt) {
+    return row;
+  }
+  const next = row.connectors.filter((c) => c.connector_id !== connectorId);
+  next.push({
+    connector_id: connectorId,
+    status,
+    error_code: errorCode,
+    last_changed_at: reportedAt,
+  });
+  next.sort((a, b) => a.connector_id - b.connector_id);
+  return { ...row, connectors: next };
+}
 
 const chargePoint: QueryResolver = {
   async snapshot(params, gateway) {

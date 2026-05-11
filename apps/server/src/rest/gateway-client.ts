@@ -83,13 +83,28 @@ export class GatewayClient {
   }
 
   listChargePoints(
-    params: { online?: boolean; vendor?: string; limit?: number; cursor?: string } = {},
+    params: {
+      online?: boolean;
+      vendor?: string;
+      last_status?: string;
+      cp_id_prefix?: string;
+      cp_id_contains?: string;
+      limit?: number;
+      cursor?: string;
+      page?: number;
+      page_size?: number;
+    } = {},
   ) {
     const qs = new URLSearchParams();
     if (params.online !== undefined) qs.set('online', String(params.online));
     if (params.vendor) qs.set('vendor', params.vendor);
+    if (params.last_status) qs.set('last_status', params.last_status);
+    if (params.cp_id_prefix) qs.set('cp_id_prefix', params.cp_id_prefix);
+    if (params.cp_id_contains) qs.set('cp_id_contains', params.cp_id_contains);
     if (params.limit) qs.set('limit', String(params.limit));
     if (params.cursor) qs.set('cursor', params.cursor);
+    if (params.page) qs.set('page', String(params.page));
+    if (params.page_size) qs.set('page_size', String(params.page_size));
     const suffix = qs.toString() ? `?${qs}` : '';
     return this.json<unknown>('list_charge_points', `/api/v1/charge-points${suffix}`);
   }
