@@ -94,7 +94,9 @@ vi.mock('@/components/ManagedRulesPanel', () => ({
 }));
 vi.mock('@/components/RecommendedRulesPanel', () => ({
   RecommendedRulesPanel: () => <div data-testid="recommended-rules-panel">stub</div>,
-  RulesDocsStrip: () => <div data-testid="rules-docs-strip">stub</div>,
+}));
+vi.mock('@/components/AlertmanagerDocsStrip', () => ({
+  AlertmanagerDocsStrip: () => <div data-testid="alertmanager-docs-strip">stub</div>,
 }));
 
 import { AlertsPage } from '@/pages/AlertsPage';
@@ -131,6 +133,14 @@ describe('AlertsPage', () => {
     expect(screen.getByTestId('tab-silences')).toBeInTheDocument();
     expect(screen.getByTestId('tab-channels')).toBeInTheDocument();
     expect(screen.getByTestId('tab-rules')).toBeInTheDocument();
+  });
+
+  it('renders the Alertmanager docs strip above the tabs', () => {
+    renderPage();
+    const docs = screen.getByTestId('alertmanager-docs-strip');
+    const tabs = screen.getByTestId('alerts-tabs');
+    // compareDocumentPosition: FOLLOWING means tabs come after docs.
+    expect(docs.compareDocumentPosition(tabs)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('defaults to the Firing tab when no ?tab is set', () => {
