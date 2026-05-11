@@ -13,6 +13,7 @@ import { ActiveSilencesPanel } from '@/components/ActiveSilencesPanel';
 import { ChannelsPanel } from '@/components/ChannelsPanel';
 import { FiringAlertsPanel } from '@/components/FiringAlertsPanel';
 import { ManagedRulesPanel } from '@/components/ManagedRulesPanel';
+import { RecommendedRulesPanel, RulesDocsStrip } from '@/components/RecommendedRulesPanel';
 import { RulesPanel } from '@/components/RulesPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFiringAlerts } from '@/hooks/use-firing-alerts';
@@ -106,6 +107,8 @@ export function AlertsPage() {
         </TabsContent>
 
         <TabsContent value="rules" className="space-y-4">
+          <RulesDocsStrip />
+          <RecommendedRulesPanel />
           <ManagedRulesPanel />
           <RulesPanel />
         </TabsContent>

@@ -55,6 +55,14 @@ type DialogState =
   | { kind: 'add'; type: Channel['type'] }
   | { kind: 'edit'; channel: Channel };
 
+// Mirrors the server's CHANNEL_NAME_RE in apps/server/src/routes/sys-alerts.ts.
+// Used client-side to gate the submit button so the operator sees the
+// rule before they see a 400 toast.
+const CHANNEL_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/i;
+function isValidChannelName(s: string): boolean {
+  return CHANNEL_NAME_RE.test(s.trim());
+}
+
 export function ChannelsPanel() {
   const { channels, defaultChannel, loading, error } = useChannels();
   const [dialog, setDialog] = useState<DialogState>({ kind: 'closed' });
@@ -415,7 +423,7 @@ function SlackForm({
   const [title, setTitle] = useState(initial?.title ?? '');
 
   const submit = useChannelSubmit(isEdit, onClose);
-  const valid = name.trim() && apiUrl.trim() && channel.trim();
+  const valid = isValidChannelName(name) && apiUrl.trim() && channel.trim();
 
   return (
     <FormShell
@@ -436,7 +444,7 @@ function SlackForm({
     >
       <Field
         label="Name"
-        hint="Lowercase letters, digits, - or _"
+        hint="lowercase / digits / -_ only · max 63 chars · no spaces or @"
         disabled={isEdit}
         value={name}
         onChange={setName}
@@ -484,7 +492,7 @@ function EmailForm({
   const [tls, setTls] = useState(initial?.require_tls ?? true);
 
   const submit = useChannelSubmit(isEdit, onClose);
-  const valid = name.trim() && to.trim() && from.trim() && smarthost.trim();
+  const valid = isValidChannelName(name) && to.trim() && from.trim() && smarthost.trim();
 
   return (
     <FormShell
@@ -513,6 +521,7 @@ function EmailForm({
         onChange={setName}
         testId="email-name"
         placeholder="oncall-email"
+        hint="lowercase / digits / -_ only · max 63 chars · no spaces or @"
       />
       <Field
         label="To"
@@ -568,7 +577,7 @@ function WebhookForm({
   const [pass, setPass] = useState(initial?.http_basic_auth_password ?? '');
 
   const submit = useChannelSubmit(isEdit, onClose);
-  const valid = name.trim() && url.trim();
+  const valid = isValidChannelName(name) && url.trim();
 
   return (
     <FormShell
@@ -594,6 +603,7 @@ function WebhookForm({
         onChange={setName}
         testId="webhook-name"
         placeholder="pagerduty-bridge"
+        hint="lowercase / digits / -_ only · max 63 chars · no spaces or @"
       />
       <Field
         label="URL"
