@@ -1,21 +1,24 @@
 // Page-lifetime ring buffer of OCPP commands the operator sent and
-// the charger's responses. Replaces the "Command accepted by charger"
-// toast: the transcript is the feedback. The hook returns a `send`
-// helper with the same signature CommandsDrawer used, plus an
-// `entries` array the transcript pane renders.
+// the charger's responses. The transcript is the feedback for a
+// command (replaces the "Command accepted by charger" toast which
+// hid the actual response).
 //
-// State model:
-//   - Each entry is identified by a monotonic counter so the UI can
-//     key React rows without relying on timestamps (which can repeat
-//     within the same millisecond on a fast click).
-//   - On `send(method, params)`, append a `pending` entry and the
-//     return value of `client.rpc(...)` populates `response` /
-//     `status` / `elapsed_ms` / `phase` when it resolves. RPC reject
-//     populates `error` instead.
-//   - `clear()` empties the list; `pause()` / `resume()` buffer
-//     incoming completions and apply them on resume.
+// Persistence model — IMPORTANT:
+//   The ring is held in a module-level Map keyed by cp_id, NOT in
+//   React component state. That way switching between the Commands /
+//   Events / Connectors tabs on the same charger (or navigating
+//   away to /inspect/charge-points and back) keeps the transcript
+//   intact for the session lifetime. The map is process-local; a
+//   hard refresh or sign-out drops it — this is session state, not
+//   a server log. Each cp_id has its own ring so a different
+//   charger doesn't see another's history.
+//
+// Implementation: each store is a small subscription target. The
+// `useCommandTranscript` hook attaches via `useSyncExternalStore`
+// and re-renders on every snapshot bump. The store mutates in
+// place and notifies listeners.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 import type { ConsoleClient } from '@/api/ws-client';
 
@@ -60,147 +63,200 @@ export interface UseCommandTranscript {
     onResult?: (result: unknown) => void,
   ) => Promise<void>;
   /** Method names currently in-flight; the forms use this to disable
-   *  the Send button while a request is pending. Mirrors the legacy
-   *  `busy` string from CommandsDrawer. */
+   *  the Send button while a request is pending. */
   inFlight: Set<string>;
   clear: () => void;
   pause: () => void;
   resume: () => void;
 }
 
-interface InternalState {
+// ---------------------------------------------------------------------------
+// Per-cp_id store
+// ---------------------------------------------------------------------------
+
+interface Snapshot {
   entries: TranscriptEntry[];
   inFlight: Set<string>;
+  paused: boolean;
+  bufferedCount: number;
 }
 
-const INITIAL_STATE: InternalState = {
-  entries: [],
-  inFlight: new Set(),
-};
+class TranscriptStore {
+  private entries: TranscriptEntry[] = [];
+  private inFlight = new Set<string>();
+  private paused = false;
+  /** Buffered completion patches while paused, keyed by entry id. */
+  private pauseBuffer = new Map<number, Partial<TranscriptEntry>>();
+  private nextId = 1;
+  private listeners = new Set<() => void>();
+  /** Snapshot reference — replaced (not mutated) on every change so
+   *  React's `useSyncExternalStore` sees a new identity. */
+  private snapshot: Snapshot = {
+    entries: [],
+    inFlight: new Set(),
+    paused: false,
+    bufferedCount: 0,
+  };
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  getSnapshot(): Snapshot {
+    return this.snapshot;
+  }
+
+  private notify(): void {
+    this.snapshot = {
+      entries: this.entries.slice(),
+      inFlight: new Set(this.inFlight),
+      paused: this.paused,
+      bufferedCount: this.pauseBuffer.size,
+    };
+    for (const l of this.listeners) l();
+  }
+
+  begin(method: string, request: Record<string, unknown>): number {
+    const id = this.nextId++;
+    const startedAt = new Date().toISOString();
+    const entry: TranscriptEntry = {
+      id,
+      startedAt,
+      method,
+      request,
+      phase: 'pending',
+      outcome: 'pending',
+    };
+    this.entries = [entry, ...this.entries].slice(0, RING_CAP);
+    this.inFlight.add(method);
+    this.notify();
+    return id;
+  }
+
+  complete(id: number, method: string, patch: Partial<TranscriptEntry>): void {
+    if (this.paused) {
+      // Buffer the patch so the visible entry stays "pending" until
+      // Resume; the form button still re-enables since the method is
+      // no longer in-flight.
+      this.pauseBuffer.set(id, patch);
+      this.dropMethodIfDone(id, method);
+      this.notify();
+      return;
+    }
+    this.applyPatch(id, patch);
+    this.dropMethodIfDone(id, method);
+    this.notify();
+  }
+
+  private applyPatch(id: number, patch: Partial<TranscriptEntry>): void {
+    this.entries = this.entries.map((e) => (e.id === id ? { ...e, ...patch } : e));
+  }
+
+  private dropMethodIfDone(completedId: number, method: string): void {
+    const stillPending = this.entries.some(
+      (e) => e.id !== completedId && e.method === method && e.phase === 'pending',
+    );
+    if (!stillPending) this.inFlight.delete(method);
+  }
+
+  clear(): void {
+    this.entries = [];
+    this.pauseBuffer.clear();
+    this.notify();
+  }
+
+  pause(): void {
+    if (this.paused) return;
+    this.paused = true;
+    this.notify();
+  }
+
+  resume(): void {
+    if (!this.paused) return;
+    this.paused = false;
+    if (this.pauseBuffer.size > 0) {
+      for (const [id, patch] of this.pauseBuffer) {
+        this.applyPatch(id, patch);
+      }
+      this.pauseBuffer.clear();
+    }
+    this.notify();
+  }
+}
+
+/** Module-level registry. Survives component unmount / remount for
+ *  the session lifetime. Cleared on page reload (browser drops the
+ *  module). */
+const STORES = new Map<string, TranscriptStore>();
+
+function getStore(cpId: string): TranscriptStore {
+  let s = STORES.get(cpId);
+  if (!s) {
+    s = new TranscriptStore();
+    STORES.set(cpId, s);
+  }
+  return s;
+}
+
+/** Test-only: drop every store. Vitest runs share a worker, so the
+ *  module-level map needs to be wiped between specs to avoid one
+ *  test leaking entries into the next. */
+export function __resetTranscriptStoresForTests(): void {
+  STORES.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export function useCommandTranscript(
   client: Pick<ConsoleClient, 'rpc'>,
   cpId: string,
 ): UseCommandTranscript {
-  const [state, setState] = useState<InternalState>(INITIAL_STATE);
-  const [paused, setPaused] = useState(false);
-  // Pending-completion buffer: when paused, completions queue here
-  // and apply on resume. Keyed by entry id so a second send for the
-  // same method doesn't clobber the first.
-  const pauseBufferRef = useRef<Map<number, Partial<TranscriptEntry>>>(new Map());
-  const nextIdRef = useRef(1);
-
-  const applyCompletion = useCallback(
-    (id: number, method: string, patch: Partial<TranscriptEntry>) => {
-      setState((prev) => ({
-        ...prev,
-        entries: prev.entries.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-        inFlight: dropMethodIfNoOtherPending(prev, id, method),
-      }));
-    },
-    [],
+  const store = getStore(cpId);
+  const snap = useSyncExternalStore(
+    (l) => store.subscribe(l),
+    () => store.getSnapshot(),
+    () => store.getSnapshot(),
   );
 
   const send = useCallback(
     async (method: string, params: Record<string, unknown>, onResult?: (r: unknown) => void) => {
-      const id = nextIdRef.current++;
-      const startedAt = new Date().toISOString();
-      const startMs = performance.now();
       const request = { cp_id: cpId, ...params };
-      setState((prev) => {
-        const nextEntries = [
-          {
-            id,
-            startedAt,
-            method,
-            request,
-            phase: 'pending' as TranscriptPhase,
-            outcome: 'pending' as TranscriptOutcome,
-          },
-          ...prev.entries,
-        ];
-        const trimmed =
-          nextEntries.length > RING_CAP ? nextEntries.slice(0, RING_CAP) : nextEntries;
-        const inFlight = new Set(prev.inFlight);
-        inFlight.add(method);
-        return { entries: trimmed, inFlight };
-      });
-
+      const id = store.begin(method, request);
+      const startMs = performance.now();
       try {
         const response = await client.rpc(method, request);
         const elapsedMs = Math.round(performance.now() - startMs);
         const { status, outcome } = describeResponse(response);
-        const patch: Partial<TranscriptEntry> = {
-          phase: 'ok',
-          response,
-          status,
-          outcome,
-          elapsedMs,
-        };
-        if (paused) {
-          pauseBufferRef.current.set(id, patch);
-          // Drop the method from inFlight even while paused — the
-          // form should re-enable so the operator can fire a second
-          // command without waiting for Resume.
-          setState((prev) => ({
-            ...prev,
-            inFlight: dropMethodIfNoOtherPending(prev, id, method),
-          }));
-        } else {
-          applyCompletion(id, method, patch);
-        }
+        store.complete(id, method, { phase: 'ok', response, status, outcome, elapsedMs });
         onResult?.(response);
       } catch (err) {
         const elapsedMs = Math.round(performance.now() - startMs);
         const message = err instanceof Error ? err.message : 'rpc failed';
-        const patch: Partial<TranscriptEntry> = {
+        store.complete(id, method, {
           phase: 'error',
           outcome: 'error',
           error: message,
           status: message,
           elapsedMs,
-        };
-        if (paused) {
-          pauseBufferRef.current.set(id, patch);
-          setState((prev) => ({
-            ...prev,
-            inFlight: dropMethodIfNoOtherPending(prev, id, method),
-          }));
-        } else {
-          applyCompletion(id, method, patch);
-        }
+        });
       }
     },
-    [client, cpId, paused, applyCompletion],
+    [client, cpId, store],
   );
 
-  const clear = useCallback(() => {
-    setState((prev) => ({ ...prev, entries: [] }));
-    pauseBufferRef.current.clear();
-  }, []);
-
-  const pause = useCallback(() => setPaused(true), []);
-
-  const resume = useCallback(() => {
-    const buffered = pauseBufferRef.current;
-    pauseBufferRef.current = new Map();
-    setPaused(false);
-    if (buffered.size === 0) return;
-    setState((prev) => ({
-      ...prev,
-      entries: prev.entries.map((e) => {
-        const patch = buffered.get(e.id);
-        return patch ? { ...e, ...patch } : e;
-      }),
-    }));
-  }, []);
+  const clear = useCallback(() => store.clear(), [store]);
+  const pause = useCallback(() => store.pause(), [store]);
+  const resume = useCallback(() => store.resume(), [store]);
 
   return {
-    entries: state.entries,
-    paused,
-    bufferedCount: pauseBufferRef.current.size,
+    entries: snap.entries,
+    inFlight: snap.inFlight,
+    paused: snap.paused,
+    bufferedCount: snap.bufferedCount,
     send,
-    inFlight: state.inFlight,
     clear,
     pause,
     resume,
@@ -229,24 +285,6 @@ function describeResponse(response: unknown): { status: string; outcome: Transcr
     return { status: raw, outcome: 'rejected' };
   }
   // Occupied / Unavailable / Faulted / NotImplemented / NotSupported / Failed
-  // — all soft-rejects that mean "the charger said no, but not a hard error".
+  // — soft-rejects that mean "the charger said no, but not a hard error".
   return { status: raw, outcome: 'soft-reject' };
-}
-
-/** Compute the next `inFlight` set after an entry completes. A second
- *  pending entry for the same method should keep the method in the
- *  set; only drop it when no other pending entry uses it. */
-function dropMethodIfNoOtherPending(
-  prev: InternalState,
-  completedId: number,
-  method: string | undefined,
-): Set<string> {
-  if (!method) return prev.inFlight;
-  const stillPending = prev.entries.some(
-    (e) => e.id !== completedId && e.method === method && e.phase === 'pending',
-  );
-  if (stillPending) return prev.inFlight;
-  const next = new Set(prev.inFlight);
-  next.delete(method);
-  return next;
 }
