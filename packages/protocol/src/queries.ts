@@ -6,6 +6,7 @@ export const queryName = z.enum([
   'transactions-active',
   'meter-history',
   'status-history',
+  'device-events',
 ]);
 export type QueryName = z.infer<typeof queryName>;
 
@@ -101,6 +102,20 @@ export const statusEvent = z.object({
 });
 export type StatusEvent = z.infer<typeof statusEvent>;
 
+// Merged per-charger event stream. Server fans the four gateway Kafka
+// topics (cp.boot, cp.status, cp.meter, tx.started) into a single
+// chronological feed for the charger detail page. The summary line is
+// pre-rendered server-side so the UI just paints it; `detail` carries
+// the structured fields for the expand-on-click panel.
+export const deviceEvent = z.object({
+  at: isoTimestamp,
+  kind: z.enum(['boot', 'status', 'meter', 'tx-started']),
+  summary: z.string(),
+  detail: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  connector_id: z.number().int().nonnegative().nullable().optional(),
+});
+export type DeviceEvent = z.infer<typeof deviceEvent>;
+
 export const snapshotForQuery = z.union([
   z.object({
     kind: z.literal('charge-points'),
@@ -113,6 +128,7 @@ export const snapshotForQuery = z.union([
   z.object({ kind: z.literal('transactions-active'), rows: z.array(transactionSummary) }),
   z.object({ kind: z.literal('meter-history'), rows: z.array(meterSample) }),
   z.object({ kind: z.literal('status-history'), rows: z.array(statusEvent) }),
+  z.object({ kind: z.literal('device-events'), rows: z.array(deviceEvent) }),
 ]);
 export type SnapshotForQuery = z.infer<typeof snapshotForQuery>;
 
@@ -132,5 +148,6 @@ export const deltaForQuery = z.union([
   }),
   z.object({ kind: z.literal('meter-history'), append: meterSample }),
   z.object({ kind: z.literal('status-history'), append: statusEvent }),
+  z.object({ kind: z.literal('device-events'), append: deviceEvent }),
 ]);
 export type DeltaForQuery = z.infer<typeof deltaForQuery>;

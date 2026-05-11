@@ -16,6 +16,7 @@
 import type {
   ChargePointSummary,
   DeltaForQuery,
+  DeviceEvent,
   MeterSample,
   QueryName,
   QueryParams,
@@ -255,12 +256,168 @@ const statusHistory: QueryResolver = {
   },
 };
 
+// Per-charger event stream. Listens to all four topics and renders
+// each into a `DeviceEvent` row for the charger detail page's live
+// feed. `cp.meter` is collapsed to one summary row per MeterValues
+// report rather than fanning out per sample — the per-sample chart
+// has its own resolver, this feed is for navigation.
+const deviceEvents: QueryResolver = {
+  async snapshot() {
+    // v1: live-tail only. The page shows "Waiting for events…" until
+    // the first delta arrives. Phase 2 can back this with a
+    // ClickHouse-fed initial page.
+    return {
+      cursor: `gw:device-events:bootstrap:${Date.now()}`,
+      snapshot: { kind: 'device-events', rows: [] },
+    };
+  },
+  async deltasFromEvent(params, event) {
+    const cpId = stringParam(params, 'cp_id');
+    if (event.cpId !== cpId) return [];
+    const p = event.payload as Record<string, unknown> | null;
+    if (!p || typeof p !== 'object') return [];
+
+    const fallbackAt = event.timestamp.toISOString();
+
+    if (event.topic === 'cp.boot') {
+      const vendor = nullableString(p.vendor);
+      const model = nullableString(p.model);
+      const firmwareVersion = nullableString(p.firmwareVersion);
+      const serialNumber = nullableString(p.serialNumber);
+      const chargePointStatus = nullableString(p.chargePointStatus);
+      // Build the summary from whatever parts are present; OCPP 1.6
+      // BootNotification only requires vendor + model, the rest can
+      // be omitted on the wire.
+      const parts = ['BootNotification'];
+      const tail = [vendor, model].filter((s): s is string => s != null).join(' ');
+      if (tail) parts.push(`— ${tail}`);
+      if (firmwareVersion) parts.push(`fw ${firmwareVersion}`);
+      const ev: DeviceEvent = {
+        at:
+          typeof p.chargerReportedAt === 'string' && p.chargerReportedAt
+            ? p.chargerReportedAt
+            : fallbackAt,
+        kind: 'boot',
+        summary: parts.join(' ').trim(),
+        detail: {
+          vendor,
+          model,
+          firmware_version: firmwareVersion,
+          serial_number: serialNumber,
+          charge_point_status: chargePointStatus,
+        },
+        connector_id: null,
+      };
+      return [{ cursor: event.cursor, delta: { kind: 'device-events', append: ev } }];
+    }
+
+    if (event.topic === 'cp.status') {
+      const connectorId = Number(p.connectorId ?? 0);
+      const status = String(p.status ?? '');
+      const errorCode = nullableString(p.errorCode);
+      const errorTail = errorCode && errorCode !== 'NoError' ? ` (${errorCode})` : '';
+      const ev: DeviceEvent = {
+        at:
+          typeof p.chargerReportedAt === 'string' && p.chargerReportedAt
+            ? p.chargerReportedAt
+            : fallbackAt,
+        kind: 'status',
+        summary: `Connector ${connectorId} → ${status}${errorTail}`,
+        detail: {
+          status: status === '' ? null : status,
+          error_code: errorCode,
+          vendor_error_code: nullableString(p.vendorErrorCode),
+          info: nullableString(p.info),
+        },
+        connector_id: connectorId,
+      };
+      return [{ cursor: event.cursor, delta: { kind: 'device-events', append: ev } }];
+    }
+
+    if (event.topic === 'cp.meter') {
+      const samplesRaw = p.sampledValues;
+      const samples = Array.isArray(samplesRaw) ? samplesRaw : [];
+      if (samples.length === 0) return [];
+      // Pick the energy register as the headline sample if present
+      // (it's the value operators care about); otherwise the first
+      // sample stands in.
+      const energy = samples.find(
+        (sv): sv is Record<string, unknown> =>
+          !!sv &&
+          typeof sv === 'object' &&
+          enumToString((sv as Record<string, unknown>).measurand) ===
+            'ENERGY_ACTIVE_IMPORT_REGISTER',
+      );
+      const firstObj = samples.find(
+        (sv): sv is Record<string, unknown> => !!sv && typeof sv === 'object',
+      );
+      const primary = energy ?? firstObj ?? null;
+      const primaryMeasurand = primary
+        ? (enumToString(primary.measurand) ?? 'Energy.Active.Import.Register')
+        : null;
+      const primaryValueRaw = primary?.value;
+      let primaryValue: number | null = null;
+      if (primaryValueRaw != null) {
+        const n = typeof primaryValueRaw === 'number' ? primaryValueRaw : Number(primaryValueRaw);
+        if (Number.isFinite(n)) primaryValue = n;
+      }
+      const primaryUnit = primary ? enumToString(primary.unit) : null;
+      const connectorId = Number(p.connectorId ?? 0);
+      const transactionId = p.transactionId != null ? Number(p.transactionId) : null;
+      const ev: DeviceEvent = {
+        at:
+          typeof p.chargerReportedAt === 'string' && p.chargerReportedAt
+            ? p.chargerReportedAt
+            : fallbackAt,
+        kind: 'meter',
+        summary: `MeterValues — ${samples.length} sample${samples.length === 1 ? '' : 's'}`,
+        detail: {
+          connector_id: connectorId,
+          transaction_id: transactionId,
+          primary_measurand: primaryMeasurand,
+          primary_value: primaryValue,
+          primary_unit: primaryUnit,
+          sample_count: samples.length,
+        },
+        connector_id: connectorId,
+      };
+      return [{ cursor: event.cursor, delta: { kind: 'device-events', append: ev } }];
+    }
+
+    if (event.topic === 'tx.started') {
+      const transactionId = Number(p.transactionId ?? 0);
+      const idTag = String(p.idTag ?? '');
+      const connectorId = Number(p.connectorId ?? 0);
+      const meterStartWh = Number(p.meterStartWh ?? 0);
+      const ev: DeviceEvent = {
+        at:
+          typeof p.chargerReportedAt === 'string' && p.chargerReportedAt
+            ? p.chargerReportedAt
+            : fallbackAt,
+        kind: 'tx-started',
+        summary: `Transaction ${transactionId} started — id_tag ${idTag}`,
+        detail: {
+          transaction_id: transactionId,
+          id_tag: idTag === '' ? null : idTag,
+          connector_id: connectorId,
+          meter_start_wh: meterStartWh,
+        },
+        connector_id: connectorId,
+      };
+      return [{ cursor: event.cursor, delta: { kind: 'device-events', append: ev } }];
+    }
+
+    return [];
+  },
+};
+
 const RESOLVERS: Record<QueryName, QueryResolver> = {
   'charge-points': chargePoints,
   'charge-point': chargePoint,
   'transactions-active': transactionsActive,
   'meter-history': meterHistory,
   'status-history': statusHistory,
+  'device-events': deviceEvents,
 };
 
 export function resolveQuery(name: QueryName): QueryResolver {
