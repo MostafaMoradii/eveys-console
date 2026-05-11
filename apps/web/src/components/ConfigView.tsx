@@ -15,10 +15,14 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import {
   clearGatewayAdminOverride,
+  fetchConsoleAdminConfig,
   fetchGatewayAdminConfig,
+  setConsoleAdminConfig,
+  clearConsoleAdminOverride,
   setGatewayAdminConfig,
   type ConfigEntry,
   type ConfigScope,
+  type ConsoleAdminConfig,
   type GatewayAdminConfig,
   type RestartImpact,
   type SysConfig,
@@ -92,12 +96,20 @@ export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigV
 
   // Gateway-only: pull the runtime-override allowlist + current
   // overrides. The Gateway tab needs both to render inline editors.
-  // The Console tab skips this query entirely (`enabled: false` when
-  // scope !== 'gateway'), so the network is identical to before.
+  // The Console tab uses its own admin query (consoleAdminQ below).
   const adminQ: UseQueryResult<GatewayAdminConfig> = useQuery({
     queryKey: ['sys-gateway-admin-config'],
     queryFn: () => fetchGatewayAdminConfig(token!),
     enabled: scope === 'gateway' && !!token,
+  });
+
+  // Console-only twin: the server returns each entry with an
+  // `overridable` flag and a list of allowlisted keys. The UI uses
+  // both to gate inline editors the same way the gateway tab does.
+  const consoleAdminQ: UseQueryResult<ConsoleAdminConfig> = useQuery({
+    queryKey: ['sys-console-admin-config'],
+    queryFn: () => fetchConsoleAdminConfig(token!),
+    enabled: scope === 'console' && !!token,
   });
 
   const entries = q.data?.entries ?? [];
@@ -228,6 +240,7 @@ export function ConfigView({ scope, title, queryKey, fetcher, filters }: ConfigV
           revealed={revealed}
           scope={scope}
           adminConfig={adminQ.data}
+          consoleAdminConfig={consoleAdminQ.data}
           configQueryKey={queryKey}
         />
       )}
@@ -244,12 +257,14 @@ function GroupedEntries({
   revealed,
   scope,
   adminConfig,
+  consoleAdminConfig,
   configQueryKey,
 }: {
   entries: ConfigEntry[];
   revealed: boolean;
   scope: ConfigScope;
   adminConfig: GatewayAdminConfig | undefined;
+  consoleAdminConfig: ConsoleAdminConfig | undefined;
   configQueryKey: string;
 }) {
   const groups: { category: string; entries: ConfigEntry[] }[] = [];
@@ -284,6 +299,7 @@ function GroupedEntries({
                 revealed={revealed}
                 scope={scope}
                 adminConfig={adminConfig}
+                consoleAdminConfig={consoleAdminConfig}
                 configQueryKey={configQueryKey}
               />
             ))}
@@ -334,12 +350,14 @@ function ConfigCard({
   revealed,
   scope,
   adminConfig,
+  consoleAdminConfig,
   configQueryKey,
 }: {
   entry: ConfigEntry;
   revealed: boolean;
   scope: ConfigScope;
   adminConfig: GatewayAdminConfig | undefined;
+  consoleAdminConfig: ConsoleAdminConfig | undefined;
   configQueryKey: string;
 }) {
   const display =
@@ -349,15 +367,27 @@ function ConfigCard({
         : '•'.repeat(8)
       : entry.value || '<empty>';
 
-  const allowlist = adminConfig?.allowlist;
-  const isAllowlisted =
+  // Gateway side: allowlist is a map of key → description.
+  // Console side: server flags each entry directly with `overridable`.
+  const gatewayAllowlist = adminConfig?.allowlist;
+  const gatewayOverrides = adminConfig?.overrides;
+  const isGatewayAllowlisted =
     scope === 'gateway' &&
-    !!allowlist &&
-    Object.prototype.hasOwnProperty.call(allowlist, entry.key);
-  const allowlistDescription = isAllowlisted ? allowlist![entry.key] : undefined;
-  const overrides = adminConfig?.overrides;
+    !!gatewayAllowlist &&
+    Object.prototype.hasOwnProperty.call(gatewayAllowlist, entry.key);
+  const isConsoleOverridable = scope === 'console' && !!entry.overridable;
+  const isAllowlisted = isGatewayAllowlisted || isConsoleOverridable;
+  const allowlistDescription = isGatewayAllowlisted
+    ? gatewayAllowlist![entry.key]
+    : entry.description;
   const hasOverride =
-    isAllowlisted && !!overrides && Object.prototype.hasOwnProperty.call(overrides, entry.key);
+    (isGatewayAllowlisted &&
+      !!gatewayOverrides &&
+      Object.prototype.hasOwnProperty.call(gatewayOverrides, entry.key)) ||
+    (isConsoleOverridable && entry.source === 'override');
+  // Avoid unused-variable warnings when one of the admin-data sources
+  // is irrelevant for the current scope.
+  void consoleAdminConfig;
 
   return (
     <Card>
@@ -407,17 +437,16 @@ function ConfigCard({
           </KV>
         </div>
 
-        {scope === 'gateway' ? (
-          isAllowlisted ? (
-            <InlineEditor
-              entry={entry}
-              description={allowlistDescription ?? entry.description}
-              hasOverride={hasOverride}
-              configQueryKey={configQueryKey}
-            />
-          ) : (
-            <ReadOnlyTooltip />
-          )
+        {isAllowlisted ? (
+          <InlineEditor
+            entry={entry}
+            description={allowlistDescription ?? entry.description}
+            hasOverride={hasOverride}
+            scope={scope}
+            configQueryKey={configQueryKey}
+          />
+        ) : scope === 'gateway' ? (
+          <ReadOnlyTooltip />
         ) : null}
       </CardContent>
     </Card>
@@ -459,11 +488,13 @@ function InlineEditor({
   entry,
   description,
   hasOverride,
+  scope,
   configQueryKey,
 }: {
   entry: ConfigEntry;
   description: string;
   hasOverride: boolean;
+  scope: ConfigScope;
   configQueryKey: string;
 }) {
   const editorKind = inferEditorKind(entry);
@@ -473,6 +504,7 @@ function InlineEditor({
         entry={entry}
         description={description}
         hasOverride={hasOverride}
+        scope={scope}
         configQueryKey={configQueryKey}
       />
     );
@@ -483,6 +515,7 @@ function InlineEditor({
         entry={entry}
         options={LOG_LEVELS as unknown as string[]}
         hasOverride={hasOverride}
+        scope={scope}
         configQueryKey={configQueryKey}
       />
     );
@@ -491,6 +524,7 @@ function InlineEditor({
     <UrlEditor
       entry={entry}
       hasOverride={hasOverride}
+      scope={scope}
       configQueryKey={configQueryKey}
       isUrl={editorKind === 'url'}
     />
@@ -513,29 +547,38 @@ function inferEditorKind(entry: ConfigEntry): EditorKind {
   return 'text';
 }
 
-// Common refetch-after-mutate side-effect. We have to invalidate both
-// the per-tab config (so the rendered value updates) and the
-// admin-config (so the override badge / reset button reflect truth).
-function useRefetchConfig(configQueryKey: string) {
+// Common refetch-after-mutate side-effect. Invalidates both the per-tab
+// config (so the rendered value updates) and the matching admin-config
+// (so the override badge / reset button reflect truth on the right tab).
+function useRefetchConfig(configQueryKey: string, scope: ConfigScope) {
   const qc = useQueryClient();
   return () => {
     void qc.invalidateQueries({ queryKey: [configQueryKey] });
-    void qc.invalidateQueries({ queryKey: ['sys-gateway-admin-config'] });
+    if (scope === 'gateway') {
+      void qc.invalidateQueries({ queryKey: ['sys-gateway-admin-config'] });
+    } else {
+      void qc.invalidateQueries({ queryKey: ['sys-console-admin-config'] });
+    }
   };
 }
 
-function useApplyOverride(configQueryKey: string) {
+function useApplyOverride(configQueryKey: string, scope: ConfigScope) {
   const { token } = useConsoleClient();
   const { toast } = useToast();
-  const refetch = useRefetchConfig(configQueryKey);
+  const refetch = useRefetchConfig(configQueryKey, scope);
 
-  return useMutation({
-    mutationFn: ({ key, value }: { key: string; value: unknown }) =>
-      setGatewayAdminConfig(token!, { [key]: value }),
+  return useMutation<unknown, Error, { key: string; value: unknown }>({
+    mutationFn: ({ key, value }) =>
+      scope === 'gateway'
+        ? setGatewayAdminConfig(token!, { [key]: value })
+        : setConsoleAdminConfig(token!, key, value),
     onSuccess: (_data, vars) => {
       toast({
         title: 'Override applied',
-        description: `Set ${vars.key} to ${formatValue(vars.value)} (per-pod). Restart reverts to env.`,
+        description:
+          scope === 'gateway'
+            ? `Set ${vars.key} to ${formatValue(vars.value)} (per-pod). Restart reverts to env.`
+            : `Set ${vars.key} to ${formatValue(vars.value)}. Persisted; survives Console restart.`,
       });
       refetch();
     },
@@ -549,13 +592,16 @@ function useApplyOverride(configQueryKey: string) {
   });
 }
 
-function useClearOverride(configQueryKey: string) {
+function useClearOverride(configQueryKey: string, scope: ConfigScope) {
   const { token } = useConsoleClient();
   const { toast } = useToast();
-  const refetch = useRefetchConfig(configQueryKey);
+  const refetch = useRefetchConfig(configQueryKey, scope);
 
-  return useMutation({
-    mutationFn: ({ key }: { key: string }) => clearGatewayAdminOverride(token!, key),
+  return useMutation<unknown, Error, { key: string }>({
+    mutationFn: ({ key }) =>
+      scope === 'gateway'
+        ? clearGatewayAdminOverride(token!, key)
+        : clearConsoleAdminOverride(token!, key),
     onSuccess: (_data, vars) => {
       toast({
         title: 'Override cleared',
@@ -582,16 +628,18 @@ function BoolEditor({
   entry,
   description,
   hasOverride,
+  scope,
   configQueryKey,
 }: {
   entry: ConfigEntry;
   description: string;
   hasOverride: boolean;
+  scope: ConfigScope;
   configQueryKey: string;
 }) {
   const current = entry.value.toLowerCase() === 'true';
-  const apply = useApplyOverride(configQueryKey);
-  const reset = useClearOverride(configQueryKey);
+  const apply = useApplyOverride(configQueryKey, scope);
+  const reset = useClearOverride(configQueryKey, scope);
   const [pendingValue, setPendingValue] = useState<boolean | null>(null);
 
   const open = pendingValue !== null;
@@ -669,19 +717,21 @@ function EnumEditor({
   entry,
   options,
   hasOverride,
+  scope,
   configQueryKey,
 }: {
   entry: ConfigEntry;
   options: string[];
   hasOverride: boolean;
+  scope: ConfigScope;
   configQueryKey: string;
 }) {
   const [value, setValue] = useState(entry.value);
   useEffect(() => {
     setValue(entry.value);
   }, [entry.value]);
-  const apply = useApplyOverride(configQueryKey);
-  const reset = useClearOverride(configQueryKey);
+  const apply = useApplyOverride(configQueryKey, scope);
+  const reset = useClearOverride(configQueryKey, scope);
   const dirty = value !== entry.value;
 
   const onSubmit = (e: FormEvent) => {
@@ -737,11 +787,13 @@ function EnumEditor({
 function UrlEditor({
   entry,
   hasOverride,
+  scope,
   configQueryKey,
   isUrl,
 }: {
   entry: ConfigEntry;
   hasOverride: boolean;
+  scope: ConfigScope;
   configQueryKey: string;
   isUrl: boolean;
 }) {
@@ -749,8 +801,8 @@ function UrlEditor({
   useEffect(() => {
     setValue(entry.value);
   }, [entry.value]);
-  const apply = useApplyOverride(configQueryKey);
-  const reset = useClearOverride(configQueryKey);
+  const apply = useApplyOverride(configQueryKey, scope);
+  const reset = useClearOverride(configQueryKey, scope);
   const dirty = value !== entry.value;
 
   const onSubmit = (e: FormEvent) => {

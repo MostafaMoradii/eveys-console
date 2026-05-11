@@ -9,6 +9,7 @@
 // current value is sensitive (and should be masked in the UI).
 
 import type { Config } from './config.js';
+import { isOverridable, type OverrideStore } from './store/override-store.js';
 
 /** Whether changing this key in the deployment requires a process bounce. */
 export type RestartImpact =
@@ -21,7 +22,8 @@ export type RestartImpact =
 export type ValueSource =
   | 'env' // came from process.env at boot
   | 'default' // schema default; env var was unset or empty
-  | 'computed'; // derived from other inputs
+  | 'computed' // derived from other inputs
+  | 'override'; // operator-set runtime override (data/console-overrides.json)
 
 export interface KeyMeta {
   description: string;
@@ -396,6 +398,10 @@ export interface ConfigEntry {
   mutable: boolean;
   restart: RestartImpact;
   range: string;
+  /** True when the key is in the runtime-override allowlist. The UI
+   *  uses this to decide whether to render the inline-edit affordances
+   *  or the read-only display. */
+  overridable: boolean;
 }
 
 const MASK = '••••••••';
@@ -410,25 +416,45 @@ function stringify(v: unknown): string {
 /**
  * Build the rendered list. Sensitive values are masked unless the underlying
  * value is empty (in which case `<empty>` is more useful than rows of dots).
+ *
+ * When `overrideStore` is passed, the override for each key (if present) wins
+ * over the env-loaded value and the row's `source` flips to `'override'`. The
+ * UI uses that flag to render a "Reset to env" affordance.
  */
-export function describeConfig(cfg: Config, env: NodeJS.ProcessEnv = process.env): ConfigEntry[] {
+export function describeConfig(
+  cfg: Config,
+  env: NodeJS.ProcessEnv = process.env,
+  overrideStore?: OverrideStore,
+): ConfigEntry[] {
   const out: ConfigEntry[] = [];
+  const overrides = overrideStore?.snapshot().overrides ?? {};
   for (const key of Object.keys(META) as (keyof Config)[]) {
     const meta = META[key];
-    const raw = cfg[key];
-    const rendered = stringify(raw);
+    const overridable = isOverridable(String(key));
+    const hasOverride = overridable && key in overrides;
+    // Effective render: prefer the override string. We could parse +
+    // re-stringify for type fidelity but the override is already the
+    // canonical wire form (the route's POST stored exactly what the
+    // operator typed).
+    const rendered = hasOverride ? overrides[key]! : stringify(cfg[key]);
     const masked = meta.sensitive && rendered.length > 0 ? MASK : rendered;
+    const source: ValueSource = hasOverride
+      ? 'override'
+      : env[key] !== undefined && env[key] !== ''
+        ? 'env'
+        : 'default';
     out.push({
       key,
       value: masked,
       sensitive: meta.sensitive,
       default: meta.default,
-      source: env[key] !== undefined && env[key] !== '' ? 'env' : 'default',
+      source,
       description: meta.description,
       category: meta.category,
       mutable: meta.mutable,
       restart: meta.restart,
       range: meta.range,
+      overridable,
     });
   }
   return out;

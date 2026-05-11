@@ -5,7 +5,7 @@
 import { CONSOLE_BASE_URL as BASE } from '@/lib/console-url';
 
 export type RestartImpact = 'none' | 'console' | 'gateway' | 'both';
-export type ValueSource = 'env' | 'default' | 'computed';
+export type ValueSource = 'env' | 'default' | 'computed' | 'override';
 
 export interface ConfigEntry {
   key: string;
@@ -23,6 +23,11 @@ export interface ConfigEntry {
   impact?: string;
   category?: string;
   stability?: string;
+  /** Console-only: server signals whether this key is in the
+   *  runtime-override allowlist. The UI gates the inline editor on
+   *  this flag. Gateway entries don't set it; the allowlist there
+   *  is keyed off the separate /sys/gateway-admin-config response. */
+  overridable?: boolean;
 }
 
 export type ConfigScope = 'console' | 'gateway';
@@ -129,4 +134,73 @@ export async function clearGatewayAdminOverride(
     throw new Error(message);
   }
   return (await res.json()) as GatewayAdminConfig;
+}
+
+// -----------------------------------------------------------------------------
+// Console-side runtime overrides
+// -----------------------------------------------------------------------------
+// Symmetric to the gateway-admin endpoints. The Console maintains its
+// own override store at data/console-overrides.json; the route layer
+// validates against the allowlist + the zod schema for each key.
+
+export interface ConsoleAdminConfig {
+  /** Entries shape mirrors SysConfigResponse.entries (one source of
+   *  truth in the server's describeConfig). */
+  entries: SysConfig['entries'];
+  /** Allowlist of overridable keys. The UI only shows inline editors
+   *  for keys in this set. */
+  overridable_keys: string[];
+}
+
+export async function fetchConsoleAdminConfig(token: string): Promise<ConsoleAdminConfig> {
+  const res = await fetch(`${BASE}/sys/admin/console-config`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`sys/admin/console-config ${res.status}`);
+  return (await res.json()) as ConsoleAdminConfig;
+}
+
+export async function setConsoleAdminConfig(
+  token: string,
+  key: string,
+  value: unknown,
+): Promise<ConsoleAdminConfig> {
+  const res = await fetch(`${BASE}/sys/admin/console-config`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ key, value: typeof value === 'string' ? value : String(value) }),
+  });
+  if (!res.ok) {
+    let message = `sys/admin/console-config ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string; detail?: unknown };
+      if (typeof body?.error === 'string') message = body.error;
+      if (body?.detail) message += `: ${JSON.stringify(body.detail)}`;
+    } catch {
+      /* fall through */
+    }
+    throw new Error(message);
+  }
+  return (await res.json()) as ConsoleAdminConfig;
+}
+
+export async function clearConsoleAdminOverride(
+  token: string,
+  key: string,
+): Promise<ConsoleAdminConfig> {
+  const res = await fetch(`${BASE}/sys/admin/console-config/overrides/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    let message = `sys/admin/console-config/overrides ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (typeof body?.error === 'string') message = body.error;
+    } catch {
+      /* fall through */
+    }
+    throw new Error(message);
+  }
+  return (await res.json()) as ConsoleAdminConfig;
 }
