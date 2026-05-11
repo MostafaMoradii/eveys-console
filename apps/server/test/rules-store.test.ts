@@ -171,6 +171,21 @@ describe('RulesStore — validate', () => {
     expect(result.ok).toBe(true);
     expect(result.skipped).toBe(true);
   });
+
+  it('falls back to skipped=true when the promtool binary exists but is not executable (EACCES)', async () => {
+    // Point the store at a *real* file that exists but isn't +x — the
+    // spawn fails with EACCES. Operator's intent is "install the rule";
+    // the safety net is gone but the rule body itself was already
+    // validated upstream against the managed schema. Same skip path
+    // as ENOENT.
+    const nonExec = join(dir, 'not-an-executable-file.txt');
+    await writeFile(nonExec, 'not a binary', 'utf8');
+    // chmod 644 (default) — not executable.
+    const eaccesStore = new RulesStore(join(dir, 'alerts-managed.yml'), nonExec);
+    const result = await eaccesStore.validate({ managed: [], preserved_groups: [] });
+    expect(result.ok).toBe(true);
+    expect(result.skipped).toBe(true);
+  });
 });
 
 describe('renderRulesYaml shape', () => {

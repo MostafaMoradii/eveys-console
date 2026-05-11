@@ -57,7 +57,10 @@ COPY --from=builder /deploy/dist ./dist
 COPY --from=builder /deploy/node_modules ./node_modules
 COPY --from=builder /repo/apps/server/proto ./proto
 COPY --from=builder /deploy/package.json ./package.json
-COPY --from=promtool /bin/promtool /usr/local/bin/promtool
+# Force +x: the prom/prometheus image owns /bin/promtool as a non-root
+# uid that distroless `nonroot` can't always execute. The --chmod
+# guarantees the runtime user can spawn it.
+COPY --from=promtool --chmod=0755 /bin/promtool /usr/local/bin/promtool
 
 EXPOSE 8090
 USER nonroot
