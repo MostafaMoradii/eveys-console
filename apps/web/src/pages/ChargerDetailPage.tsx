@@ -14,6 +14,7 @@ import { useState } from 'react';
 import type { ChargePointSummary } from '@eveys-console/protocol';
 
 import { CommandsDrawer } from '@/components/CommandsDrawer';
+import { DeviceEventsPanel } from '@/components/DeviceEventsPanel';
 import { DiagnosticsHistory } from '@/components/DiagnosticsHistory';
 import { StatisticsCard } from '@/components/StatisticsCard';
 import { TransactionsHistory } from '@/components/TransactionsHistory';
@@ -109,6 +110,8 @@ export function ChargerDetailPage() {
       </Card>
 
       <StatisticsCard cpId={cp.cp_id} />
+
+      <DeviceEventsPanel cpId={cp.cp_id} />
 
       <TransactionsHistory cpId={cp.cp_id} />
 
