@@ -58,9 +58,18 @@ export interface FiringAlert {
   cp_id?: string;
 }
 
+/** Why an unavailable response is unavailable. `not_configured` means
+ *  ALERTMANAGER_URL is unset (deployment hasn't wired Alertmanager
+ *  yet). `unreachable` means the URL is set but the upstream call
+ *  failed — network, DNS, 5xx, or a non-2xx response. The UI uses
+ *  this to tell the operator whether to set an env var or check the
+ *  Alertmanager pod. Omitted on the happy path. */
+export type AlertsUnavailableReason = 'not_configured' | 'unreachable';
+
 export interface FiringAlertsResponse {
   alerts: FiringAlert[];
   unavailable: boolean;
+  reason?: AlertsUnavailableReason;
 }
 
 /** Mirror of the web-side `SilenceMatcher`. Alertmanager v2 represents
@@ -361,11 +370,15 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
     return undefined;
   };
 
-  const unavailable = (): FiringAlertsResponse => ({ alerts: [], unavailable: true });
+  const unavailable = (reason: AlertsUnavailableReason): FiringAlertsResponse => ({
+    alerts: [],
+    unavailable: true,
+    reason,
+  });
 
   app.get('/sys/alerts/firing', { preHandler: requireAuth }, async () => {
     const base = app.config.ALERTMANAGER_URL;
-    if (!base) return unavailable();
+    if (!base) return unavailable('not_configured');
 
     const url = `${base.replace(/\/+$/, '')}/api/v2/alerts?active=true&silenced=false`;
     try {
@@ -375,12 +388,12 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
           { upstream: 'alertmanager', status: res.status },
           'firing-alerts.upstream-bad-status',
         );
-        return unavailable();
+        return unavailable('unreachable');
       }
       const body: unknown = await res.json();
       if (!Array.isArray(body)) {
         deps.logger?.warn({ upstream: 'alertmanager' }, 'firing-alerts.unexpected-shape');
-        return unavailable();
+        return unavailable('unreachable');
       }
       const alerts: FiringAlert[] = [];
       for (const raw of body) {
@@ -398,7 +411,7 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
         { upstream: 'alertmanager', err: err instanceof Error ? err.message : String(err) },
         'firing-alerts.fetch-failed',
       );
-      return unavailable();
+      return unavailable('unreachable');
     }
   });
 

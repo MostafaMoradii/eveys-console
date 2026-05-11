@@ -127,6 +127,7 @@ export function SystemPage() {
         info={severityCounts.info}
         silencedCount={silences.silences.length}
         unavailable={firing.unavailable}
+        {...(firing.reason ? { unavailableReason: firing.reason } : {})}
         loading={firing.loading}
       />
 
@@ -206,7 +207,9 @@ export function SystemPage() {
           }
           hint={
             firing.unavailable
-              ? 'Alertmanager not configured'
+              ? firing.reason === 'unreachable'
+                ? 'Alertmanager unreachable'
+                : 'Alertmanager not configured'
               : `${severityCounts.critical} critical · ${severityCounts.warning} warning`
           }
           tone={
@@ -241,6 +244,7 @@ function AlertsSummaryCard({
   info,
   silencedCount,
   unavailable,
+  unavailableReason,
   loading,
 }: {
   critical: number;
@@ -248,9 +252,14 @@ function AlertsSummaryCard({
   info: number;
   silencedCount: number;
   unavailable: boolean;
+  unavailableReason?: 'not_configured' | 'unreachable';
   loading: boolean;
 }) {
   const total = critical + warning + info;
+  // Tone the icon amber on `unreachable` so the operator notices a
+  // wired-but-broken upstream, rather than dismissing it as the same
+  // "no Alertmanager configured" neutral state.
+  const isUnreachable = unavailable && unavailableReason === 'unreachable';
   return (
     <Link
       to="/sys/alerts"
@@ -266,7 +275,9 @@ function AlertsSummaryCard({
                   ? 'h-5 w-5 text-destructive'
                   : warning > 0 && !unavailable
                     ? 'h-5 w-5 text-amber-500'
-                    : 'h-5 w-5 text-muted-foreground'
+                    : isUnreachable
+                      ? 'h-5 w-5 text-amber-500'
+                      : 'h-5 w-5 text-muted-foreground'
               }
             />
             <div>
@@ -275,7 +286,9 @@ function AlertsSummaryCard({
                 {loading
                   ? 'loading…'
                   : unavailable
-                    ? 'not configured'
+                    ? isUnreachable
+                      ? 'unreachable — check the Alertmanager pod or ALERTMANAGER_URL'
+                      : 'not configured — set ALERTMANAGER_URL on the Console'
                     : total === 0 && silencedCount === 0
                       ? 'all clear — no alerts firing'
                       : total === 0
