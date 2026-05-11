@@ -134,6 +134,28 @@ describe('ChannelsStore — round-trip', () => {
     expect(text).not.toContain('basic_auth');
   });
 
+  it('round-trips a Telegram receiver', async () => {
+    const ch: Channel = {
+      type: 'telegram',
+      name: 'oncall-tg',
+      bot_token: '12345:AAEFxyz-fake-token-tail-9999',
+      chat_id: '-1001234567890',
+      api_url: 'https://api.telegram.org',
+      parse_mode: 'HTML',
+    };
+    await store.updateChannels([ch], 'oncall-tg');
+    const text = await readFile(cfgPath, 'utf8');
+    // YAML emits chat_id as an integer (Alertmanager parses int64).
+    expect(text).toContain('chat_id: -1001234567890');
+    expect(text).toContain('bot_token: 12345:AAEFxyz-fake-token-tail-9999');
+    expect(text).toContain('parse_mode: HTML');
+    // Round-trip back through read(): chat_id arrives as the string
+    // shape we hold on disk so very-large ids survive without
+    // precision loss.
+    const out = await store.read();
+    expect(out.channels[0]).toEqual(ch);
+  });
+
   it('preserves multiple receivers in order', async () => {
     const a: Channel = { type: 'slack', name: 'a', api_url: 'https://hooks/x', channel: '#a' };
     const b: Channel = {
@@ -210,6 +232,23 @@ describe('ChannelsStore — readMasked', () => {
     const out = await store.readMasked();
     const masked = out.channels[0] as Extract<Channel, { type: 'webhook' }>;
     expect(masked.http_bearer_token).toBe('••••1234');
+  });
+
+  it('masks the Telegram bot token, keeping the bot-id prefix visible', async () => {
+    const ch: Channel = {
+      type: 'telegram',
+      name: 'oncall-tg',
+      bot_token: '12345:AAEFxyz-fake-token-tail-9999',
+      chat_id: '-100123',
+    };
+    await store.updateChannels([ch], 'oncall-tg');
+    const out = await store.readMasked();
+    const masked = out.channels[0] as Extract<Channel, { type: 'telegram' }>;
+    // Bot id "12345:" visible, then the dotted mask + last-4 of the
+    // post-colon secret. Operator can identify which bot without
+    // seeing the token.
+    expect(masked.bot_token).toBe('12345:••••9999');
+    expect(masked.chat_id).toBe('-100123');
   });
 
   it('masks the webhook basic_auth password', async () => {

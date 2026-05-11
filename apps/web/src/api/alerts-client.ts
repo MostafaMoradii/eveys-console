@@ -128,7 +128,7 @@ export async function expireSilence(token: string, id: string): Promise<void> {
 // treats an empty string as "keep existing" so an operator editing a
 // non-secret field doesn't need to re-enter the secret.
 
-export type ChannelType = 'slack' | 'email' | 'webhook';
+export type ChannelType = 'slack' | 'email' | 'webhook' | 'telegram';
 
 export interface ChannelSlack {
   type: 'slack';
@@ -162,7 +162,26 @@ export interface ChannelWebhook {
   http_bearer_token?: string;
 }
 
-export type Channel = ChannelSlack | ChannelEmail | ChannelWebhook;
+export interface ChannelTelegram {
+  type: 'telegram';
+  name: string;
+  /** Bot token from @BotFather — `<bot_id>:<token>`. Treated as
+   *  a secret; arrives masked from the server, an empty/masked
+   *  value on PUT keeps the existing token. */
+  bot_token: string;
+  /** Numeric chat id. Channels start with `-100…`; groups are
+   *  negative, private chats positive. String to round-trip large
+   *  ids without JS Number precision loss. */
+  chat_id: string;
+  /** Optional custom Bot API endpoint (e.g. a self-hosted Telegram
+   *  bot API server). Empty / unset → upstream `api.telegram.org`. */
+  api_url?: string;
+  /** Optional message formatter. Alertmanager supports HTML and
+   *  MarkdownV2; HTML matches the default template. */
+  parse_mode?: 'HTML' | 'MarkdownV2';
+}
+
+export type Channel = ChannelSlack | ChannelEmail | ChannelWebhook | ChannelTelegram;
 
 export interface ChannelsResponse {
   channels: Channel[];

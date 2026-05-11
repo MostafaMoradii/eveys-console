@@ -640,7 +640,34 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
     http_basic_auth_password: z.string().max(1024).optional(),
     http_bearer_token: z.string().max(4096).optional(),
   });
-  const channelBody = z.discriminatedUnion('type', [slackBody, emailBody, webhookBody]);
+  // Telegram bot tokens look like `12345:AAEFxyz` — the prefix is the
+  // numeric bot id, the suffix the secret. Reject anything that doesn't
+  // match so the operator sees the rule before Alertmanager rejects
+  // the config on reload. chat_id is held as a string so very-large
+  // channel ids round-trip without precision loss; the YAML render
+  // converts it to int64 for Alertmanager.
+  const telegramBody = z.object({
+    type: z.literal('telegram'),
+    name: channelNameSchema,
+    bot_token: z
+      .string()
+      .min(10)
+      .max(256)
+      .regex(/^\d+:[A-Za-z0-9_-]{20,}$/, 'expected `<bot_id>:<token>` from @BotFather'),
+    chat_id: z
+      .string()
+      .min(1)
+      .max(32)
+      .regex(/^-?\d+$/, 'expected a numeric chat id (channels start with -100…)'),
+    api_url: z.string().url().optional(),
+    parse_mode: z.enum(['HTML', 'MarkdownV2']).optional(),
+  });
+  const channelBody = z.discriminatedUnion('type', [
+    slackBody,
+    emailBody,
+    webhookBody,
+    telegramBody,
+  ]);
 
   // ---- POST /sys/alerts/channels — add ------------------------------------
   app.post(
@@ -1124,6 +1151,17 @@ function mergeKeepSecrets(current: Channel, next: Channel): Channel {
       if (!next.http_bearer_token || next.http_bearer_token.includes('••••')) {
         if (cur.http_bearer_token) out.http_bearer_token = cur.http_bearer_token;
         else delete (out as { http_bearer_token?: string }).http_bearer_token;
+      }
+      return out;
+    }
+    case 'telegram': {
+      const cur = current as Extract<Channel, { type: 'telegram' }>;
+      // bot_token is the only secret-bearing field. The masked form
+      // arrives as `<bot_id>:••••tail` — same rule as the other types:
+      // empty or masked → keep existing.
+      const out: Channel = { ...next };
+      if (!next.bot_token || next.bot_token.includes('••••')) {
+        out.bot_token = cur.bot_token;
       }
       return out;
     }

@@ -25,7 +25,7 @@ import { dirname } from 'node:path';
 
 import { parse, stringify } from 'yaml';
 
-export type ChannelType = 'slack' | 'email' | 'webhook';
+export type ChannelType = 'slack' | 'email' | 'webhook' | 'telegram';
 
 export interface ChannelSlack {
   type: 'slack';
@@ -60,7 +60,26 @@ export interface ChannelWebhook {
   http_bearer_token?: string;
 }
 
-export type Channel = ChannelSlack | ChannelEmail | ChannelWebhook;
+export interface ChannelTelegram {
+  type: 'telegram';
+  name: string;
+  /** Bot token from @BotFather. Treated as a secret — masked on
+   *  the wire, kept as-is in the managed YAML file. */
+  bot_token: string;
+  /** Numeric chat id (channels start with `-100…`, groups are
+   *  negative, private chats are positive). Stored as a string
+   *  because some channel ids are too large for JS Number. */
+  chat_id: string;
+  /** Optional override of the Telegram Bot API base URL. Empty
+   *  string means "default upstream `https://api.telegram.org`". */
+  api_url?: string;
+  /** Optional message-format hint. Alertmanager accepts HTML or
+   *  MarkdownV2; we expose only HTML in the UI (matches the default
+   *  template). Server is permissive — anything else round-trips. */
+  parse_mode?: string;
+}
+
+export type Channel = ChannelSlack | ChannelEmail | ChannelWebhook | ChannelTelegram;
 
 export interface ManagedConfig {
   channels: Channel[];
@@ -167,6 +186,21 @@ function maskSecrets(c: Channel): Channel {
       if (c.http_bearer_token) out.http_bearer_token = maskValue(c.http_bearer_token);
       return out;
     }
+    case 'telegram': {
+      const out: ChannelTelegram = { ...c };
+      // Telegram bot tokens look like `12345:AAEFxyz…` — split on the
+      // colon to keep the bot-id prefix visible (operator can confirm
+      // the right bot) while hiding the secret tail.
+      if (c.bot_token) {
+        const colon = c.bot_token.indexOf(':');
+        if (colon > 0) {
+          out.bot_token = `${c.bot_token.slice(0, colon + 1)}${maskValue(c.bot_token.slice(colon + 1))}`;
+        } else {
+          out.bot_token = maskValue(c.bot_token);
+        }
+      }
+      return out;
+    }
   }
 }
 
@@ -224,6 +258,16 @@ interface AlertmanagerReceiver {
       basic_auth?: { username: string; password: string };
       authorization?: { type: string; credentials: string };
     };
+    send_resolved?: boolean;
+  }>;
+  telegram_configs?: Array<{
+    bot_token: string;
+    // Alertmanager parses chat_id as int64. We keep it as a string
+    // through the Console so very-large channel ids round-trip
+    // losslessly; the YAML library serializes it back as a number.
+    chat_id: number;
+    api_url?: string;
+    parse_mode?: string;
     send_resolved?: boolean;
   }>;
 }
@@ -285,6 +329,18 @@ function receiverToChannel(r: AlertmanagerReceiver): Channel | null {
     if (auth && typeof auth.credentials === 'string' && auth.type.toLowerCase() === 'bearer') {
       out.http_bearer_token = auth.credentials;
     }
+    return out;
+  }
+  const telegram = r.telegram_configs?.[0];
+  if (telegram && typeof telegram.bot_token === 'string') {
+    const out: ChannelTelegram = {
+      type: 'telegram',
+      name: r.name,
+      bot_token: telegram.bot_token,
+      chat_id: String(telegram.chat_id),
+    };
+    if (telegram.api_url) out.api_url = telegram.api_url;
+    if (telegram.parse_mode) out.parse_mode = telegram.parse_mode;
     return out;
   }
   return null;
@@ -365,6 +421,26 @@ function channelToReceiver(c: Channel): AlertmanagerReceiver {
           {
             url: c.url,
             ...(httpConfig ? { http_config: httpConfig } : {}),
+            send_resolved: true,
+          },
+        ],
+      };
+    }
+    case 'telegram': {
+      // chat_id ships as an int64 in Alertmanager's YAML; convert the
+      // string we hold on disk to a number for serialization. Invalid
+      // / non-numeric values fall back to 0 which Alertmanager will
+      // reject loudly on reload — better than silently dropping the
+      // receiver.
+      const chatId = Number.parseInt(c.chat_id, 10);
+      return {
+        name: c.name,
+        telegram_configs: [
+          {
+            bot_token: c.bot_token,
+            chat_id: Number.isFinite(chatId) ? chatId : 0,
+            ...(c.api_url ? { api_url: c.api_url } : {}),
+            ...(c.parse_mode ? { parse_mode: c.parse_mode } : {}),
             send_resolved: true,
           },
         ],

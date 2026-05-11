@@ -11,10 +11,16 @@
 // mask; an unchanged value means "keep existing secret" on PUT. A
 // freshly-typed non-masked value overwrites.
 
-import { AlertCircle, Mail, MessageSquare, Plus, Trash2, Webhook, Wand2 } from 'lucide-react';
+import { AlertCircle, Mail, MessageSquare, Plus, Send, Trash2, Webhook, Wand2 } from 'lucide-react';
 import { useState } from 'react';
 
-import type { Channel, ChannelEmail, ChannelSlack, ChannelWebhook } from '@/api/alerts-client';
+import type {
+  Channel,
+  ChannelEmail,
+  ChannelSlack,
+  ChannelTelegram,
+  ChannelWebhook,
+} from '@/api/alerts-client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
@@ -181,6 +187,15 @@ function AddReceiverMenu({ onPick }: { onPick: (type: Channel['type']) => void }
               }}
               testId="add-channel-webhook"
             />
+            <MenuItem
+              icon={<Send className="h-3.5 w-3.5" />}
+              label="Telegram"
+              onPick={() => {
+                onPick('telegram');
+                setOpen(false);
+              }}
+              testId="add-channel-telegram"
+            />
           </div>
         </>
       ) : null}
@@ -329,6 +344,8 @@ function iconFor(type: Channel['type']) {
       return Mail;
     case 'webhook':
       return Webhook;
+    case 'telegram':
+      return Send;
   }
 }
 
@@ -346,6 +363,8 @@ function summariseChannel(c: Channel): string {
         return `webhook → ${c.url}`;
       }
     }
+    case 'telegram':
+      return `telegram → chat ${c.chat_id}`;
   }
 }
 
@@ -382,6 +401,12 @@ function ChannelDialog({ state, onClose }: { state: DialogState; onClose: () => 
             isEdit={isEdit}
             onClose={onClose}
           />
+        ) : type === 'telegram' ? (
+          <TelegramForm
+            initial={initial as ChannelTelegram | undefined}
+            isEdit={isEdit}
+            onClose={onClose}
+          />
         ) : (
           <WebhookForm
             initial={initial as ChannelWebhook | undefined}
@@ -402,6 +427,8 @@ function titleFor(type: Channel['type']): string {
       return 'Add email receiver';
     case 'webhook':
       return 'Add webhook receiver';
+    case 'telegram':
+      return 'Add Telegram receiver';
   }
 }
 
@@ -670,6 +697,94 @@ function WebhookForm({
           type="password"
         />
       ) : null}
+    </FormShell>
+  );
+}
+
+function TelegramForm({
+  initial,
+  isEdit,
+  onClose,
+}: FormBaseProps & { initial: ChannelTelegram | undefined }) {
+  const [name, setName] = useState(initial?.name ?? '');
+  const [botToken, setBotToken] = useState(initial?.bot_token ?? '');
+  const [chatId, setChatId] = useState(initial?.chat_id ?? '');
+  const [apiUrl, setApiUrl] = useState(initial?.api_url ?? '');
+  const [parseMode, setParseMode] = useState<'HTML' | 'MarkdownV2'>(initial?.parse_mode ?? 'HTML');
+
+  const submit = useChannelSubmit(isEdit, onClose);
+  // On add, bot_token is required; on edit, an empty value means
+  // "keep the existing secret" (server's mergeKeepSecrets handles
+  // this), so name + chat_id are the only must-have fields.
+  const valid =
+    isValidChannelName(name) && /^-?\d+$/.test(chatId.trim()) && (isEdit || !!botToken.trim());
+
+  return (
+    <FormShell
+      onSubmit={() => {
+        const base: ChannelTelegram = {
+          type: 'telegram',
+          name: name.trim(),
+          bot_token: botToken,
+          chat_id: chatId.trim(),
+        };
+        if (apiUrl.trim()) base.api_url = apiUrl.trim();
+        if (parseMode) base.parse_mode = parseMode;
+        submit.go(base);
+      }}
+      onClose={onClose}
+      isPending={submit.isPending}
+      error={submit.error}
+      valid={!!valid}
+      isEdit={isEdit}
+    >
+      <Field
+        label="Name"
+        disabled={isEdit}
+        value={name}
+        onChange={setName}
+        testId="telegram-name"
+        placeholder="oncall-telegram"
+        hint="lowercase / digits / -_ only · max 63 chars · no spaces or @"
+      />
+      <Field
+        label="Bot token"
+        hint="From @BotFather · format `<bot_id>:<token>` · masked — clear to keep existing value"
+        value={botToken}
+        onChange={setBotToken}
+        testId="telegram-bot-token"
+        type="password"
+      />
+      <Field
+        label="Chat ID"
+        hint="Channel ids start with -100… · groups are negative · DMs are positive"
+        value={chatId}
+        onChange={setChatId}
+        testId="telegram-chat-id"
+        placeholder="-1001234567890"
+      />
+      <Field
+        label="API URL (optional)"
+        hint="Defaults to https://api.telegram.org — override only for a self-hosted Bot API"
+        value={apiUrl}
+        onChange={setApiUrl}
+        testId="telegram-api-url"
+        placeholder="https://api.telegram.org"
+      />
+      <div className="flex flex-col gap-1">
+        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          Message format
+        </span>
+        <select
+          value={parseMode}
+          onChange={(e) => setParseMode(e.currentTarget.value as 'HTML' | 'MarkdownV2')}
+          data-testid="telegram-parse-mode"
+          className="h-9 rounded-md border bg-background px-2 text-sm"
+        >
+          <option value="HTML">HTML (default)</option>
+          <option value="MarkdownV2">MarkdownV2</option>
+        </select>
+      </div>
     </FormShell>
   );
 }

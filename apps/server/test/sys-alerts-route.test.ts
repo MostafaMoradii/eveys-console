@@ -977,6 +977,68 @@ describe('POST /sys/alerts/channels', () => {
     const wh = cfg.channels[0] as Extract<(typeof cfg.channels)[number], { type: 'webhook' }>;
     expect(wh.http_bearer_token).toBe('eyJhbGciOi-fake-jwt');
   });
+
+  it('creates a Telegram receiver', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'telegram',
+        name: 'oncall-tg',
+        bot_token: '12345:AAEFxyz_fake_token_tail_9999',
+        chat_id: '-1001234567890',
+        parse_mode: 'HTML',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const cfg = await ctx.store.read();
+    const tg = cfg.channels[0] as Extract<(typeof cfg.channels)[number], { type: 'telegram' }>;
+    expect(tg.bot_token).toBe('12345:AAEFxyz_fake_token_tail_9999');
+    expect(tg.chat_id).toBe('-1001234567890');
+    expect(tg.parse_mode).toBe('HTML');
+  });
+
+  it('rejects a Telegram bot_token that does not match `<bot_id>:<token>`', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'telegram',
+        name: 'tg-bad-token',
+        bot_token: 'just-a-string',
+        chat_id: '-100123',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as {
+      error: string;
+      detail: { fieldErrors?: Record<string, string[]> };
+    };
+    expect(body.error).toBe('invalid_body');
+    expect(body.detail.fieldErrors?.bot_token?.[0]).toMatch(/BotFather/);
+  });
+
+  it('rejects a Telegram chat_id that is not numeric', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'telegram',
+        name: 'tg-bad-chat',
+        bot_token: '12345:AAEFxyz_fake_token_tail_9999',
+        chat_id: 'not-numeric',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as {
+      error: string;
+      detail: { fieldErrors?: Record<string, string[]> };
+    };
+    expect(body.detail.fieldErrors?.chat_id?.[0]).toMatch(/numeric chat id/);
+  });
 });
 
 describe('PUT /sys/alerts/channels/:name', () => {
