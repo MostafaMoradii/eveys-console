@@ -38,10 +38,16 @@ jobs:
       # Run the official Prometheus / Alertmanager images and use the
       # bundled promtool / amtool to validate the configs. Catches a
       # broken alert expression or YAML typo before it lands on prod.
+      # The Console-managed rules file is a runtime mount on a shared
+      # `console-data` volume — in CI we stand it up by mounting the
+      # bundled `alerts.yml` at the same path Prometheus's
+      # --rule_files would reach it at, so promtool can resolve the
+      # reference end-to-end.
       - name: promtool check config
         run: |
           docker run --rm --entrypoint=promtool \
             -v "${{ github.workspace }}/deploy/observability:/etc/prometheus:ro" \
+            -v "${{ github.workspace }}/deploy/observability/alerts.yml:/etc/prometheus-managed/alerts-managed.yml:ro" \
             prom/prometheus:v3.0.1 \
             check config /etc/prometheus/prometheus.yml
       - name: promtool check rules

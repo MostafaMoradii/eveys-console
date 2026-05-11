@@ -16,7 +16,13 @@ alerting:
         - targets: ['alertmanager:9093']
 
 rule_files:
-  - /etc/prometheus/alerts.yml
+  # Console-managed rules — the Console server writes
+  # /data/alerts-managed.yml in its container; the same `console-data`
+  # named volume is mounted here read-only at /etc/prometheus-managed/.
+  # The Console seeds an empty file on first boot so this path always
+  # exists; edits via the /sys/alerts Rules tab take effect on
+  # POST /-/reload.
+  - /etc/prometheus-managed/alerts-managed.yml
 
 scrape_configs:
   - job_name: eveys-console

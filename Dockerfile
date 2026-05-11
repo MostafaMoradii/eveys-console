@@ -38,6 +38,16 @@ RUN pnpm --filter @eveys-console/api-types run generate \
 # real copies under /deploy.
 RUN pnpm --filter @eveys-console/server --prod deploy /deploy
 
+# ---- promtool --------------------------------------------------------------
+#
+# Pull `promtool` from the official Prometheus image so the Console can
+# validate rule definitions before writing the managed file (via the
+# /sys/alerts Rules tab). Pinned to the same version compose runs to
+# avoid version-skew false positives. The Console looks for promtool at
+# PROMTOOL_PATH (defaults to `promtool` on PATH).
+
+FROM prom/prometheus:v3.0.1 AS promtool
+
 # ---- runtime ---------------------------------------------------------------
 
 FROM gcr.io/distroless/nodejs20-debian12:nonroot AS runtime
@@ -47,6 +57,7 @@ COPY --from=builder /deploy/dist ./dist
 COPY --from=builder /deploy/node_modules ./node_modules
 COPY --from=builder /repo/apps/server/proto ./proto
 COPY --from=builder /deploy/package.json ./package.json
+COPY --from=promtool /bin/promtool /usr/local/bin/promtool
 
 EXPOSE 8090
 USER nonroot

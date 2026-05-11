@@ -105,7 +105,11 @@ services:
       - '9091:9090'
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      # Console-managed rules file: shares the `console-data` volume
+      # with the Console server (which writes /data/alerts-managed.yml).
+      # Mounted read-only inside Prometheus; the prometheus.yml's
+      # rule_files list points at this path.
+      - console-data:/etc/prometheus-managed:ro
       - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
