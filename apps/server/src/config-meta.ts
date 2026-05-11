@@ -383,6 +383,46 @@ const META: Record<keyof Config, KeyMeta> = {
     default: '',
     sensitive: false,
   },
+  EVENT_LOG_DIR: {
+    description:
+      'Filesystem root for the device-event log. One file per charger per month: `<root>/<cp_id>/<YYYY-MM>.ndjson`. Append-only.',
+    category: 'event-log',
+    mutable: true,
+    restart: 'console',
+    range: 'absolute or repo-relative path',
+    default: './data/event-log',
+    sensitive: false,
+  },
+  EVENT_LOG_RETENTION_MONTHS: {
+    description:
+      'How many months of device events to retain on disk. The nightly prune deletes whole month files older than this; reducing the value frees disk on the next sweep.',
+    category: 'event-log',
+    mutable: true,
+    restart: 'console',
+    range: 'positive integer (months)',
+    default: '12',
+    sensitive: false,
+  },
+  EVENT_LOG_FSYNC_INTERVAL_MS: {
+    description:
+      'Milliseconds between fsync calls for the event-log writer. Bounds the loss-on-crash window without paying a syscall per line. 0 disables coalescing.',
+    category: 'event-log',
+    mutable: true,
+    restart: 'console',
+    range: 'non-negative integer (milliseconds)',
+    default: '200',
+    sensitive: false,
+  },
+  EVENT_LOG_BOOTSTRAP_LIMIT: {
+    description:
+      'How many recent events the device-events resolver returns on snapshot. Sets the initial render size of the per-charger event panel.',
+    category: 'event-log',
+    mutable: true,
+    restart: 'console',
+    range: 'positive integer (rows)',
+    default: '200',
+    sensitive: false,
+  },
 };
 
 export interface ConfigEntry {

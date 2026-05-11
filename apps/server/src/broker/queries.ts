@@ -26,7 +26,25 @@ import type {
 
 import type { GatewayClient } from '../rest/gateway-client.js';
 import type { KafkaEvent } from '../kafka/tail.js';
+import { tailLastN } from '../event-log/tail.js';
 import type { Delta, Snapshot } from './types.js';
+
+// Module-level injection for the device-events resolver. Set once at
+// boot from main.ts; tests override per-suite. Keeps the
+// QueryResolver signature unchanged while still letting the
+// resolver read from the durable log on bootstrap.
+let eventLogRoot: string | null = null;
+let bootstrapLimit = 200;
+
+export function configureEventLogReader(opts: { root: string; bootstrapLimit: number }): void {
+  eventLogRoot = opts.root;
+  bootstrapLimit = opts.bootstrapLimit;
+}
+
+export function resetEventLogReader(): void {
+  eventLogRoot = null;
+  bootstrapLimit = 200;
+}
 
 interface QueryResolver {
   snapshot(params: QueryParams, gateway: GatewayClient): Promise<Snapshot>;
@@ -366,13 +384,26 @@ const statusHistory: QueryResolver = {
 // report rather than fanning out per sample — the per-sample chart
 // has its own resolver, this feed is for navigation.
 const deviceEvents: QueryResolver = {
-  async snapshot() {
-    // v1: live-tail only. The page shows "Waiting for events…" until
-    // the first delta arrives. Phase 2 can back this with a
-    // ClickHouse-fed initial page.
+  async snapshot(params) {
+    // Bootstrap from the durable log so the panel shows the most
+    // recent events the moment the page opens — rather than waiting
+    // for whatever happens to fire after the subscribe. Newest
+    // first; ascending in the panel is the UI's choice. Falls back
+    // to an empty snapshot when the log isn't configured (tests
+    // that don't need history) or the CP has no recorded events
+    // yet.
+    let rows: DeviceEvent[] = [];
+    const cpIdRaw = params.cp_id;
+    if (eventLogRoot && typeof cpIdRaw === 'string' && cpIdRaw.length > 0) {
+      try {
+        rows = await tailLastN(eventLogRoot, cpIdRaw, { limit: bootstrapLimit });
+      } catch {
+        rows = [];
+      }
+    }
     return {
       cursor: `gw:device-events:bootstrap:${Date.now()}`,
-      snapshot: { kind: 'device-events', rows: [] },
+      snapshot: { kind: 'device-events', rows },
     };
   },
   async deltasFromEvent(params, event) {

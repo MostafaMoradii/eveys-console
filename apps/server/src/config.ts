@@ -111,6 +111,15 @@ export const configSchema = z.object({
    *  at runtime — fine for laptop dev. Set this to the externally-reachable
    *  base URL when running behind a reverse proxy. */
   CONSOLE_PUBLIC_BASE_URL: z.string().optional(),
+
+  // Device-event log. Appends one NDJSON line per DeviceEvent into
+  // `<root>/<cp_id>/<YYYY-MM>.ndjson`. Read paths: tail-last-N for the
+  // detail-page bootstrap, range+substring search for the panel's
+  // search box. Old files are pruned by month.
+  EVENT_LOG_DIR: z.string().default('./data/event-log'),
+  EVENT_LOG_RETENTION_MONTHS: z.coerce.number().int().positive().default(12),
+  EVENT_LOG_FSYNC_INTERVAL_MS: z.coerce.number().int().nonnegative().default(200),
+  EVENT_LOG_BOOTSTRAP_LIMIT: z.coerce.number().int().positive().default(200),
 });
 
 export type Config = z.infer<typeof configSchema>;
