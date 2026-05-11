@@ -12,9 +12,17 @@
 import { CONSOLE_BASE_URL as BASE } from '@/lib/console-url';
 import type { Alert } from '@/lib/alerts';
 
+/** Why the firing-alerts envelope is `unavailable`. Distinguishes a
+ *  deployment that hasn't wired Alertmanager (`not_configured`) from
+ *  one where Alertmanager is wired but unreachable (`unreachable` —
+ *  pod down, DNS, 5xx). The UI uses this for honest copy on the
+ *  dashboard. */
+export type AlertsUnavailableReason = 'not_configured' | 'unreachable';
+
 export interface FiringAlertsResponse {
   alerts: Alert[];
   unavailable: boolean;
+  reason?: AlertsUnavailableReason;
 }
 
 export async function fetchFiringAlerts(token: string): Promise<FiringAlertsResponse> {

@@ -82,7 +82,11 @@ describe('GET /sys/alerts/firing', () => {
       headers: { authorization: authHeader(app) },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ alerts: [], unavailable: true });
+    expect(res.json()).toEqual({
+      alerts: [],
+      unavailable: true,
+      reason: 'not_configured',
+    });
     expect(spy).not.toHaveBeenCalled();
   });
 
@@ -144,7 +148,7 @@ describe('GET /sys/alerts/firing', () => {
       headers: { authorization: authHeader(app) },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ alerts: [], unavailable: true });
+    expect(res.json()).toEqual({ alerts: [], unavailable: true, reason: 'unreachable' });
   });
 
   it('returns unavailable on network error (rejected fetch)', async () => {
@@ -159,7 +163,7 @@ describe('GET /sys/alerts/firing', () => {
       headers: { authorization: authHeader(app) },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ alerts: [], unavailable: true });
+    expect(res.json()).toEqual({ alerts: [], unavailable: true, reason: 'unreachable' });
   });
 
   it('returns unavailable when the upstream body is not an array (malformed)', async () => {
@@ -174,7 +178,7 @@ describe('GET /sys/alerts/firing', () => {
       url: '/sys/alerts/firing',
       headers: { authorization: authHeader(app) },
     });
-    expect(res.json()).toEqual({ alerts: [], unavailable: true });
+    expect(res.json()).toEqual({ alerts: [], unavailable: true, reason: 'unreachable' });
   });
 
   it('returns unavailable when the JSON parse itself throws', async () => {
@@ -191,7 +195,7 @@ describe('GET /sys/alerts/firing', () => {
       url: '/sys/alerts/firing',
       headers: { authorization: authHeader(app) },
     });
-    expect(res.json()).toEqual({ alerts: [], unavailable: true });
+    expect(res.json()).toEqual({ alerts: [], unavailable: true, reason: 'unreachable' });
   });
 
   it('truncates at 100 alerts with no synthetic marker', async () => {

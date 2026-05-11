@@ -92,6 +92,7 @@ let firingStub: {
     detail: string;
   }>;
   unavailable: boolean;
+  reason?: 'not_configured' | 'unreachable';
   loading: boolean;
   error: Error | null;
 } = { alerts: [], unavailable: false, loading: false, error: null };
@@ -277,12 +278,34 @@ describe('SystemPage — alerts summary', () => {
     expect(card.textContent).toContain('1 info');
   });
 
-  it('shows "not configured" hint when Alertmanager is unavailable', async () => {
-    firingStub = { alerts: [], unavailable: true, loading: false, error: null };
+  it('shows "not configured" hint when ALERTMANAGER_URL is unset (reason: not_configured)', async () => {
+    firingStub = {
+      alerts: [],
+      unavailable: true,
+      reason: 'not_configured',
+      loading: false,
+      error: null,
+    };
     cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
     renderPage();
     const card = await screen.findByTestId('alerts-summary-card');
     expect(card.textContent?.toLowerCase()).toContain('not configured');
+    expect(card.textContent?.toLowerCase()).not.toContain('unreachable');
+  });
+
+  it('shows "unreachable" hint when Alertmanager is configured but the upstream is down', async () => {
+    firingStub = {
+      alerts: [],
+      unavailable: true,
+      reason: 'unreachable',
+      loading: false,
+      error: null,
+    };
+    cpSubStub = { snapshot: { kind: 'charge-points', rows: [cp()] } };
+    renderPage();
+    const card = await screen.findByTestId('alerts-summary-card');
+    expect(card.textContent?.toLowerCase()).toContain('unreachable');
+    expect(card.textContent?.toLowerCase()).not.toContain('not configured');
   });
 
   it('shows the all-clear hint when Alertmanager is configured but quiet', async () => {
