@@ -274,7 +274,16 @@ function ChannelRow({
             data-testid="set-default-channel-button"
             onClick={() => {
               setDefault.mutate(channel.name, {
-                onSuccess: () => toast({ title: `Default receiver is now ${channel.name}` }),
+                onSuccess: (res) => {
+                  toast({ title: `Default receiver is now ${channel.name}` });
+                  if (res.reload && !res.reload.ok && !res.reload.skipped) {
+                    toast({
+                      variant: 'destructive',
+                      title: 'Alertmanager refused the reload',
+                      description: `${res.reload.detail} — the file on disk is updated but the running Alertmanager is still on the previous config. Restart it or fix the error and try again.`,
+                    });
+                  }
+                },
                 onError: (err) =>
                   toast({
                     variant: 'destructive',
@@ -799,8 +808,15 @@ function useChannelSubmit(isEdit: boolean, onClose: () => void) {
     error: m.error?.message ?? null,
     go: (channel: Channel) => {
       m.mutate(channel, {
-        onSuccess: () => {
+        onSuccess: (res) => {
           toast({ title: isEdit ? `Updated ${channel.name}` : `Added ${channel.name}` });
+          if (res.reload && !res.reload.ok && !res.reload.skipped) {
+            toast({
+              variant: 'destructive',
+              title: 'Alertmanager refused the reload',
+              description: `${res.reload.detail} — the file on disk is updated but the running Alertmanager is still on the previous config. Restart it or fix the error and try again.`,
+            });
+          }
           onClose();
         },
         onError: (err) =>
@@ -928,8 +944,15 @@ function DeleteConfirm({
             onClick={() => {
               if (!channel) return;
               del.mutate(channel.name, {
-                onSuccess: () => {
+                onSuccess: (res) => {
                   toast({ title: `Removed ${channel.name}` });
+                  if (res.reload && !res.reload.ok && !res.reload.skipped) {
+                    toast({
+                      variant: 'destructive',
+                      title: 'Alertmanager refused the reload',
+                      description: `${res.reload.detail} — the file on disk is updated but the running Alertmanager is still on the previous config. Restart it or fix the error and try again.`,
+                    });
+                  }
                   onConfirmed();
                 },
                 onError: (err) =>
