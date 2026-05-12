@@ -90,6 +90,13 @@ export const configSchema = z.object({
   KAFKA_TOPICS_STATUS: z.string().default('cp.status'),
   KAFKA_TOPICS_METER: z.string().default('cp.meter'),
   KAFKA_TOPICS_TX_STARTED: z.string().default('tx.started'),
+  // Presence: `cp.connected` fires when a charger opens a WS to the
+  // gateway, `cp.disconnected` when it goes away. The Console needs
+  // both for the `online` flag on the list view to flip in real time
+  // — without them, online/offline only updates when a status / boot
+  // event happens to come through, which is rarely.
+  KAFKA_TOPICS_CONNECTED: z.string().default('cp.connected'),
+  KAFKA_TOPICS_DISCONNECTED: z.string().default('cp.disconnected'),
 
   // WS hardening
   WS_MAX_SUBSCRIPTIONS_PER_CONN: z.coerce.number().int().positive().default(50),

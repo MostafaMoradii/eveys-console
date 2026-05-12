@@ -102,7 +102,22 @@ const chargePoints: QueryResolver = {
     return { cursor, snapshot };
   },
   async deltasFromEvent(params, event, gateway) {
-    if (event.topic !== 'cp.boot' && event.topic !== 'cp.status') return [];
+    // Topics we re-fetch the row for:
+    //   - cp.boot         → vendor/model/fw might've changed
+    //   - cp.status       → connector state changed
+    //   - cp.connected    → charger came online (online flag flips)
+    //   - cp.disconnected → charger went away  (online flag flips)
+    // Without the two presence topics the `online` column in the
+    // list view only updates when a status/boot event happens to
+    // come through next — which can be never if a charger drops
+    // off and stays off.
+    if (
+      event.topic !== 'cp.boot' &&
+      event.topic !== 'cp.status' &&
+      event.topic !== 'cp.connected' &&
+      event.topic !== 'cp.disconnected'
+    )
+      return [];
     if (!event.cpId) return [];
 
     // The Kafka event payload only carries a small subset of the
@@ -231,7 +246,16 @@ const chargePoint: QueryResolver = {
   async deltasFromEvent(params, event, gateway) {
     const cpId = stringParam(params, 'cp_id');
     if (event.cpId !== cpId) return [];
-    if (event.topic !== 'cp.boot' && event.topic !== 'cp.status') return [];
+    // Mirror the list resolver: react to status/boot edits AND to
+    // presence transitions so the detail page's "online" header
+    // flips immediately when a charger appears or drops.
+    if (
+      event.topic !== 'cp.boot' &&
+      event.topic !== 'cp.status' &&
+      event.topic !== 'cp.connected' &&
+      event.topic !== 'cp.disconnected'
+    )
+      return [];
 
     // Same approach as the list resolver: re-fetch the full row from
     // the gateway so the UI gets a complete update. This page is one
