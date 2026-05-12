@@ -64,6 +64,13 @@ services:
       # --config.file at it, so writes from the Channels tab take
       # effect on the next /-/reload.
       ALERTMANAGER_CONFIG_PATH: /data/alertmanager-managed.yml
+      # Console-managed Alertmanager templates file. The Console
+      # writes here in *its* container; the Alertmanager service
+      # mounts the same named volume and reads the file at
+      # ALERTMANAGER_TEMPLATES_IN_CONTAINER_PATH below — which is
+      # what the managed config's `templates:` block points at.
+      ALERTMANAGER_TEMPLATES_PATH: /data/alertmanager-templates.yml
+      ALERTMANAGER_TEMPLATES_IN_CONTAINER_PATH: /etc/alertmanager-managed/alertmanager-templates.yml
     ports:
       - '8090:8090'
     volumes:

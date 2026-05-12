@@ -54,6 +54,25 @@ export const configSchema = z.object({
   // alongside the SQLite + diagnostics uploads.
   ALERTMANAGER_CONFIG_PATH: z.string().default('./data/alertmanager-managed.yml'),
 
+  // Console-managed Alertmanager templates file. Holds the named Go
+  // templates (`eveys.email.html`, `eveys.telegram.message`, …) the
+  // managed receivers reference for their `html` / `message` / `title`
+  // / `text` fields. Lives alongside ALERTMANAGER_CONFIG_PATH; the
+  // compose mount maps both into the Alertmanager container. The
+  // managed config's `templates:` block points at the in-container
+  // path (configured via ALERTMANAGER_TEMPLATES_IN_CONTAINER_PATH).
+  ALERTMANAGER_TEMPLATES_PATH: z.string().default('./data/alertmanager-templates.yml'),
+
+  // Path **as Alertmanager sees it inside its container** for the
+  // templates file. The Console writes ALERTMANAGER_TEMPLATES_PATH on
+  // the host and the compose bind mounts that to this in-container
+  // path. The managed config's `templates:` block must reference the
+  // in-container path, not the host one. Keep this aligned with
+  // deploy/docker-compose.yml's volume mount.
+  ALERTMANAGER_TEMPLATES_IN_CONTAINER_PATH: z
+    .string()
+    .default('/etc/alertmanager/alertmanager-templates.yml'),
+
   // Base URL of Prometheus for the Rules tab on /sys/alerts. Optional —
   // when unset, /sys/alerts/rules returns the unavailable envelope and
   // the Rules tab renders its "Prometheus not configured" hint.

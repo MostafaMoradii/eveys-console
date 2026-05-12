@@ -55,6 +55,7 @@ import { registerSysStatusRoute } from './routes/sys-status.js';
 import { registerSysTransactionsRoute } from './routes/sys-transactions.js';
 import { registerWsRoute } from './routes/ws.js';
 import { ChannelsStore } from './store/channels-store.js';
+import { TemplatesStore } from './store/templates-store.js';
 import { DiagnosticsStore } from './store/diagnostics-store.js';
 import { RulesStore } from './store/rules-store.js';
 
@@ -106,7 +107,10 @@ async function main() {
   const users = new UserStore(config);
   const pow = new PowVerifier(config);
   const diagnosticsStore = new DiagnosticsStore(config.DIAGNOSTICS_DATA_DIR);
-  const channelsStore = new ChannelsStore(config.ALERTMANAGER_CONFIG_PATH);
+  const channelsStore = new ChannelsStore(config.ALERTMANAGER_CONFIG_PATH, {
+    templatesInContainerPath: config.ALERTMANAGER_TEMPLATES_IN_CONTAINER_PATH,
+  });
+  const templatesStore = new TemplatesStore(config.ALERTMANAGER_TEMPLATES_PATH);
   const rulesStore = new RulesStore(config.ALERTS_RULES_CONFIG_PATH, config.PROMTOOL_PATH);
   const overrideStore = new OverrideStore(`${config.DIAGNOSTICS_DATA_DIR}/console-overrides.json`);
   await overrideStore.load();
@@ -130,6 +134,22 @@ async function main() {
     logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
       'alertmanager.rules.seed-failed',
+    );
+  }
+  // Seed the named Alertmanager templates. The managed config's
+  // `templates:` block points at the in-container path the compose
+  // mount maps this to; without the file present, Alertmanager would
+  // refuse to load on reload. Idempotent — operator edits survive.
+  try {
+    const created = await templatesStore.seedIfMissing();
+    logger.info(
+      { path: config.ALERTMANAGER_TEMPLATES_PATH, created },
+      'alertmanager.templates.seeded',
+    );
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'alertmanager.templates.seed-failed',
     );
   }
 

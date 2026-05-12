@@ -296,3 +296,131 @@ describe('renderManagedYaml shape', () => {
     expect(yaml).toMatch(/receiver:\s*ops/);
   });
 });
+
+// PR #169: Console-managed default templates.
+//
+// When ChannelsStore is constructed with `templatesInContainerPath`,
+// the rendered config must (a) emit a top-level `templates:` list
+// pointing at that path and (b) wire each templated medium's
+// receiver to its named template. Webhook stays raw-JSON. Operator
+// `title`/`text` overrides on Slack still win — that's the only
+// override surface PR 1 exposes; PR 2 will broaden it.
+describe('Console-managed default templates (PR #169)', () => {
+  const TPL_PATH = '/etc/alertmanager/alertmanager-templates.yml';
+  let templatedDir: string;
+  let templatedPath: string;
+  let templated: ChannelsStore;
+
+  beforeEach(async () => {
+    templatedDir = await mkdtemp(join(tmpdir(), 'channels-tpl-'));
+    templatedPath = join(templatedDir, 'alertmanager-managed.yml');
+    templated = new ChannelsStore(templatedPath, { templatesInContainerPath: TPL_PATH });
+  });
+
+  afterEach(async () => {
+    await rm(templatedDir, { recursive: true, force: true });
+  });
+
+  it('emits a `templates:` block at the in-container path', async () => {
+    await templated.updateChannels([], '');
+    const text = await readFile(templatedPath, 'utf8');
+    expect(text).toContain('templates:');
+    expect(text).toContain(`- ${TPL_PATH}`);
+  });
+
+  it('omits the `templates:` block when no path was wired', async () => {
+    await store.updateChannels([], '');
+    const text = await readFile(cfgPath, 'utf8');
+    expect(text).not.toContain('templates:');
+  });
+
+  it('wires Slack receivers to title + text templates by default', async () => {
+    const ch: Channel = {
+      type: 'slack',
+      name: 'ops',
+      api_url: 'https://hooks/x',
+      channel: '#a',
+    };
+    await templated.updateChannels([ch], 'ops');
+    const text = await readFile(templatedPath, 'utf8');
+    expect(text).toContain('{{ template "eveys.slack.title" . }}');
+    expect(text).toContain('{{ template "eveys.slack.text" . }}');
+  });
+
+  it('preserves an operator-set Slack title/text on round-trip (override wins)', async () => {
+    const ch: Channel = {
+      type: 'slack',
+      name: 'ops',
+      api_url: 'https://hooks/x',
+      channel: '#a',
+      title: '🚨 my custom title',
+      text: 'my custom text',
+    };
+    await templated.updateChannels([ch], 'ops');
+    const text = await readFile(templatedPath, 'utf8');
+    expect(text).toContain('🚨 my custom title');
+    expect(text).toContain('my custom text');
+    expect(text).not.toContain('{{ template "eveys.slack.title" . }}');
+    expect(text).not.toContain('{{ template "eveys.slack.text" . }}');
+    const out = await templated.read();
+    expect(out.channels[0]).toEqual(ch);
+  });
+
+  it('wires email receivers to html/text/Subject templates', async () => {
+    const ch: Channel = {
+      type: 'email',
+      name: 'oncall',
+      to: 'a@b',
+      from: 'c@d',
+      smarthost: 's:25',
+    };
+    await templated.updateChannels([ch], 'oncall');
+    const text = await readFile(templatedPath, 'utf8');
+    expect(text).toContain('{{ template "eveys.email.html" . }}');
+    expect(text).toContain('{{ template "eveys.email.text" . }}');
+    expect(text).toContain('Subject:');
+    expect(text).toContain('{{ template "eveys.email.subject" . }}');
+  });
+
+  it('wires Telegram receivers to the message template and defaults parse_mode to HTML', async () => {
+    const ch: Channel = {
+      type: 'telegram',
+      name: 'tg',
+      bot_token: '12345:abc',
+      chat_id: '-100123',
+    };
+    await templated.updateChannels([ch], 'tg');
+    const text = await readFile(templatedPath, 'utf8');
+    expect(text).toContain('{{ template "eveys.telegram.message" . }}');
+    expect(text).toContain('parse_mode: HTML');
+  });
+
+  it('leaves webhook receivers untemplated — they POST raw JSON', async () => {
+    const ch: Channel = {
+      type: 'webhook',
+      name: 'pd',
+      url: 'https://events.pagerduty.com/x',
+    };
+    await templated.updateChannels([ch], 'pd');
+    const text = await readFile(templatedPath, 'utf8');
+    expect(text).not.toMatch(/\{\{ template "eveys\.(slack|email|telegram)\./);
+  });
+
+  it('round-trips a Slack channel through default-template strip on read', async () => {
+    // The on-disk file has `{{ template "eveys.slack.title" . }}` for
+    // both title and text. On read, the parsed Channel should have
+    // neither field set — the UI then shows the channel as "using
+    // defaults" rather than "operator-overridden".
+    const ch: Channel = {
+      type: 'slack',
+      name: 'ops',
+      api_url: 'https://hooks/x',
+      channel: '#a',
+    };
+    await templated.updateChannels([ch], 'ops');
+    const out = await templated.read();
+    expect(out.channels[0]).toEqual(ch);
+    expect((out.channels[0] as { title?: string }).title).toBeUndefined();
+    expect((out.channels[0] as { text?: string }).text).toBeUndefined();
+  });
+});

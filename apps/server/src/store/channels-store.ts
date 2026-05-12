@@ -25,6 +25,8 @@ import { dirname } from 'node:path';
 
 import { parse, stringify } from 'yaml';
 
+import { CHANNEL_TEMPLATE_INVOCATIONS } from './templates-defaults.js';
+
 export type ChannelType = 'slack' | 'email' | 'webhook' | 'telegram';
 
 export interface ChannelSlack {
@@ -100,8 +102,25 @@ const NULL_RECEIVER_NAME = '__console_default__';
 // Public API
 // ----------------------------------------------------------------------------
 
+export interface ChannelsStoreOptions {
+  /** Path **as Alertmanager sees it inside its container** of the
+   *  Console-managed templates file. When set, the rendered config
+   *  emits a `templates:` block pointing here and wires every
+   *  templated receiver to the matching named template. When unset
+   *  (e.g. unit tests that don't care), receivers fall back to
+   *  Alertmanager's built-in defaults — same behaviour as pre-#169. */
+  templatesInContainerPath?: string;
+}
+
 export class ChannelsStore {
-  constructor(private readonly path: string) {}
+  private readonly templatesInContainerPath: string | undefined;
+
+  constructor(
+    private readonly path: string,
+    opts: ChannelsStoreOptions = {},
+  ) {
+    this.templatesInContainerPath = opts.templatesInContainerPath;
+  }
 
   /** Read the managed config. Returns an empty list + `null` default
    *  when the file is missing — caller renders the "no channels"
@@ -129,7 +148,12 @@ export class ChannelsStore {
    *  first write so the deploy doesn't need to pre-create `data/`. */
   async write(cfg: ManagedConfig): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true });
-    const yaml = renderManagedYaml(cfg);
+    const yaml = renderManagedYaml(
+      cfg,
+      this.templatesInContainerPath
+        ? { templatesInContainerPath: this.templatesInContainerPath }
+        : {},
+    );
     const tmp = `${this.path}.tmp-${process.pid}`;
     await writeFile(tmp, yaml, 'utf8');
     // Rename is atomic on the same filesystem — readers never see a
@@ -223,6 +247,7 @@ function maskUrl(s: string): string {
 
 interface AlertmanagerYaml {
   global?: Record<string, unknown>;
+  templates?: string[];
   route?: AlertmanagerRoute;
   receivers?: AlertmanagerReceiver[];
 }
@@ -251,6 +276,9 @@ interface AlertmanagerReceiver {
     auth_password?: string;
     require_tls?: boolean;
     send_resolved?: boolean;
+    html?: string;
+    text?: string;
+    headers?: Record<string, string>;
   }>;
   webhook_configs?: Array<{
     url: string;
@@ -269,6 +297,7 @@ interface AlertmanagerReceiver {
     api_url?: string;
     parse_mode?: string;
     send_resolved?: boolean;
+    message?: string;
   }>;
 }
 
@@ -287,16 +316,30 @@ function parseManagedYaml(text: string): ManagedConfig {
   return { channels, default_channel: defaultChannel };
 }
 
+/** A receiver field value is a Console-managed default (not an operator
+ *  override) when it's exactly our canonical `{{ template "eveys.<…>" . }}`
+ *  invocation. We strip those on read so the UI shows the field as
+ *  empty / "using default" instead of round-tripping the invocation as
+ *  if the operator had typed it. */
+function isDefaultTemplateInvocation(value: string | undefined, name: string): boolean {
+  return value === `{{ template "${name}" . }}`;
+}
+
 function receiverToChannel(r: AlertmanagerReceiver): Channel | null {
   const slack = r.slack_configs?.[0];
   if (slack && typeof slack.api_url === 'string') {
+    const inv = CHANNEL_TEMPLATE_INVOCATIONS.slack;
+    const title =
+      slack.title && !isDefaultTemplateInvocation(slack.title, inv.title) ? slack.title : undefined;
+    const text =
+      slack.text && !isDefaultTemplateInvocation(slack.text, inv.text) ? slack.text : undefined;
     return {
       type: 'slack',
       name: r.name,
       api_url: slack.api_url,
       channel: slack.channel ?? '',
-      ...(slack.title ? { title: slack.title } : {}),
-      ...(slack.text ? { text: slack.text } : {}),
+      ...(title ? { title } : {}),
+      ...(text ? { text } : {}),
     };
   }
   const email = r.email_configs?.[0];
@@ -346,16 +389,32 @@ function receiverToChannel(r: AlertmanagerReceiver): Channel | null {
   return null;
 }
 
-function renderManagedYaml(cfg: ManagedConfig): string {
+interface RenderOptions {
+  /** When set, the rendered YAML's top-level `templates:` block points
+   *  at this file and every templated receiver emits a `{{ template
+   *  "eveys.<medium>.<field>" . }}` invocation in place of relying on
+   *  Alertmanager's built-in defaults. Pass the path **as Alertmanager
+   *  sees it inside its container**, since that's what the file's own
+   *  loader resolves at startup / reload time. */
+  templatesInContainerPath?: string;
+}
+
+function renderManagedYaml(cfg: ManagedConfig, opts: RenderOptions = {}): string {
+  const templatesEnabled = Boolean(opts.templatesInContainerPath);
   const receivers: AlertmanagerReceiver[] = [{ name: NULL_RECEIVER_NAME }];
-  for (const c of cfg.channels) receivers.push(channelToReceiver(c));
+  for (const c of cfg.channels) receivers.push(channelToReceiver(c, templatesEnabled));
   const route: AlertmanagerRoute = {
     receiver: cfg.default_channel || NULL_RECEIVER_NAME,
     group_wait: '30s',
     group_interval: '5m',
     repeat_interval: '4h',
   };
-  const yaml: AlertmanagerYaml = { route, receivers };
+  const yaml: AlertmanagerYaml = {};
+  if (opts.templatesInContainerPath) {
+    yaml.templates = [opts.templatesInContainerPath];
+  }
+  yaml.route = route;
+  yaml.receivers = receivers;
   // Prefix with a comment so an SRE peeking at the file knows what
   // it is and how to edit it (don't).
   //
@@ -366,22 +425,38 @@ function renderManagedYaml(cfg: ManagedConfig): string {
   );
 }
 
-function channelToReceiver(c: Channel): AlertmanagerReceiver {
+function channelToReceiver(c: Channel, templatesEnabled: boolean): AlertmanagerReceiver {
+  // Wrap a template name into Go-template invocation syntax. The two
+  // dots (`.`) at the end pass the current notification scope to the
+  // named template — same convention Alertmanager's docs use.
+  const tpl = (name: string) => `{{ template "${name}" . }}`;
   switch (c.type) {
-    case 'slack':
+    case 'slack': {
+      // Slack: title + text fields receive the template invocations.
+      // Operator-set custom title/text on the channel record wins, so
+      // overrides round-trip unchanged.
+      const inv = CHANNEL_TEMPLATE_INVOCATIONS.slack;
+      const title = c.title ?? (templatesEnabled ? tpl(inv.title) : undefined);
+      const text = c.text ?? (templatesEnabled ? tpl(inv.text) : undefined);
       return {
         name: c.name,
         slack_configs: [
           {
             api_url: c.api_url,
             channel: c.channel,
-            ...(c.title ? { title: c.title } : {}),
-            ...(c.text ? { text: c.text } : {}),
+            ...(title !== undefined ? { title } : {}),
+            ...(text !== undefined ? { text } : {}),
             send_resolved: true,
           },
         ],
       };
-    case 'email':
+    }
+    case 'email': {
+      // Email: html, text and Subject all come from named templates.
+      // The legacy default-receiver behaviour shipped subject+plain
+      // body; we keep that fallback when templates aren't wired, so
+      // pre-PR-#169 deploys behave identically.
+      const inv = CHANNEL_TEMPLATE_INVOCATIONS.email;
       return {
         name: c.name,
         email_configs: [
@@ -392,13 +467,25 @@ function channelToReceiver(c: Channel): AlertmanagerReceiver {
             ...(c.auth_username ? { auth_username: c.auth_username } : {}),
             ...(c.auth_password ? { auth_password: c.auth_password } : {}),
             ...(c.require_tls !== undefined ? { require_tls: c.require_tls } : {}),
+            ...(templatesEnabled
+              ? {
+                  html: tpl(inv.html),
+                  text: tpl(inv.text),
+                  headers: { Subject: tpl(inv.headers_subject) },
+                }
+              : {}),
             send_resolved: true,
           },
         ],
       };
+    }
     case 'webhook': {
       // Auth selection — bearer wins when both are set; the form
       // shouldn't let that happen, but the contract is explicit.
+      // Webhook receivers don't take a template — they POST the raw
+      // Alertmanager alert payload as JSON. Consumers on the other
+      // end (PagerDuty, OpsGenie, in-house pipelines) parse the
+      // structured fields directly.
       let httpConfig:
         | {
             basic_auth?: { username: string; password: string };
@@ -433,6 +520,7 @@ function channelToReceiver(c: Channel): AlertmanagerReceiver {
       // reject loudly on reload — better than silently dropping the
       // receiver.
       const chatId = Number.parseInt(c.chat_id, 10);
+      const inv = CHANNEL_TEMPLATE_INVOCATIONS.telegram;
       return {
         name: c.name,
         telegram_configs: [
@@ -440,7 +528,11 @@ function channelToReceiver(c: Channel): AlertmanagerReceiver {
             bot_token: c.bot_token,
             chat_id: Number.isFinite(chatId) ? chatId : 0,
             ...(c.api_url ? { api_url: c.api_url } : {}),
-            ...(c.parse_mode ? { parse_mode: c.parse_mode } : {}),
+            // Default to HTML parse_mode so the Telegram template's
+            // <b>/<i>/<a> tags render. Operators can override on the
+            // channel form (e.g. for MarkdownV2 + a custom message).
+            parse_mode: c.parse_mode ?? 'HTML',
+            ...(templatesEnabled ? { message: tpl(inv.message) } : {}),
             send_resolved: true,
           },
         ],
