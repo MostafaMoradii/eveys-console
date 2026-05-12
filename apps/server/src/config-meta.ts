@@ -314,6 +314,26 @@ const META: Record<keyof Config, KeyMeta> = {
     default: 'tx.started',
     sensitive: false,
   },
+  KAFKA_TOPICS_CONNECTED: {
+    description:
+      'Topic the Console tails for charger-online transitions. Drives the live `online` flag on the list view and the detail page header (gateway-side: kafka_topic_cp_connected).',
+    category: 'kafka',
+    mutable: true,
+    restart: 'console',
+    range: 'topic name',
+    default: 'cp.connected',
+    sensitive: false,
+  },
+  KAFKA_TOPICS_DISCONNECTED: {
+    description:
+      'Topic the Console tails for charger-offline transitions. Companion to KAFKA_TOPICS_CONNECTED; without it the `online` flag only flips when a status/boot event happens to come through (gateway-side: kafka_topic_cp_disconnected).',
+    category: 'kafka',
+    mutable: true,
+    restart: 'console',
+    range: 'topic name',
+    default: 'cp.disconnected',
+    sensitive: false,
+  },
 
   WS_MAX_SUBSCRIPTIONS_PER_CONN: {
     description: 'Cap on simultaneous subscriptions per WebSocket. Plumbed but not yet enforced.',
