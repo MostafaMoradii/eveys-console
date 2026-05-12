@@ -104,6 +104,22 @@ export const RECOMMENDED_RULES: RecommendedRule[] = [
     rationale: 'User-visible failure — pages anyone working in the Console.',
   },
   {
+    name: 'ChargerOffline',
+    // Per-cp. Fires once per charger that has stopped heartbeating for
+    // 10+ minutes. Suitable for small fleets and dev/test where the
+    // operator wants to know about a single device. At fleet scale
+    // this is noisy on every reboot — pair it with a silence or skip
+    // it in favour of FleetHeartbeatMiss.
+    expr: 'time() - ocpp_cp_last_heartbeat_seconds > 600',
+    duration: '10m',
+    severity: 'warning',
+    summary: 'Charger {{ $labels.cp_id }} offline (no heartbeat for 10+ min)',
+    description:
+      'Charger {{ $labels.cp_id }} has not sent a heartbeat for more than 10 minutes. The device is powered off, lost network, or wedged. Check the device locally if accessible.',
+    rationale:
+      'The single-charger version of FleetHeartbeatMiss — useful for small fleets and dev/test.',
+  },
+  {
     name: 'FleetHeartbeatMiss',
     expr: 'count(time() - ocpp_cp_last_heartbeat_seconds > 600) > 10',
     duration: '10m',
