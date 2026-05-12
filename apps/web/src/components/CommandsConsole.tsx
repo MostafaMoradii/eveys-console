@@ -27,6 +27,7 @@ import { useConsoleClient } from '@/lib/ws-context';
 export function CommandsConsole({
   cpId,
   online,
+  ocppVersion,
 }: {
   cpId: string;
   /** Charger's current online state. When false, every Send button
@@ -35,6 +36,12 @@ export function CommandsConsole({
    *  than a confusing error toast. Undefined keeps the legacy
    *  behaviour (always enabled) for callers that don't track it. */
   online?: boolean;
+  /** OCPP subprotocol the charger negotiated. Drives whether
+   *  Security-Extension commands (GetLog) render in the main
+   *  Diagnostics section or under an "Advanced — 1.6 Security
+   *  Extensions" disclosure. Null when the gateway hasn't recorded
+   *  a value yet — treated like 1.6. */
+  ocppVersion?: string | null;
 }) {
   const { client, token } = useConsoleClient();
   const t = useCommandTranscript(client, cpId);
@@ -84,6 +91,7 @@ export function CommandsConsole({
             issueUrl={issueUrl}
             getConfigResult={getConfigResult}
             setGetConfigResult={setGetConfigResult}
+            ocppVersion={ocppVersion ?? null}
           />
         </fieldset>
       </div>
