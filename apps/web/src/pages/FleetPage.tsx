@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/table';
 import { useSubscription } from '@/hooks/use-subscription';
 import { chargePointFaultLevel, type FaultLevel } from '@/lib/fault';
+import { formatOcppVersion } from '@/lib/ocpp-version';
 import { formatRelativeTime, formatUptime } from '@/lib/time';
 import { useIsBelow } from '@/lib/use-breakpoint';
 import { cn } from '@/lib/utils';
@@ -465,6 +466,7 @@ function FleetTable({ rows }: { rows: ChargePointSummary[] }) {
             <TableHead>connectors</TableHead>
             <TableHead>vendor / model</TableHead>
             <TableHead>firmware</TableHead>
+            <TableHead>OCPP</TableHead>
             <TableHead>last heartbeat</TableHead>
             <TableHead>uptime</TableHead>
           </TableRow>
@@ -545,6 +547,12 @@ function FleetTableRow({
           </div>
         </TableCell>
         <TableCell className="font-mono text-xs">{row.firmware_version ?? '—'}</TableCell>
+        <TableCell
+          className="font-mono text-xs text-muted-foreground"
+          data-testid="fleet-row-ocpp-version"
+        >
+          {row.ocpp_version ? formatOcppVersion(row.ocpp_version) : '—'}
+        </TableCell>
         <TableCell className="text-xs text-muted-foreground">
           {formatRelativeTime(row.last_heartbeat_at)}
         </TableCell>
@@ -554,7 +562,7 @@ function FleetTableRow({
       </TableRow>
       {isOpen ? (
         <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableCell colSpan={10} className="p-0">
+          <TableCell colSpan={11} className="p-0">
             <ConnectorDetail connectors={row.connectors} cpId={row.cp_id} />
           </TableCell>
         </TableRow>
@@ -611,6 +619,7 @@ function FleetCard({ row }: { row: ChargePointSummary }) {
         <dl className="space-y-1 text-xs text-muted-foreground">
           <Row k="vendor" v={vendorModelText(row.vendor, row.model)} />
           <Row k="firmware" v={row.firmware_version ?? '—'} />
+          <Row k="OCPP" v={row.ocpp_version ? formatOcppVersion(row.ocpp_version) : '—'} />
           <Row k="heartbeat" v={formatRelativeTime(row.last_heartbeat_at)} />
           {row.online && row.last_boot_at ? (
             <Row k="uptime" v={formatUptime(row.last_boot_at)} />
