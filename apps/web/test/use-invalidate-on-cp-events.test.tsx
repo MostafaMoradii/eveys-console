@@ -66,7 +66,7 @@ afterEach(() => {
 describe('useInvalidateOnCpEvents', () => {
   it('invalidates the given query keys when a matching event arrives', () => {
     const qc = new QueryClient();
-    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const spy = vi.spyOn(qc, 'refetchQueries');
 
     stub.lastDelta = delta(makeEvent({ kind: 'tx-started' }));
     renderHook(
@@ -79,12 +79,12 @@ describe('useInvalidateOnCpEvents', () => {
       { wrapper: wrapper(qc) },
     );
 
-    expect(spy).toHaveBeenCalledWith({ queryKey: ['cp-transactions', 'cp_A'] });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ['cp-transactions', 'cp_A'], type: 'active' });
   });
 
   it('skips events whose kind is not in the filter', () => {
     const qc = new QueryClient();
-    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const spy = vi.spyOn(qc, 'refetchQueries');
 
     stub.lastDelta = delta(makeEvent({ kind: 'meter' }));
     renderHook(
@@ -101,7 +101,7 @@ describe('useInvalidateOnCpEvents', () => {
 
   it('does nothing without a kind filter when there is no lastDelta', () => {
     const qc = new QueryClient();
-    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const spy = vi.spyOn(qc, 'refetchQueries');
     stub.lastDelta = null;
     renderHook(
       () =>
@@ -116,7 +116,7 @@ describe('useInvalidateOnCpEvents', () => {
 
   it('invalidates multiple keys per event', () => {
     const qc = new QueryClient();
-    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const spy = vi.spyOn(qc, 'refetchQueries');
     stub.lastDelta = delta(makeEvent({ kind: 'tx-started' }));
     renderHook(
       () =>

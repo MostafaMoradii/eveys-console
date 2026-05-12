@@ -511,6 +511,39 @@ const deviceEvents: QueryResolver = {
       return [{ cursor: event.cursor, delta: { kind: 'device-events', append: ev } }];
     }
 
+    if (event.topic === 'tx.stopped') {
+      // TxStopped payload (proto/events/v1/events.proto): transaction_id,
+      // id_tag, meter_stop_wh, consumed_wh, stop_reason, charger_reported_at.
+      // The Console's Transactions card pivots a row from "open" to
+      // "completed" when this fires — so we need to surface it even
+      // when the panel isn't directly rendering it, because
+      // useInvalidateOnCpEvents drives the refetch off this delta.
+      const transactionId = Number(p.transactionId ?? 0);
+      const idTag = nullableString(p.idTag);
+      const meterStopWh = Number(p.meterStopWh ?? 0);
+      const consumedWh = p.consumedWh != null ? Number(p.consumedWh) : null;
+      const stopReason = nullableString(p.stopReason);
+      const ev: DeviceEvent = {
+        at:
+          typeof p.chargerReportedAt === 'string' && p.chargerReportedAt
+            ? p.chargerReportedAt
+            : fallbackAt,
+        kind: 'tx-stopped',
+        summary: stopReason
+          ? `Transaction ${transactionId} stopped — ${stopReason}`
+          : `Transaction ${transactionId} stopped`,
+        detail: {
+          transaction_id: transactionId,
+          id_tag: idTag,
+          meter_stop_wh: meterStopWh,
+          consumed_wh: consumedWh,
+          stop_reason: stopReason,
+        },
+        connector_id: null,
+      };
+      return [{ cursor: event.cursor, delta: { kind: 'device-events', append: ev } }];
+    }
+
     return [];
   },
 };

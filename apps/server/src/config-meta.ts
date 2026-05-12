@@ -314,6 +314,16 @@ const META: Record<keyof Config, KeyMeta> = {
     default: 'tx.started',
     sensitive: false,
   },
+  KAFKA_TOPICS_TX_STOPPED: {
+    description:
+      'Topic the Console tails for StopTransaction events. Drives the live "session completed" pivot on the per-charger Transactions card (gateway-side: kafka_topic_tx_stopped).',
+    category: 'kafka',
+    mutable: true,
+    restart: 'console',
+    range: 'topic name',
+    default: 'tx.stopped',
+    sensitive: false,
+  },
 
   WS_MAX_SUBSCRIPTIONS_PER_CONN: {
     description: 'Cap on simultaneous subscriptions per WebSocket. Plumbed but not yet enforced.',
