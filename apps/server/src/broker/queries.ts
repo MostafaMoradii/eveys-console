@@ -26,6 +26,7 @@ import type {
 
 import type { GatewayClient } from '../rest/gateway-client.js';
 import type { KafkaEvent } from '../kafka/tail.js';
+import { deviceEventFromKafka } from '../event-log/from-kafka.js';
 import { tailLastN } from '../event-log/tail.js';
 import type { Delta, Snapshot } from './types.js';
 
@@ -439,173 +440,13 @@ const deviceEvents: QueryResolver = {
   async deltasFromEvent(params, event) {
     const cpId = stringParam(params, 'cp_id');
     if (event.cpId !== cpId) return [];
-    const p = event.payload as Record<string, unknown> | null;
-    if (!p || typeof p !== 'object') return [];
-
-    const fallbackAt = event.timestamp.toISOString();
-
-    if (event.topic === 'cp.boot') {
-      const vendor = nullableString(p.vendor);
-      const model = nullableString(p.model);
-      const firmwareVersion = nullableString(p.firmwareVersion);
-      const serialNumber = nullableString(p.serialNumber);
-      const chargePointStatus = nullableString(p.chargePointStatus);
-      // Build the summary from whatever parts are present; OCPP 1.6
-      // BootNotification only requires vendor + model, the rest can
-      // be omitted on the wire.
-      const parts = ['BootNotification'];
-      const tail = [vendor, model].filter((s): s is string => s != null).join(' ');
-      if (tail) parts.push(`— ${tail}`);
-      if (firmwareVersion) parts.push(`fw ${firmwareVersion}`);
-      const ev: DeviceEvent = {
-        at:
-          typeof p.chargerReportedAt === 'string' && p.chargerReportedAt
-            ? p.chargerReportedAt
-            : fallbackAt,
-        kind: 'boot',
-        summary: parts.join(' ').trim(),
-        detail: {
-          vendor,
-          model,
-          firmware_version: firmwareVersion,
-          serial_number: serialNumber,
-          charge_point_status: chargePointStatus,
-        },
-        connector_id: null,
-      };
-      return [{ cursor: event.cursor, delta: { kind: 'device-events', append: ev } }];
-    }
-
-    if (event.topic === 'cp.status') {
-      const connectorId = Number(p.connectorId ?? 0);
-      const status = String(p.status ?? '');
-      const errorCode = nullableString(p.errorCode);
-      const errorTail = errorCode && errorCode !== 'NoError' ? ` (${errorCode})` : '';
-      const ev: DeviceEvent = {
-        at:
-          typeof p.chargerReportedAt === 'string' && p.chargerReportedAt
-            ? p.chargerReportedAt
-            : fallbackAt,
-        kind: 'status',
-        summary: `Connector ${connectorId} → ${status}${errorTail}`,
-        detail: {
-          status: status === '' ? null : status,
-          error_code: errorCode,
-          vendor_error_code: nullableString(p.vendorErrorCode),
-          info: nullableString(p.info),
-        },
-        connector_id: connectorId,
-      };
-      return [{ cursor: event.cursor, delta: { kind: 'device-events', append: ev } }];
-    }
-
-    if (event.topic === 'cp.meter') {
-      const samplesRaw = p.sampledValues;
-      const samples = Array.isArray(samplesRaw) ? samplesRaw : [];
-      if (samples.length === 0) return [];
-      // Pick the energy register as the headline sample if present
-      // (it's the value operators care about); otherwise the first
-      // sample stands in.
-      const energy = samples.find(
-        (sv): sv is Record<string, unknown> =>
-          !!sv &&
-          typeof sv === 'object' &&
-          enumToString((sv as Record<string, unknown>).measurand) ===
-            'ENERGY_ACTIVE_IMPORT_REGISTER',
-      );
-      const firstObj = samples.find(
-        (sv): sv is Record<string, unknown> => !!sv && typeof sv === 'object',
-      );
-      const primary = energy ?? firstObj ?? null;
-      const primaryMeasurand = primary
-        ? (enumToString(primary.measurand) ?? 'Energy.Active.Import.Register')
-        : null;
-      const primaryValueRaw = primary?.value;
-      let primaryValue: number | null = null;
-      if (primaryValueRaw != null) {
-        const n = typeof primaryValueRaw === 'number' ? primaryValueRaw : Number(primaryValueRaw);
-        if (Number.isFinite(n)) primaryValue = n;
-      }
-      const primaryUnit = primary ? enumToString(primary.unit) : null;
-      const connectorId = Number(p.connectorId ?? 0);
-      const transactionId = p.transactionId != null ? Number(p.transactionId) : null;
-      const ev: DeviceEvent = {
-        at:
-          typeof p.chargerReportedAt === 'string' && p.chargerReportedAt
-            ? p.chargerReportedAt
-            : fallbackAt,
-        kind: 'meter',
-        summary: `MeterValues — ${samples.length} sample${samples.length === 1 ? '' : 's'}`,
-        detail: {
-          connector_id: connectorId,
-          transaction_id: transactionId,
-          primary_measurand: primaryMeasurand,
-          primary_value: primaryValue,
-          primary_unit: primaryUnit,
-          sample_count: samples.length,
-        },
-        connector_id: connectorId,
-      };
-      return [{ cursor: event.cursor, delta: { kind: 'device-events', append: ev } }];
-    }
-
-    if (event.topic === 'tx.started') {
-      const transactionId = Number(p.transactionId ?? 0);
-      const idTag = String(p.idTag ?? '');
-      const connectorId = Number(p.connectorId ?? 0);
-      const meterStartWh = Number(p.meterStartWh ?? 0);
-      const ev: DeviceEvent = {
-        at:
-          typeof p.chargerReportedAt === 'string' && p.chargerReportedAt
-            ? p.chargerReportedAt
-            : fallbackAt,
-        kind: 'tx-started',
-        summary: `Transaction ${transactionId} started — id_tag ${idTag}`,
-        detail: {
-          transaction_id: transactionId,
-          id_tag: idTag === '' ? null : idTag,
-          connector_id: connectorId,
-          meter_start_wh: meterStartWh,
-        },
-        connector_id: connectorId,
-      };
-      return [{ cursor: event.cursor, delta: { kind: 'device-events', append: ev } }];
-    }
-
-    if (event.topic === 'tx.stopped') {
-      // TxStopped payload (proto/events/v1/events.proto): transaction_id,
-      // id_tag, meter_stop_wh, consumed_wh, stop_reason, charger_reported_at.
-      // The Console's Transactions card pivots a row from "open" to
-      // "completed" when this fires — so we need to surface it even
-      // when the panel isn't directly rendering it, because
-      // useInvalidateOnCpEvents drives the refetch off this delta.
-      const transactionId = Number(p.transactionId ?? 0);
-      const idTag = nullableString(p.idTag);
-      const meterStopWh = Number(p.meterStopWh ?? 0);
-      const consumedWh = p.consumedWh != null ? Number(p.consumedWh) : null;
-      const stopReason = nullableString(p.stopReason);
-      const ev: DeviceEvent = {
-        at:
-          typeof p.chargerReportedAt === 'string' && p.chargerReportedAt
-            ? p.chargerReportedAt
-            : fallbackAt,
-        kind: 'tx-stopped',
-        summary: stopReason
-          ? `Transaction ${transactionId} stopped — ${stopReason}`
-          : `Transaction ${transactionId} stopped`,
-        detail: {
-          transaction_id: transactionId,
-          id_tag: idTag,
-          meter_stop_wh: meterStopWh,
-          consumed_wh: consumedWh,
-          stop_reason: stopReason,
-        },
-        connector_id: null,
-      };
-      return [{ cursor: event.cursor, delta: { kind: 'device-events', append: ev } }];
-    }
-
-    return [];
+    // Delegate to the shared mapper so the live tail and the durable
+    // disk log can't drift. Any topic the mapper doesn't recognise
+    // (e.g. tx.started's status-history pair, cp.meter sample fan-out)
+    // returns null and we emit no delta.
+    const mapped = deviceEventFromKafka(event);
+    if (!mapped) return [];
+    return [{ cursor: event.cursor, delta: { kind: 'device-events', append: mapped.event } }];
   },
 };
 

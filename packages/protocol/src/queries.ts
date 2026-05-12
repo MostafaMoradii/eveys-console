@@ -116,7 +116,17 @@ export type StatusEvent = z.infer<typeof statusEvent>;
 // carries the structured fields for the expand-on-click panel.
 export const deviceEvent = z.object({
   at: isoTimestamp,
-  kind: z.enum(['boot', 'status', 'meter', 'tx-started', 'tx-stopped']),
+  kind: z.enum([
+    'boot',
+    'status',
+    'meter',
+    'tx-started',
+    'tx-stopped',
+    'connected',
+    'disconnected',
+    'diagnostics-status',
+    'firmware-status',
+  ]),
   summary: z.string(),
   detail: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   connector_id: z.number().int().nonnegative().nullable().optional(),

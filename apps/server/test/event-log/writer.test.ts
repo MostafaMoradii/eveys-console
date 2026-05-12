@@ -109,4 +109,71 @@ describe('EventLogWriter', () => {
     const body = await fs.readFile(file, 'utf8');
     expect(body.trim().split('\n')).toHaveLength(1);
   });
+
+  // Topics added in #173 — without these the disk log was missing
+  // transitions that were both gateway-recorded AND interesting to
+  // operators (diag/firmware upload + presence flips, tx stop).
+  it('persists tx.stopped as a tx-stopped row', async () => {
+    await writer.appendFromKafka(
+      statusEvent({
+        topic: 'tx.stopped',
+        payload: {
+          transactionId: 42,
+          idTag: 'rfid-abc',
+          meterStopWh: 5000,
+          consumedWh: 4500,
+          stopReason: 'EVDisconnected',
+        },
+      }),
+    );
+    await writer.flush();
+    const ev = JSON.parse((await readFile('CP_A', '2026-05')).trim());
+    expect(ev.kind).toBe('tx-stopped');
+    expect(ev.summary).toBe('Transaction 42 stopped — EVDisconnected');
+  });
+
+  it('persists cp.connected as a connected row', async () => {
+    await writer.appendFromKafka(
+      statusEvent({ topic: 'cp.connected', payload: { subprotocol: 'ocpp1.6', podId: 'pod-x' } }),
+    );
+    await writer.flush();
+    const ev = JSON.parse((await readFile('CP_A', '2026-05')).trim());
+    expect(ev.kind).toBe('connected');
+    expect(ev.summary).toBe('WebSocket connected — ocpp1.6');
+    expect(ev.detail).toEqual({ subprotocol: 'ocpp1.6', pod_id: 'pod-x' });
+  });
+
+  it('persists cp.disconnected as a disconnected row', async () => {
+    await writer.appendFromKafka(
+      statusEvent({ topic: 'cp.disconnected', payload: { reason: 'idle_timeout' } }),
+    );
+    await writer.flush();
+    const ev = JSON.parse((await readFile('CP_A', '2026-05')).trim());
+    expect(ev.kind).toBe('disconnected');
+    expect(ev.summary).toBe('WebSocket disconnected — idle_timeout');
+  });
+
+  it('persists cp.diagnostics_status flips so the operator sees the full upload trail', async () => {
+    await writer.appendFromKafka(
+      statusEvent({ topic: 'cp.diagnostics_status', payload: { status: 'Uploading' } }),
+    );
+    await writer.appendFromKafka(
+      statusEvent({ topic: 'cp.diagnostics_status', payload: { status: 'Uploaded' } }),
+    );
+    await writer.flush();
+    const lines = (await readFile('CP_A', '2026-05')).trim().split('\n');
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[0]!).summary).toBe('DiagnosticsStatus — Uploading');
+    expect(JSON.parse(lines[1]!).summary).toBe('DiagnosticsStatus — Uploaded');
+  });
+
+  it('persists cp.firmware_status flips for UpdateFirmware flows', async () => {
+    await writer.appendFromKafka(
+      statusEvent({ topic: 'cp.firmware_status', payload: { status: 'Downloaded' } }),
+    );
+    await writer.flush();
+    const ev = JSON.parse((await readFile('CP_A', '2026-05')).trim());
+    expect(ev.kind).toBe('firmware-status');
+    expect(ev.summary).toBe('FirmwareStatus — Downloaded');
+  });
 });
