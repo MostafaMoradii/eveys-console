@@ -100,6 +100,7 @@ export function CommandsList({
   issueUrl,
   getConfigResult,
   setGetConfigResult,
+  ocppVersion,
 }: {
   busy: string | null;
   send: (
@@ -115,7 +116,18 @@ export function CommandsList({
   setGetConfigResult: (
     r: { keys: { key: string; value: string; readonly?: boolean }[]; unknown: string[] } | null,
   ) => void;
+  /** Drives where GetLog renders. Plain OCPP 1.6 hasn't got GetLog
+   *  in core — it's the Security Extensions profile. Operators with
+   *  Security-profile chargers can still send it from the
+   *  "Advanced" disclosure; OCPP 2.0.1 chargers get GetLog inline
+   *  in the Diagnostics section. */
+  ocppVersion?: string | null;
 }) {
+  // OCPP 2.0.1 has GetLog as a core command. Anything else (including
+  // plain 1.6 or unknown) puts GetLog behind the disclosure so the
+  // default UI matches what most chargers actually support.
+  const getLogInline =
+    typeof ocppVersion === 'string' && ocppVersion.toLowerCase().startsWith('ocpp2');
   return (
     <>
       <Section title="Lifecycle">
@@ -128,7 +140,7 @@ export function CommandsList({
         <TriggerMessageForm busy={busy} send={send} />
         <UnlockConnectorForm busy={busy} send={send} />
         <GetDiagnosticsForm busy={busy} send={send} issueUrl={issueUrl} />
-        <GetLogForm busy={busy} send={send} issueUrl={issueUrl} />
+        {getLogInline ? <GetLogForm busy={busy} send={send} issueUrl={issueUrl} /> : null}
       </Section>
 
       <Section title="Configuration">
@@ -156,6 +168,18 @@ export function CommandsList({
       <Section title="Vendor">
         <DataTransferForm busy={busy} send={send} />
       </Section>
+
+      {!getLogInline ? (
+        <AdvancedSecurityExtensions>
+          <p className="text-xs text-muted-foreground" data-testid="advanced-getlog-hint">
+            <code>GetLog</code> is part of the OCPP 1.6 Security Extensions profile (
+            {ocppVersion ? `charger reports ${ocppVersion}` : 'charger OCPP version unknown'}). Send
+            only when you know the firmware supports it; an unsupported charger replies with{' '}
+            <code>NotSupported</code> in the transcript.
+          </p>
+          <GetLogForm busy={busy} send={send} issueUrl={issueUrl} />
+        </AdvancedSecurityExtensions>
+      ) : null}
     </>
   );
 }
@@ -292,6 +316,30 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
         {title}
       </h3>
       <div className="space-y-3">{children}</div>
+    </section>
+  );
+}
+
+/** Collapsible disclosure for OCPP 1.6 Security Extension commands.
+ *  Closed by default — operators with vanilla 1.6 chargers (the
+ *  common case today) see only core commands; operators whose
+ *  firmware supports the Security profile expand and send GetLog
+ *  knowing what they're doing. */
+function AdvancedSecurityExtensions({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="space-y-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        data-testid="advanced-security-extensions-toggle"
+        className="flex w-full items-center gap-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+      >
+        <span aria-hidden>{open ? '▾' : '▸'}</span>
+        Advanced · OCPP 1.6 Security Extensions
+      </button>
+      {open ? <div className="space-y-3">{children}</div> : null}
     </section>
   );
 }
