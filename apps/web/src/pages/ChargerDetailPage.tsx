@@ -126,7 +126,7 @@ export function ChargerDetailPage() {
         </TabsContent>
 
         <TabsContent value="commands">
-          <CommandsConsole cpId={cp.cp_id} />
+          <CommandsConsole cpId={cp.cp_id} ocppVersion={cp.ocpp_version ?? null} />
         </TabsContent>
 
         <TabsContent value="diagnostics">
@@ -219,6 +219,16 @@ function Header({ cp }: { cp: ChargePointSummary }) {
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={cp.online ? 'success' : 'muted'}>{cp.online ? 'online' : 'offline'}</Badge>
+        {cp.ocpp_version ? (
+          <Badge
+            variant="secondary"
+            className="font-mono text-xs"
+            title="OCPP subprotocol negotiated on the WS handshake"
+            data-testid="header-ocpp-version"
+          >
+            {formatOcppVersion(cp.ocpp_version)}
+          </Badge>
+        ) : null}
         <Badge variant="secondary" className="font-mono text-xs">
           last_status: {cp.last_status ?? '—'}
         </Badge>
@@ -324,6 +334,40 @@ function Field({ k, v }: { k: string; v: React.ReactNode }) {
       <dd className="truncate font-mono text-foreground/80">{v}</dd>
     </div>
   );
+}
+
+/**
+ * Render the gateway-stored ocpp_version string as "OCPP 1.6" / "OCPP 2.0.1".
+ * Anything we don't recognise prints verbatim (with the "OCPP " prefix)
+ * so a future spec rev shows up in the UI even before the format helper
+ * learns about it.
+ */
+export function formatOcppVersion(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return 'OCPP ?';
+  // Gateway writes `ocpp1.6` / `ocpp2.0.1` — strip the prefix and
+  // add a space for readability.
+  if (trimmed.toLowerCase().startsWith('ocpp')) {
+    return `OCPP ${trimmed.slice(4)}`;
+  }
+  return `OCPP ${trimmed}`;
+}
+
+/**
+ * True when the charger speaks an OCPP profile that includes
+ * GetLog (OCPP 1.6 Security Extensions or OCPP 2.0.1).
+ *
+ * Today we have no protocol-level signal for whether a 1.6 charger
+ * has the Security Extensions profile. The conservative behaviour:
+ * treat plain 1.6 as "no GetLog" and let operators opt into the
+ * Advanced disclosure when they know their charger supports it.
+ * Once 2.0.1 ships the gateway-side ocpp_version becomes "ocpp2.0.1"
+ * and GetLog is part of core.
+ */
+export function supportsGetLog(ocppVersion: string | null | undefined): boolean {
+  if (!ocppVersion) return false;
+  const v = ocppVersion.toLowerCase();
+  return v.startsWith('ocpp2');
 }
 
 function connectorVariant(c: Connector): 'success' | 'warning' | 'destructive' | 'muted' {

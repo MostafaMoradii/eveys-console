@@ -24,7 +24,18 @@ import { CommandTranscript } from '@/components/CommandTranscript';
 import { useCommandTranscript } from '@/hooks/use-command-transcript';
 import { useConsoleClient } from '@/lib/ws-context';
 
-export function CommandsConsole({ cpId }: { cpId: string }) {
+export function CommandsConsole({
+  cpId,
+  ocppVersion,
+}: {
+  cpId: string;
+  /** OCPP subprotocol the charger negotiated. Drives whether
+   *  Security-Extension commands (GetLog) render in the main
+   *  Diagnostics section or under an "Advanced — 1.6 Security
+   *  Extensions" disclosure. Null when the gateway hasn't recorded
+   *  a value yet — treated like 1.6. */
+  ocppVersion?: string | null;
+}) {
   const { client, token } = useConsoleClient();
   const t = useCommandTranscript(client, cpId);
   const issueUrl = useIssueUrl(cpId, token);
@@ -51,6 +62,7 @@ export function CommandsConsole({ cpId }: { cpId: string }) {
           issueUrl={issueUrl}
           getConfigResult={getConfigResult}
           setGetConfigResult={setGetConfigResult}
+          ocppVersion={ocppVersion ?? null}
         />
       </div>
       {/* Sticky on large screens so the transcript stays visible
