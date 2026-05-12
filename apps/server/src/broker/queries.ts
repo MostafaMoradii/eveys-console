@@ -248,12 +248,18 @@ const chargePoint: QueryResolver = {
     if (event.cpId !== cpId) return [];
     // Mirror the list resolver: react to status/boot edits AND to
     // presence transitions so the detail page's "online" header
-    // flips immediately when a charger appears or drops.
+    // flips immediately when a charger appears or drops. Diagnostics
+    // + firmware status flips also map here — the row's
+    // `last_diagnostics_status` / `last_firmware_status` chips are
+    // dead air without these topics (the gateway records the new
+    // value but the Console never knew to re-fetch).
     if (
       event.topic !== 'cp.boot' &&
       event.topic !== 'cp.status' &&
       event.topic !== 'cp.connected' &&
-      event.topic !== 'cp.disconnected'
+      event.topic !== 'cp.disconnected' &&
+      event.topic !== 'cp.diagnostics_status' &&
+      event.topic !== 'cp.firmware_status'
     )
       return [];
 

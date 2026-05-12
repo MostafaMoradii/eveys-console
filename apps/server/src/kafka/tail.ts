@@ -55,6 +55,8 @@ export class KafkaTail {
       this.cfg.KAFKA_TOPICS_TX_STOPPED,
       this.cfg.KAFKA_TOPICS_CONNECTED,
       this.cfg.KAFKA_TOPICS_DISCONNECTED,
+      this.cfg.KAFKA_TOPICS_DIAGNOSTICS_STATUS,
+      this.cfg.KAFKA_TOPICS_FIRMWARE_STATUS,
     ];
     for (const t of this.topics) {
       await this.consumer.subscribe({ topic: t, fromBeginning: false });
