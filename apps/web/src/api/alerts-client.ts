@@ -188,6 +188,21 @@ export interface ChannelsResponse {
   /** Empty string when the synthetic null-fallback is the route's
    *  default — alerts fire but go nowhere. */
   default_channel: string;
+  /** Present only when the on-disk write succeeded but Alertmanager
+   *  refused to reload the new config. The file is updated; the
+   *  running Alertmanager is still on the previous config. The UI
+   *  must surface this — silent reload failure was the cause of
+   *  "I saved Telegram but alerts kept going to email." */
+  reload?: ReloadFailure;
+}
+
+export interface ReloadFailure {
+  ok: false;
+  status?: number;
+  detail: string;
+  /** True when ALERTMANAGER_URL isn't configured. Tests + dev stacks
+   *  without Alertmanager hit this; the UI can stay quiet on it. */
+  skipped?: boolean;
 }
 
 export async function fetchChannels(token: string): Promise<ChannelsResponse> {
