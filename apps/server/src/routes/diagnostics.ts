@@ -147,6 +147,28 @@ export async function registerDiagnosticsRoutes(app: any, deps: RouteDeps) {
     },
   );
 
+  // ---- GET /uploads/diag/:token — humans land here when they click ------
+  // The upload URL is the charger's destination; operators sometimes
+  // click it from a UI / charger log out of habit. A 404 from the
+  // router would be confusing — return a 405 with an explanation so
+  // the operator understands the URL isn't viewable and the file
+  // shows up in Diagnostics history instead.
+  app.get(
+    '/uploads/diag/:token',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (_req: any, reply: any) => {
+      reply.header('Allow', 'PUT, POST');
+      return reply.code(405).send({
+        error: 'method_not_allowed',
+        detail:
+          "This URL is the charger's upload destination (PUT/POST only). " +
+          "Operators don't view files here — the result of a GetDiagnostics / " +
+          "GetLog appears in the Diagnostics history panel on the charger's " +
+          'detail page once the charger has uploaded.',
+      });
+    },
+  );
+
   // ---- PUT|POST /uploads/diag/:token ------------------------------------
   // No JWT. The token in the URL is the auth. The catch-all content-type
   // parser registered above buffers the body up to bodyLimit; an

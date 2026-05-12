@@ -252,7 +252,15 @@ describe('CommandsDrawer', () => {
 
   it('GetLog requires log_type + request_id + location when auto-issue is OFF', async () => {
     const user = await openDrawer();
-    const card = screen.getByText('GetLog').closest<HTMLElement>('[data-testid="cmd-card"]')!;
+    // The drawer doesn't know the charger's OCPP version (caller's
+    // FleetPage doesn't pass it) so GetLog lives under the
+    // "Advanced — OCPP 1.6 Security Extensions" disclosure. Expand
+    // it before reaching for the form.
+    await user.click(screen.getByTestId('advanced-security-extensions-toggle'));
+    const card = screen
+      .getAllByText('GetLog')
+      .map((el) => el.closest<HTMLElement>('[data-testid="cmd-card"]'))
+      .find((el) => el !== null)!;
     // Untick the auto-issue checkbox to exercise the legacy path.
     const checkbox = within(card).getByLabelText(/Generate one-time upload URL/i);
     await user.click(checkbox);
@@ -321,6 +329,14 @@ describe('CommandsDrawer', () => {
     });
   });
 
+  it('GetLog renders under the Advanced — OCPP 1.6 Security Extensions disclosure (collapsed by default)', async () => {
+    await openDrawer();
+    // Disclosure is closed by default — GetLog isn't reachable yet.
+    expect(screen.queryByText('GetLog')).not.toBeInTheDocument();
+    // The toggle is in the DOM.
+    expect(screen.getByTestId('advanced-security-extensions-toggle')).toBeInTheDocument();
+  });
+
   it('GetLog with auto-issue ON injects the issued URL and request_id into the OCPP payload', async () => {
     issueDiagnostics.mockResolvedValueOnce({
       url: 'http://test/uploads/diag/zzz',
@@ -330,7 +346,11 @@ describe('CommandsDrawer', () => {
       expires_at: new Date(Date.now() + 3600_000).toISOString(),
     });
     const user = await openDrawer();
-    const card = screen.getByText('GetLog').closest<HTMLElement>('[data-testid="cmd-card"]')!;
+    await user.click(screen.getByTestId('advanced-security-extensions-toggle'));
+    const card = screen
+      .getAllByText('GetLog')
+      .map((el) => el.closest<HTMLElement>('[data-testid="cmd-card"]'))
+      .find((el) => el !== null)!;
     // Checkbox is checked by default; request_id and location are
     // optional / read-only.
     await user.click(within(card).getByRole('button', { name: /^Send$/i }));

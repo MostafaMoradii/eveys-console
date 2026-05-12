@@ -257,6 +257,16 @@ interface AlertmanagerRoute {
   group_wait?: string;
   group_interval?: string;
   repeat_interval?: string;
+  routes?: AlertmanagerSubRoute[];
+}
+
+interface AlertmanagerSubRoute {
+  receiver: string;
+  matchers: string[];
+  continue?: boolean;
+  group_wait?: string;
+  group_interval?: string;
+  repeat_interval?: string;
 }
 
 interface AlertmanagerReceiver {
@@ -403,11 +413,23 @@ function renderManagedYaml(cfg: ManagedConfig, opts: RenderOptions = {}): string
   const templatesEnabled = Boolean(opts.templatesInContainerPath);
   const receivers: AlertmanagerReceiver[] = [{ name: NULL_RECEIVER_NAME }];
   for (const c of cfg.channels) receivers.push(channelToReceiver(c, templatesEnabled));
+  // Per-channel sub-routes that match on the `receiver` label. The
+  // /sys/alerts/channels/:name/test endpoint injects this label so a
+  // test alert flows to exactly the channel under test rather than
+  // to the global default. Real alerts (no `receiver` label) skip
+  // every sub-route and fall through to the top-level default.
+  // `continue: false` (Alertmanager default) keeps each sub-route
+  // exclusive — one match, one delivery.
+  const subRoutes: AlertmanagerSubRoute[] = cfg.channels.map((c) => ({
+    receiver: c.name,
+    matchers: [`receiver="${c.name}"`],
+  }));
   const route: AlertmanagerRoute = {
     receiver: cfg.default_channel || NULL_RECEIVER_NAME,
     group_wait: '30s',
     group_interval: '5m',
     repeat_interval: '4h',
+    ...(subRoutes.length > 0 ? { routes: subRoutes } : {}),
   };
   const yaml: AlertmanagerYaml = {};
   if (opts.templatesInContainerPath) {

@@ -43,13 +43,22 @@ interface MinimalResponseInit {
   ok: boolean;
   status?: number;
   json: () => Promise<unknown>;
+  /** Optional. The new reloadAlertmanager helper reads the body on
+   *  failure to surface a useful detail (Alertmanager returns a
+   *  plain-text error like `undefined receiver "X" used in route`).
+   *  Mocks that don't set this get an empty string. */
+  text?: () => Promise<string>;
 }
 
 function mockFetchOnce(impl: () => Promise<MinimalResponseInit> | MinimalResponseInit) {
   // node:fetch is on globalThis in Node 20; replace it for the duration
   // of the test. Restore after each test via the afterEach below.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).fetch = vi.fn(async () => impl());
+  (globalThis as any).fetch = vi.fn(async () => {
+    const out = await impl();
+    if (!out.text) out.text = async () => '';
+    return out;
+  });
 }
 
 const originalFetch = globalThis.fetch;
@@ -755,15 +764,19 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-async function buildChannelsApp(): Promise<{
+async function buildChannelsApp(opts?: { alertmanagerUrl?: string }): Promise<{
   app: FastifyInstance;
   store: ChannelsStore;
   dir: string;
 }> {
   const dir = await mkdtemp(join(tmpdir(), 'channels-route-'));
   const store = new ChannelsStore(join(dir, 'managed.yml'));
+  // Default to a fake AM URL so the reload helper exercises the
+  // fetch path; pass an empty string to opt out (skipped-reload path).
+  const alertmanagerUrl =
+    opts?.alertmanagerUrl === undefined ? 'http://alertmanager:9093' : opts.alertmanagerUrl;
   const app = await buildApp({
-    alertmanagerUrl: 'http://alertmanager:9093',
+    alertmanagerUrl,
     channelsStore: store,
   });
   return { app, store, dir };
@@ -1038,6 +1051,116 @@ describe('POST /sys/alerts/channels', () => {
       detail: { fieldErrors?: Record<string, string[]> };
     };
     expect(body.detail.fieldErrors?.chat_id?.[0]).toMatch(/numeric chat id/);
+  });
+});
+
+// The `reload` field on channel-write responses is how the UI learns
+// that the on-disk write succeeded but Alertmanager refused the new
+// config. Without it the operator sees "saved" and silently keeps
+// hitting the previously-loaded config — the symptom that motivated
+// this whole change (Telegram saved → alerts kept going to email).
+describe('channel writes surface the Alertmanager /-/reload outcome', () => {
+  let ctx: Awaited<ReturnType<typeof buildChannelsApp>>;
+  beforeEach(async () => {
+    ctx = await buildChannelsApp();
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('omits `reload` on the response when the reload succeeded (happy path)', async () => {
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({}) }));
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: 'ops',
+        api_url: 'https://hooks/x',
+        channel: '#a',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as { channels: unknown[]; reload?: unknown };
+    expect(body.reload).toBeUndefined();
+  });
+
+  it('includes `reload.detail` from Alertmanager body when reload returns non-2xx', async () => {
+    mockFetchOnce(() => ({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+      text: async () => 'failed to reload config: undefined receiver "tg" used in route',
+    }));
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: 'ops',
+        api_url: 'https://hooks/x',
+        channel: '#a',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as {
+      reload?: { ok: boolean; status?: number; detail: string; skipped?: boolean };
+    };
+    expect(body.reload).toBeDefined();
+    expect(body.reload?.ok).toBe(false);
+    expect(body.reload?.status).toBe(500);
+    expect(body.reload?.detail).toContain('undefined receiver');
+  });
+
+  it('marks the reload as skipped when ALERTMANAGER_URL is not configured (dev / tests)', async () => {
+    // Rebuild the app without ALERTMANAGER_URL — reload helper short-
+    // circuits before any fetch.
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+    ctx = await buildChannelsApp({ alertmanagerUrl: '' });
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: 'ops',
+        api_url: 'https://hooks/x',
+        channel: '#a',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as {
+      reload?: { ok: boolean; skipped?: boolean; detail: string };
+    };
+    expect(body.reload?.skipped).toBe(true);
+    expect(body.reload?.detail).toBe('alertmanager_url_not_configured');
+  });
+
+  it('still persists the write to disk even when reload fails (config + runtime can diverge; UI signals the operator)', async () => {
+    mockFetchOnce(() => ({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+      text: async () => 'boom',
+    }));
+    await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: 'ops',
+        api_url: 'https://hooks/x',
+        channel: '#a',
+      },
+    });
+    const cfg = await ctx.store.read();
+    expect(cfg.channels).toHaveLength(1);
+    expect(cfg.channels[0]?.name).toBe('ops');
   });
 });
 

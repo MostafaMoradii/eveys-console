@@ -100,6 +100,7 @@ export function CommandsList({
   issueUrl,
   getConfigResult,
   setGetConfigResult,
+  ocppVersion,
 }: {
   busy: string | null;
   send: (
@@ -115,7 +116,18 @@ export function CommandsList({
   setGetConfigResult: (
     r: { keys: { key: string; value: string; readonly?: boolean }[]; unknown: string[] } | null,
   ) => void;
+  /** Drives where GetLog renders. Plain OCPP 1.6 hasn't got GetLog
+   *  in core — it's the Security Extensions profile. Operators with
+   *  Security-profile chargers can still send it from the
+   *  "Advanced" disclosure; OCPP 2.0.1 chargers get GetLog inline
+   *  in the Diagnostics section. */
+  ocppVersion?: string | null;
 }) {
+  // OCPP 2.0.1 has GetLog as a core command. Anything else (including
+  // plain 1.6 or unknown) puts GetLog behind the disclosure so the
+  // default UI matches what most chargers actually support.
+  const getLogInline =
+    typeof ocppVersion === 'string' && ocppVersion.toLowerCase().startsWith('ocpp2');
   return (
     <>
       <Section title="Lifecycle">
@@ -128,7 +140,7 @@ export function CommandsList({
         <TriggerMessageForm busy={busy} send={send} />
         <UnlockConnectorForm busy={busy} send={send} />
         <GetDiagnosticsForm busy={busy} send={send} issueUrl={issueUrl} />
-        <GetLogForm busy={busy} send={send} issueUrl={issueUrl} />
+        {getLogInline ? <GetLogForm busy={busy} send={send} issueUrl={issueUrl} /> : null}
       </Section>
 
       <Section title="Configuration">
@@ -156,6 +168,18 @@ export function CommandsList({
       <Section title="Vendor">
         <DataTransferForm busy={busy} send={send} />
       </Section>
+
+      {!getLogInline ? (
+        <AdvancedSecurityExtensions>
+          <p className="text-xs text-muted-foreground" data-testid="advanced-getlog-hint">
+            <code>GetLog</code> is part of the OCPP 1.6 Security Extensions profile (
+            {ocppVersion ? `charger reports ${ocppVersion}` : 'charger OCPP version unknown'}). Send
+            only when you know the firmware supports it; an unsupported charger replies with{' '}
+            <code>NotSupported</code> in the transcript.
+          </p>
+          <GetLogForm busy={busy} send={send} issueUrl={issueUrl} />
+        </AdvancedSecurityExtensions>
+      ) : null}
     </>
   );
 }
@@ -292,6 +316,30 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
         {title}
       </h3>
       <div className="space-y-3">{children}</div>
+    </section>
+  );
+}
+
+/** Collapsible disclosure for OCPP 1.6 Security Extension commands.
+ *  Closed by default — operators with vanilla 1.6 chargers (the
+ *  common case today) see only core commands; operators whose
+ *  firmware supports the Security profile expand and send GetLog
+ *  knowing what they're doing. */
+function AdvancedSecurityExtensions({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="space-y-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        data-testid="advanced-security-extensions-toggle"
+        className="flex w-full items-center gap-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+      >
+        <span aria-hidden>{open ? '▾' : '▸'}</span>
+        Advanced · OCPP 1.6 Security Extensions
+      </button>
+      {open ? <div className="space-y-3">{children}</div> : null}
     </section>
   );
 }
@@ -626,8 +674,12 @@ export interface IssueFn {
 function GetDiagnosticsForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl: IssueFn }) {
   // Default to console-issued URLs — the operator can opt out for a
   // bespoke URL (e.g. when the charger needs to dump to an external
-  // bucket). When checked, the location field is read-only and shows
-  // "Will be generated on send".
+  // bucket). The auto-issued URL is the **charger's** upload
+  // destination (PUT/POST endpoint); operators don't need to see it,
+  // and showing it as a clickable-looking input invites a 404 click.
+  // We keep `location` in component state only for the operator-typed
+  // path; on auto-issue we pass the URL straight through to send()
+  // without ever putting it in the input.
   const [autoIssue, setAutoIssue] = useState(true);
   const [location, setLocation] = useState('');
 
@@ -636,7 +688,6 @@ function GetDiagnosticsForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl:
     if (autoIssue) {
       try {
         const issued = await issueUrl('GetDiagnostics');
-        setLocation(issued.url);
         await send('get-diagnostics', { location: issued.url });
       } catch {
         // toast was raised in issueUrl
@@ -663,7 +714,15 @@ function GetDiagnosticsForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl:
           />
           <span>Generate one-time upload URL (track in Diagnostics history)</span>
         </label>
-        <Field label="location" required hint={autoIssue ? 'auto-generated' : 'upload URL'}>
+        <Field
+          label="location"
+          required={!autoIssue}
+          hint={
+            autoIssue
+              ? 'Console-issued upload URL — handed to the charger, not viewable'
+              : 'upload URL'
+          }
+        >
           <Input
             required={!autoIssue}
             readOnly={autoIssue}
@@ -693,7 +752,10 @@ function GetLogForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl: IssueFn
       if (rid !== undefined && !Number.isFinite(rid)) return;
       try {
         const issued = await issueUrl('GetLog', rid);
-        setLocation(issued.url);
+        // Don't set `location` from the issued URL — it's the
+        // charger's upload destination, not something the operator
+        // should see as a clickable link. Keep request_id visible
+        // so the operator can correlate with Diagnostics history.
         setRequestId(String(issued.request_id));
         await send('get-log', {
           log_type: logType,
@@ -751,7 +813,11 @@ function GetLogForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl: IssueFn
         <Field
           label="location"
           required={!autoIssue}
-          hint={autoIssue ? 'auto-generated' : 'upload URL'}
+          hint={
+            autoIssue
+              ? 'Console-issued upload URL — handed to the charger, not viewable'
+              : 'upload URL'
+          }
         >
           <Input
             required={!autoIssue}

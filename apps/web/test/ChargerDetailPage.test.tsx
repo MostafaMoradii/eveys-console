@@ -188,3 +188,39 @@ describe('ChargerDetailPage — Commands tab', () => {
     expect(screen.getByTestId('mock-commands-console')).toBeInTheDocument();
   });
 });
+
+describe('ChargerDetailPage — OCPP version badge', () => {
+  it('renders an OCPP version badge when the row carries ocpp_version', () => {
+    nextSubResult = {
+      snapshot: {
+        kind: 'charge-point',
+        row: baseCp({ ocpp_version: 'ocpp1.6' }),
+      },
+    };
+    renderPage();
+    const badge = screen.getByTestId('header-ocpp-version');
+    expect(badge).toHaveTextContent('OCPP 1.6');
+  });
+
+  it('omits the badge when ocpp_version is null (older row, gateway not yet recorded it)', () => {
+    nextSubResult = {
+      snapshot: {
+        kind: 'charge-point',
+        row: baseCp({ ocpp_version: null }),
+      },
+    };
+    renderPage();
+    expect(screen.queryByTestId('header-ocpp-version')).toBeNull();
+  });
+
+  it('renders ocpp2.0.1 verbatim as "OCPP 2.0.1" when that profile lands', () => {
+    nextSubResult = {
+      snapshot: {
+        kind: 'charge-point',
+        row: baseCp({ ocpp_version: 'ocpp2.0.1' }),
+      },
+    };
+    renderPage();
+    expect(screen.getByTestId('header-ocpp-version')).toHaveTextContent('OCPP 2.0.1');
+  });
+});

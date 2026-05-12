@@ -295,6 +295,33 @@ describe('renderManagedYaml shape', () => {
     });
     expect(yaml).toMatch(/receiver:\s*ops/);
   });
+
+  it('emits a per-channel sub-route matching the `receiver` label (so the test endpoint reaches the named channel)', () => {
+    const yaml = __test__.renderManagedYaml({
+      channels: [
+        { type: 'email', name: 'oncall-email', to: 'ops@example.com', smarthost: 'smtp:587' },
+        {
+          type: 'telegram',
+          name: 'tg-alerts',
+          bot_token: '12345:ABCDEF1234567890abcdef',
+          chat_id: '-1001234567890',
+          parse_mode: 'HTML',
+        },
+      ],
+      default_channel: 'oncall-email',
+    });
+    // Top-level default is the email channel.
+    expect(yaml).toMatch(/^route:\n\s+receiver:\s*oncall-email/m);
+    // Sub-routes exist for both channels and match on the receiver label.
+    expect(yaml).toContain('routes:');
+    expect(yaml).toMatch(/-\s*receiver:\s*oncall-email[\s\S]*?receiver="oncall-email"/);
+    expect(yaml).toMatch(/-\s*receiver:\s*tg-alerts[\s\S]*?receiver="tg-alerts"/);
+  });
+
+  it('omits the routes block when there are no channels', () => {
+    const yaml = __test__.renderManagedYaml({ channels: [], default_channel: '' });
+    expect(yaml).not.toContain('\n  routes:');
+  });
 });
 
 // PR #169: Console-managed default templates.

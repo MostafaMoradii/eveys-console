@@ -45,6 +45,15 @@ vi.mock('@/hooks/use-subscription', () => ({
   },
 }));
 
+vi.mock('@/lib/ws-context', () => ({
+  useConsoleClient: () => ({
+    client: { rpc: vi.fn(), subscribe: vi.fn(), close: vi.fn(), connect: vi.fn() },
+    status: 'open',
+    token: 'test-token',
+    setToken: vi.fn(),
+  }),
+}));
+
 import { DeviceEventsPanel } from '@/components/DeviceEventsPanel';
 
 function makeEvent(over: Partial<DeviceEvent> = {}): DeviceEvent {
@@ -301,5 +310,83 @@ describe('DeviceEventsPanel — ring cap', () => {
     // Oldest five (evt-000 .. evt-004) are dropped; oldest survivor is evt-005.
     expect(rows[499]).toBe('evt-005');
     expect(rows).not.toContain('evt-000');
+  });
+});
+
+describe('DeviceEventsPanel — snapshot bootstrap', () => {
+  it('renders snapshot rows immediately so the panel is not empty on first open', () => {
+    setSub({
+      snapshot: {
+        kind: 'device-events',
+        rows: [
+          makeEvent({ summary: 'snap-newest', at: '2026-05-10T11:30:00Z' }),
+          makeEvent({ summary: 'snap-older', at: '2026-05-10T11:00:00Z' }),
+        ],
+      },
+    });
+    render(<DeviceEventsPanel cpId="cp_test" />);
+    expect(screen.getByText('snap-newest')).toBeInTheDocument();
+    expect(screen.getByText('snap-older')).toBeInTheDocument();
+    expect(screen.queryByTestId('device-events-empty')).toBeNull();
+  });
+
+  it('orders snapshot + live events newest-first regardless of arrival order', () => {
+    setSub({
+      snapshot: {
+        kind: 'device-events',
+        rows: [makeEvent({ summary: 'snap-old', at: '2026-05-10T11:00:00Z' })],
+      },
+    });
+    const { rerender } = render(<DeviceEventsPanel cpId="cp_test" />);
+    setSub({
+      snapshot: currentSubResult.snapshot,
+      lastDelta: delta(makeEvent({ summary: 'live-new', at: '2026-05-10T12:00:00Z' })),
+    });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+    const summaries = screen.getAllByTestId('device-events-summary').map((el) => el.textContent);
+    expect(summaries).toEqual(['live-new', 'snap-old']);
+  });
+});
+
+describe('DeviceEventsPanel — view modes', () => {
+  it('JSON mode renders every row as a JSON block instead of pretty rows', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DeviceEventsPanel cpId="cp_test" />);
+    setSub({
+      lastDelta: delta(makeEvent({ summary: 'json-mode-ev', detail: { status: 'Charging' } })),
+    });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+
+    await user.click(screen.getByTestId('device-events-view-json'));
+    const blocks = screen.getAllByTestId('device-events-json');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]!.textContent).toContain('"summary": "json-mode-ev"');
+    // The per-row toggle controls are not rendered in JSON mode.
+    expect(screen.queryByTestId('device-events-toggle')).toBeNull();
+  });
+
+  it('Compact mode renders a dense single-line row per event', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<DeviceEventsPanel cpId="cp_test" />);
+    setSub({ lastDelta: delta(makeEvent({ summary: 'compact-ev' })) });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+
+    await user.click(screen.getByTestId('device-events-view-compact'));
+    const row = screen.getByTestId('device-events-row');
+    expect(row.textContent).toContain('compact-ev');
+    // No expansion controls in Compact mode.
+    expect(screen.queryByTestId('device-events-toggle')).toBeNull();
+    expect(screen.queryByTestId('device-events-toggle-json')).toBeNull();
+  });
+
+  it('persists the chosen view mode in localStorage', async () => {
+    const user = userEvent.setup();
+    window.localStorage.removeItem('eveys-console.device-events.view-mode');
+    const { rerender } = render(<DeviceEventsPanel cpId="cp_test" />);
+    setSub({ lastDelta: delta(makeEvent({ summary: 'persist-ev' })) });
+    rerender(<DeviceEventsPanel cpId="cp_test" />);
+
+    await user.click(screen.getByTestId('device-events-view-json'));
+    expect(window.localStorage.getItem('eveys-console.device-events.view-mode')).toBe('json');
   });
 });
