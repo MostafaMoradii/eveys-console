@@ -626,8 +626,12 @@ export interface IssueFn {
 function GetDiagnosticsForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl: IssueFn }) {
   // Default to console-issued URLs — the operator can opt out for a
   // bespoke URL (e.g. when the charger needs to dump to an external
-  // bucket). When checked, the location field is read-only and shows
-  // "Will be generated on send".
+  // bucket). The auto-issued URL is the **charger's** upload
+  // destination (PUT/POST endpoint); operators don't need to see it,
+  // and showing it as a clickable-looking input invites a 404 click.
+  // We keep `location` in component state only for the operator-typed
+  // path; on auto-issue we pass the URL straight through to send()
+  // without ever putting it in the input.
   const [autoIssue, setAutoIssue] = useState(true);
   const [location, setLocation] = useState('');
 
@@ -636,7 +640,6 @@ function GetDiagnosticsForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl:
     if (autoIssue) {
       try {
         const issued = await issueUrl('GetDiagnostics');
-        setLocation(issued.url);
         await send('get-diagnostics', { location: issued.url });
       } catch {
         // toast was raised in issueUrl
@@ -663,7 +666,15 @@ function GetDiagnosticsForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl:
           />
           <span>Generate one-time upload URL (track in Diagnostics history)</span>
         </label>
-        <Field label="location" required hint={autoIssue ? 'auto-generated' : 'upload URL'}>
+        <Field
+          label="location"
+          required={!autoIssue}
+          hint={
+            autoIssue
+              ? 'Console-issued upload URL — handed to the charger, not viewable'
+              : 'upload URL'
+          }
+        >
           <Input
             required={!autoIssue}
             readOnly={autoIssue}
@@ -693,7 +704,10 @@ function GetLogForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl: IssueFn
       if (rid !== undefined && !Number.isFinite(rid)) return;
       try {
         const issued = await issueUrl('GetLog', rid);
-        setLocation(issued.url);
+        // Don't set `location` from the issued URL — it's the
+        // charger's upload destination, not something the operator
+        // should see as a clickable link. Keep request_id visible
+        // so the operator can correlate with Diagnostics history.
         setRequestId(String(issued.request_id));
         await send('get-log', {
           log_type: logType,
@@ -751,7 +765,11 @@ function GetLogForm({ busy, send, issueUrl }: CmdFormProps & { issueUrl: IssueFn
         <Field
           label="location"
           required={!autoIssue}
-          hint={autoIssue ? 'auto-generated' : 'upload URL'}
+          hint={
+            autoIssue
+              ? 'Console-issued upload URL — handed to the charger, not viewable'
+              : 'upload URL'
+          }
         >
           <Input
             required={!autoIssue}
