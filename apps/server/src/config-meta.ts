@@ -213,6 +213,28 @@ const META: Record<keyof Config, KeyMeta> = {
     sensitive: false,
   },
 
+  ALERTMANAGER_TEMPLATES_PATH: {
+    description:
+      'Host-side path to the Console-managed Alertmanager templates file. Holds the named Go templates Channels reference for their html/message/title/text fields. Compose mounts this file into the Alertmanager container.',
+    category: 'observability',
+    mutable: true,
+    restart: 'console',
+    range: 'filesystem path readable + writable by the Console.',
+    default: './data/alertmanager-templates.yml',
+    sensitive: false,
+  },
+
+  ALERTMANAGER_TEMPLATES_IN_CONTAINER_PATH: {
+    description:
+      "Path **as Alertmanager sees it inside its container** for the templates file. Must match the destination of the bind mount in deploy/docker-compose.yml. The managed config's `templates:` block references this path so Alertmanager can load it.",
+    category: 'observability',
+    mutable: true,
+    restart: 'console',
+    range: 'absolute path inside the Alertmanager container.',
+    default: '/etc/alertmanager/alertmanager-templates.yml',
+    sensitive: false,
+  },
+
   PROMETHEUS_URL: {
     description:
       'Base URL of Prometheus for the Rules tab on /sys/alerts. Optional — when unset, the Rules tab renders "Prometheus not configured".',
