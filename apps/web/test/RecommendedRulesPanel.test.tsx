@@ -146,4 +146,18 @@ describe('RecommendedRulesPanel', () => {
     await user.click(uninstalls[0]!);
     expect(deleteMutate).toHaveBeenCalledWith(sample.name, expect.anything());
   });
+
+  it('ships ChargerOffline — single-charger heartbeat-miss rule for small fleets', () => {
+    // Motivation: FleetHeartbeatMiss needs > 10 chargers to fire, so a
+    // dev/test setup with one device never gets alerted when that
+    // device drops. ChargerOffline is the per-cp version.
+    const rule = RECOMMENDED_RULES.find((r) => r.name === 'ChargerOffline');
+    expect(rule).toBeDefined();
+    expect(rule!.expr).toMatch(/ocpp_cp_last_heartbeat_seconds/);
+    expect(rule!.duration).toBe('10m');
+    expect(rule!.severity).toBe('warning');
+    // The alert message must mention `cp_id` so the per-charger
+    // template substitution actually identifies which device.
+    expect(rule!.summary).toContain('cp_id');
+  });
 });

@@ -35,7 +35,10 @@ import Fastify from 'fastify';
 import { PowVerifier } from './auth/pow.js';
 import { UserStore } from './auth/users.js';
 import { Broker } from './broker/broker.js';
+import { configureEventLogReader } from './broker/queries.js';
 import { loadConfig, type Config } from './config.js';
+import { EventLogWriter } from './event-log/writer.js';
+import { pruneEventLog } from './event-log/retention.js';
 import { KafkaTail } from './kafka/tail.js';
 import { buildLogger } from './logger.js';
 import { GatewayClient } from './rest/gateway-client.js';
@@ -45,6 +48,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerMetricsRoute } from './routes/metrics.js';
 import { registerSysAlertsRoute } from './routes/sys-alerts.js';
 import { registerSysChargePointTransactionsRoute } from './routes/sys-charge-point-transactions.js';
+import { registerSysCpEventsRoute } from './routes/sys-cp-events.js';
 import { registerSysConfigRoute } from './routes/sys-config.js';
 import { registerSysConsoleAdminConfigRoute } from './routes/sys-console-admin-config.js';
 import { registerSysGatewayAdminConfigRoute } from './routes/sys-gateway-admin-config.js';
@@ -144,6 +148,7 @@ async function main() {
   await registerSysGatewayAdminConfigRoute(app, { gateway });
   await registerSysKpisRoute(app, { gateway });
   await registerSysChargePointTransactionsRoute(app, { gateway });
+  await registerSysCpEventsRoute(app, { eventLogRoot: config.EVENT_LOG_DIR });
   await registerSysTransactionsRoute(app, { gateway });
   await registerSysAlertsRoute(app, { logger, channelsStore, rulesStore });
   await registerDiagnosticsRoutes(app, { store: diagnosticsStore });
@@ -155,12 +160,49 @@ async function main() {
     logger.info({ users: users.size }, 'login enabled');
   }
 
+  // Device-event durable log. The writer subscribes to the same
+  // Kafka tail the broker uses; the resolver bootstraps from
+  // tailLastN so the detail panel renders history immediately on
+  // page open. Daily retention prune keeps disk bounded.
+  const eventLog = new EventLogWriter({
+    root: config.EVENT_LOG_DIR,
+    fsyncIntervalMs: config.EVENT_LOG_FSYNC_INTERVAL_MS,
+    logger,
+  });
+  eventLog.attach(kafka);
+  configureEventLogReader({
+    root: config.EVENT_LOG_DIR,
+    bootstrapLimit: config.EVENT_LOG_BOOTSTRAP_LIMIT,
+  });
+  const eventLogPruneTimer = setInterval(
+    () => {
+      void pruneEventLog({
+        root: config.EVENT_LOG_DIR,
+        retentionMonths: config.EVENT_LOG_RETENTION_MONTHS,
+        logger,
+      })
+        .then((r) => {
+          if (r.removed.length > 0) {
+            logger.info(
+              { removed: r.removed.length, errors: r.errors.length },
+              'event-log.retention.swept',
+            );
+          }
+        })
+        .catch((err: unknown) => logger.error({ err }, 'event-log.retention.failed'));
+    },
+    24 * 60 * 60 * 1000,
+  );
+  eventLogPruneTimer.unref?.();
+
   await kafka.start();
   broker.start();
 
   const stop = async (signal: string) => {
     logger.info({ signal }, 'shutdown.begin');
     try {
+      clearInterval(eventLogPruneTimer);
+      await eventLog.close();
       broker.stop();
       await kafka.stop();
       await app.close();
