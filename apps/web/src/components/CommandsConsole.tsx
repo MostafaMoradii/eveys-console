@@ -26,9 +26,16 @@ import { useConsoleClient } from '@/lib/ws-context';
 
 export function CommandsConsole({
   cpId,
+  online,
   ocppVersion,
 }: {
   cpId: string;
+  /** Charger's current online state. When false, every Send button
+   *  in the catalogue renders disabled with a tooltip — the gateway
+   *  would 404 anyway, and a disabled button is a louder signal
+   *  than a confusing error toast. Undefined keeps the legacy
+   *  behaviour (always enabled) for callers that don't track it. */
+  online?: boolean;
   /** OCPP subprotocol the charger negotiated. Drives whether
    *  Security-Extension commands (GetLog) render in the main
    *  Diagnostics section or under an "Advanced — 1.6 Security
@@ -50,20 +57,43 @@ export function CommandsConsole({
   const busyArr = [...t.inFlight];
   const busy = busyArr[0] ?? null;
 
+  const offline = online === false;
+
   return (
     <div
       className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
       data-testid="commands-console"
     >
       <div className="flex flex-col gap-6">
-        <CommandsList
-          busy={busy}
-          send={t.send}
-          issueUrl={issueUrl}
-          getConfigResult={getConfigResult}
-          setGetConfigResult={setGetConfigResult}
-          ocppVersion={ocppVersion ?? null}
-        />
+        {offline ? (
+          <div
+            className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200"
+            data-testid="commands-offline-banner"
+            role="status"
+          >
+            <strong className="font-semibold">Charger offline.</strong> Commands are disabled until
+            the charger reconnects its WebSocket — sending now would 404 at the gateway.
+          </div>
+        ) : null}
+        {/* Native fieldset disables every input + button it contains
+            in one move — saves threading a `disabled` prop through
+            ~13 per-command forms. The banner above tells the
+            operator why; this just prevents the click. */}
+        <fieldset
+          disabled={offline}
+          className="contents"
+          data-testid="commands-fieldset"
+          aria-disabled={offline}
+        >
+          <CommandsList
+            busy={busy}
+            send={t.send}
+            issueUrl={issueUrl}
+            getConfigResult={getConfigResult}
+            setGetConfigResult={setGetConfigResult}
+            ocppVersion={ocppVersion ?? null}
+          />
+        </fieldset>
       </div>
       {/* Sticky on large screens so the transcript stays visible
           while the operator scrolls through the command palette. */}

@@ -19,6 +19,7 @@ import { expectAudienceAndIssuer } from '../auth/jwt.js';
 import type { Broker } from '../broker/broker.js';
 import { recordWsClose, recordWsConnection, recordWsMessage } from '../metrics/registry.js';
 import type { GatewayClient } from '../rest/gateway-client.js';
+import { translateGatewayError } from '../rest/translate-gateway-error.js';
 
 const WS_SUBPROTOCOL = 'eveys-console-v1';
 
@@ -105,10 +106,8 @@ export async function registerWsRoute(
         await dispatch(msg);
       } catch (err) {
         log.error({ err, msgType: msg.type }, 'ws.dispatch_failed');
-        send(
-          socket,
-          errMsg('internal_error', err instanceof Error ? err.message : 'internal error', msg.id),
-        );
+        const translated = translateGatewayError(err);
+        send(socket, errMsg(translated.code, translated.message, msg.id));
       }
     });
 
