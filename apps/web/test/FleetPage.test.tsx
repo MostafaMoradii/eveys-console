@@ -294,11 +294,11 @@ describe('FleetPage — snapshot rendering', () => {
     };
     render(<FleetPage />);
     const onRow = screen.getByText('CP_ON_BOOT').closest('tr')! as HTMLTableRowElement;
-    // Cells: [chevron, cp_id, online, pod, last status, connectors, vendor/model, firmware, last heartbeat, uptime]
-    expect(onRow.cells[9]!).toHaveTextContent('2h 14m');
+    // Cells: [chevron, cp_id, online, pod, last status, connectors, vendor/model, firmware, OCPP, last heartbeat, uptime]
+    expect(onRow.cells[10]!).toHaveTextContent('2h 14m');
 
     const offRow = screen.getByText('CP_OFF_NOBOOT').closest('tr')! as HTMLTableRowElement;
-    expect(offRow.cells[9]!).toHaveTextContent('—');
+    expect(offRow.cells[10]!).toHaveTextContent('—');
     vi.useRealTimers();
   });
 });
@@ -751,4 +751,36 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe('FleetPage — OCPP version column', () => {
+  it('renders the formatted ocpp_version in the table row when present', () => {
+    nextSubResult = {
+      snapshot: {
+        kind: 'charge-points',
+        rows: [
+          baseRow('CP_A', { ocpp_version: 'ocpp1.6' }),
+          baseRow('CP_B', { ocpp_version: 'ocpp2.0.1' }),
+        ],
+        next_cursor: null,
+      },
+    };
+    render(<FleetPage />);
+    const cells = screen.getAllByTestId('fleet-row-ocpp-version');
+    expect(cells).toHaveLength(2);
+    expect(cells[0]).toHaveTextContent('OCPP 1.6');
+    expect(cells[1]).toHaveTextContent('OCPP 2.0.1');
+  });
+
+  it('falls back to "—" when ocpp_version is null (older row)', () => {
+    nextSubResult = {
+      snapshot: {
+        kind: 'charge-points',
+        rows: [baseRow('CP_OLD', { ocpp_version: null })],
+        next_cursor: null,
+      },
+    };
+    render(<FleetPage />);
+    expect(screen.getByTestId('fleet-row-ocpp-version')).toHaveTextContent('—');
+  });
 });

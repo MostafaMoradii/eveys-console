@@ -45,6 +45,13 @@ export const chargePointSummary = z
     model: z.string().nullable(),
     firmware_version: z.string().nullable(),
     serial_number: z.string().nullable(),
+    /** OCPP subprotocol negotiated on the charger's WS upgrade
+     *  (`ocpp1.6` today; `ocpp2.0.1` per-row when that profile
+     *  lands on the gateway). Null on rows that haven't booted
+     *  since the gateway started recording the field. Surfaced on
+     *  the fleet list + detail page header so operators don't
+     *  guess which protocol the charger speaks. */
+    ocpp_version: z.string().nullable().optional(),
     last_boot_at: isoTimestamp.nullable(),
     last_heartbeat_at: isoTimestamp.nullable(),
     last_status: z.string().nullable(),
