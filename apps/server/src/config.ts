@@ -95,6 +95,13 @@ export const configSchema = z.object({
   // until the next 5s poll — and the Statistics card's completed
   // count lags by the same window.
   KAFKA_TOPICS_TX_STOPPED: z.string().default('tx.stopped'),
+  // Presence: `cp.connected` fires when a charger opens a WS to the
+  // gateway, `cp.disconnected` when it goes away. The Console needs
+  // both for the `online` flag on the list view to flip in real time
+  // — without them, online/offline only updates when a status / boot
+  // event happens to come through, which is rarely.
+  KAFKA_TOPICS_CONNECTED: z.string().default('cp.connected'),
+  KAFKA_TOPICS_DISCONNECTED: z.string().default('cp.disconnected'),
 
   // WS hardening
   WS_MAX_SUBSCRIPTIONS_PER_CONN: z.coerce.number().int().positive().default(50),
@@ -116,6 +123,15 @@ export const configSchema = z.object({
    *  at runtime — fine for laptop dev. Set this to the externally-reachable
    *  base URL when running behind a reverse proxy. */
   CONSOLE_PUBLIC_BASE_URL: z.string().optional(),
+
+  // Device-event log. Appends one NDJSON line per DeviceEvent into
+  // `<root>/<cp_id>/<YYYY-MM>.ndjson`. Read paths: tail-last-N for the
+  // detail-page bootstrap, range+substring search for the panel's
+  // search box. Old files are pruned by month.
+  EVENT_LOG_DIR: z.string().default('./data/event-log'),
+  EVENT_LOG_RETENTION_MONTHS: z.coerce.number().int().positive().default(12),
+  EVENT_LOG_FSYNC_INTERVAL_MS: z.coerce.number().int().nonnegative().default(200),
+  EVENT_LOG_BOOTSTRAP_LIMIT: z.coerce.number().int().positive().default(200),
 });
 
 export type Config = z.infer<typeof configSchema>;

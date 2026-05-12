@@ -33,7 +33,7 @@ async function run(params: Record<string, unknown>, event: KafkaEvent) {
 }
 
 describe('device-events — snapshot', () => {
-  it('returns empty rows with a bootstrap cursor', async () => {
+  it('returns empty rows with a bootstrap cursor when the log reader is not configured', async () => {
     const resolver = resolveQuery('device-events');
     const snap = await resolver.snapshot({ cp_id: 'CP_A' }, gateway);
     expect(snap.snapshot.kind).toBe('device-events');

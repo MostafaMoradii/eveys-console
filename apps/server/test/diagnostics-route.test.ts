@@ -353,3 +353,33 @@ describe('DELETE /sys/diagnostics/:id', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+// Operators sometimes click the upload URL out of habit (it looks
+// like a normal http://... link). The endpoint is PUT/POST only — a
+// router 404 leaves them guessing. GET returns a 405 with an Allow
+// header and a sentence-long explanation so they understand why and
+// where to look instead.
+describe('GET /uploads/diag/:token', () => {
+  it('returns 405 with an Allow header pointing operators to the Diagnostics history', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/uploads/diag/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    });
+    expect(res.statusCode).toBe(405);
+    expect(res.headers.allow).toBe('PUT, POST');
+    const body = res.json() as { error: string; detail: string };
+    expect(body.error).toBe('method_not_allowed');
+    expect(body.detail).toMatch(/charger's upload destination/);
+    expect(body.detail).toMatch(/Diagnostics history/);
+  });
+
+  it('returns 405 even for an unknown token (no info leak via GET)', async () => {
+    // Don't leak whether a token exists via GET — that's a side
+    // channel. PUT/POST still validate the token; GET always 405s.
+    const res = await app.inject({
+      method: 'GET',
+      url: '/uploads/diag/deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+    });
+    expect(res.statusCode).toBe(405);
+  });
+});

@@ -691,8 +691,8 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
           // is set yet. Otherwise leave the existing default alone.
           cfg.default_channel || parsed.data.name,
         );
-        await reloadAlertmanager(app, deps);
-        return reply.code(201).send(maskedResponse(next));
+        const reload = await reloadAlertmanager(app, deps);
+        return reply.code(201).send(maskedResponse(next, reload));
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         deps.logger?.warn({ err: detail }, 'channels.add.failed');
@@ -728,8 +728,8 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
         const channels = [...cfg.channels];
         channels[idx] = merged;
         const next = await deps.channelsStore.updateChannels(channels, cfg.default_channel);
-        await reloadAlertmanager(app, deps);
-        return reply.code(200).send(maskedResponse(next));
+        const reload = await reloadAlertmanager(app, deps);
+        return reply.code(200).send(maskedResponse(next, reload));
       } catch (err) {
         deps.logger?.warn(
           { err: err instanceof Error ? err.message : String(err) },
@@ -760,8 +760,8 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
         const nextDefault =
           cfg.default_channel === name ? (remaining[0]?.name ?? '') : cfg.default_channel;
         const next = await deps.channelsStore.updateChannels(remaining, nextDefault);
-        await reloadAlertmanager(app, deps);
-        return reply.code(200).send(maskedResponse(next));
+        const reload = await reloadAlertmanager(app, deps);
+        return reply.code(200).send(maskedResponse(next, reload));
       } catch (err) {
         deps.logger?.warn(
           { err: err instanceof Error ? err.message : String(err) },
@@ -861,8 +861,8 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
           return reply.code(404).send({ error: 'not_found' });
         }
         const next = await deps.channelsStore.updateChannels(cfg.channels, nextName ?? '');
-        await reloadAlertmanager(app, deps);
-        return reply.code(200).send(maskedResponse(next));
+        const reload = await reloadAlertmanager(app, deps);
+        return reply.code(200).send(maskedResponse(next, reload));
       } catch (err) {
         deps.logger?.warn(
           { err: err instanceof Error ? err.message : String(err) },
@@ -1168,13 +1168,22 @@ function mergeKeepSecrets(current: Channel, next: Channel): Channel {
   }
 }
 
-function maskedResponse(cfg: ManagedConfig): { channels: Channel[]; default_channel: string } {
+function maskedResponse(
+  cfg: ManagedConfig,
+  reload?: ReloadResult,
+): { channels: Channel[]; default_channel: string; reload?: ReloadResult } {
   // Re-run the masking step on the in-memory config rather than
   // re-reading from disk — same result, no I/O.
-  return {
+  // The `reload` field is included only when the reload was attempted
+  // and failed (or was skipped because Alertmanager isn't configured).
+  // Successful reloads are silent so the response stays narrow on the
+  // happy path; the UI doesn't need to render anything.
+  const body: { channels: Channel[]; default_channel: string; reload?: ReloadResult } = {
     channels: cfg.channels.map(maskSecrets),
     default_channel: cfg.default_channel,
   };
+  if (reload && !reload.ok) body.reload = reload;
+  return body;
 }
 
 // Best-effort reload: POSTs to Alertmanager's lifecycle endpoint.
@@ -1182,25 +1191,55 @@ function maskedResponse(cfg: ManagedConfig): { channels: Channel[]; default_chan
 // already persisted; the next time the operator hits a config-affecting
 // endpoint we'll try again. The 1s budget keeps the UI snappy when
 // Alertmanager is wedged.
+/** Outcome of the Alertmanager `/-/reload` POST after a channels
+ *  write. The on-disk file is always updated; this captures whether
+ *  the new config is *active* in Alertmanager. Routes return the
+ *  failure shape on the response so the UI can toast it — without
+ *  this, the operator sees "saved" and silently keeps hitting the
+ *  previously-loaded config (e.g. alerts going to the old default
+ *  receiver because the new default's receiver block didn't load). */
+export type ReloadResult =
+  | { ok: true }
+  | { ok: false; status?: number; detail: string }
+  | { ok: false; skipped: true; detail: 'alertmanager_url_not_configured' };
+
 async function reloadAlertmanager(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   app: any,
   deps: RouteDeps,
-): Promise<void> {
+): Promise<ReloadResult> {
   const base = app.config.ALERTMANAGER_URL;
-  if (!base) return;
+  if (!base) {
+    // No URL configured (e.g. tests, alertmanager-less dev). The on-
+    // disk write still landed; the operator has no Alertmanager to
+    // reload. Surface as `skipped` so the UI can stay quiet rather
+    // than yelling about a misconfiguration that isn't there.
+    return { ok: false, skipped: true, detail: 'alertmanager_url_not_configured' };
+  }
   try {
     const res = await fetch(`${base.replace(/\/+$/, '')}/-/reload`, {
       method: 'POST',
       signal: AbortSignal.timeout(1000),
     });
     if (!res.ok) {
-      deps.logger?.warn({ status: res.status }, 'channels.reload.bad-status');
+      // Alertmanager rejects malformed configs with a 400/500 plus a
+      // plain-text body. Forward the body to the operator — that's
+      // where messages like `undefined receiver "X" used in route`
+      // come from, and the operator can act on them.
+      let detail = `alertmanager_reload_status_${res.status}`;
+      try {
+        const body = (await res.text()).trim();
+        if (body) detail = body;
+      } catch {
+        /* ignore body-read failures, keep the status detail */
+      }
+      deps.logger?.warn({ status: res.status, detail }, 'channels.reload.bad-status');
+      return { ok: false, status: res.status, detail };
     }
+    return { ok: true };
   } catch (err) {
-    deps.logger?.warn(
-      { err: err instanceof Error ? err.message : String(err) },
-      'channels.reload.failed',
-    );
+    const detail = err instanceof Error ? err.message : String(err);
+    deps.logger?.warn({ err: detail }, 'channels.reload.failed');
+    return { ok: false, detail };
   }
 }

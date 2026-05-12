@@ -495,6 +495,140 @@ describe('Broker — charge-points (list) deltas', () => {
       last_changed_at: '2026-05-11T10:01:00Z',
     });
   });
+
+  it('emits an upsert when a cp.connected event arrives (online flips live)', async () => {
+    const kafka = new FakeKafka();
+    const broker = new Broker(
+      kafka as unknown as KafkaTail,
+      fakeGateway({ online: true }),
+      silentLog,
+    );
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-points', {});
+
+    kafka.emit({
+      topic: 'cp.connected',
+      cpId: 'CP_CONN',
+      cursor: 'k:cp.connected:0:1',
+      timestamp: new Date(),
+      payload: { subprotocol: 'ocpp1.6', pod_id: 'pod-a' },
+    });
+    await flushAsync();
+
+    expect(deliver).toHaveBeenCalledOnce();
+    const [, d] = deliver.mock.calls[0]!;
+    expect(d.delta.kind).toBe('charge-points');
+    expect(d.delta.op).toBe('upsert');
+    expect(d.delta.row.cp_id).toBe('CP_CONN');
+    expect(d.delta.row.online).toBe(true);
+  });
+
+  it('emits an upsert when a cp.disconnected event arrives (offline flips live)', async () => {
+    const kafka = new FakeKafka();
+    const broker = new Broker(
+      kafka as unknown as KafkaTail,
+      fakeGateway({ online: false }),
+      silentLog,
+    );
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-points', {});
+
+    kafka.emit({
+      topic: 'cp.disconnected',
+      cpId: 'CP_DROP',
+      cursor: 'k:cp.disconnected:0:1',
+      timestamp: new Date(),
+      payload: { pod_id: 'pod-a', reason: 'clean' },
+    });
+    await flushAsync();
+
+    expect(deliver).toHaveBeenCalledOnce();
+    const [, d] = deliver.mock.calls[0]!;
+    expect(d.delta.kind).toBe('charge-points');
+    expect(d.delta.op).toBe('upsert');
+    expect(d.delta.row.online).toBe(false);
+  });
+
+  it('removes a row when cp.disconnected arrives and online=true filter is active', async () => {
+    // The list page can be filtered to "online only"; a charger that
+    // just dropped should disappear immediately, not wait for the next
+    // status event.
+    const kafka = new FakeKafka();
+    const broker = new Broker(
+      kafka as unknown as KafkaTail,
+      fakeGateway({ online: false }),
+      silentLog,
+    );
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-points', { online: true });
+
+    kafka.emit({
+      topic: 'cp.disconnected',
+      cpId: 'CP_X',
+      cursor: 'k:cp.disconnected:0:2',
+      timestamp: new Date(),
+      payload: {},
+    });
+    await flushAsync();
+
+    const [, d] = deliver.mock.calls[0]!;
+    expect(d.delta.op).toBe('remove');
+    expect(d.delta.cp_id).toBe('CP_X');
+  });
+});
+
+describe('Broker — charge-point (single) presence deltas', () => {
+  it('emits a row delta on cp.connected for the subscribed cp_id', async () => {
+    const kafka = new FakeKafka();
+    const broker = new Broker(
+      kafka as unknown as KafkaTail,
+      fakeGateway({ online: true }),
+      silentLog,
+    );
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-point', { cp_id: 'CP_A' });
+
+    kafka.emit({
+      topic: 'cp.connected',
+      cpId: 'CP_A',
+      cursor: 'k:cp.connected:0:5',
+      timestamp: new Date(),
+      payload: { subprotocol: 'ocpp1.6', pod_id: 'pod-x' },
+    });
+    await flushAsync();
+
+    expect(deliver).toHaveBeenCalledOnce();
+    const [, d] = deliver.mock.calls[0]!;
+    expect(d.delta.kind).toBe('charge-point');
+    expect(d.delta.row.online).toBe(true);
+  });
+
+  it('ignores presence events for other cp_ids', async () => {
+    const kafka = new FakeKafka();
+    const broker = new Broker(kafka as unknown as KafkaTail, fakeGateway(), silentLog);
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-point', { cp_id: 'CP_A' });
+
+    kafka.emit({
+      topic: 'cp.disconnected',
+      cpId: 'CP_B',
+      cursor: 'k:cp.disconnected:0:6',
+      timestamp: new Date(),
+      payload: {},
+    });
+    await flushAsync();
+    expect(deliver).not.toHaveBeenCalled();
+  });
 });
 
 describe('Broker — transactions-active deltas', () => {
