@@ -307,6 +307,49 @@ describe('device-events — tx.started', () => {
   });
 });
 
+describe('device-events — tx.stopped', () => {
+  it('renders the stop summary with reason when present', async () => {
+    const out = await run(
+      { cp_id: 'CP_A' },
+      evt({
+        topic: 'tx.stopped',
+        payload: {
+          transactionId: 42,
+          idTag: 'TAG-001',
+          meterStopWh: 5500,
+          consumedWh: 4500,
+          stopReason: 'Local',
+          chargerReportedAt: '2026-05-10T12:05:00Z',
+        },
+      }),
+    );
+    const d = out[0]!.delta;
+    if (d.kind !== 'device-events') throw new Error('wrong kind');
+    expect(d.append.kind).toBe('tx-stopped');
+    expect(d.append.summary).toBe('Transaction 42 stopped — Local');
+    expect(d.append.detail).toEqual({
+      transaction_id: 42,
+      id_tag: 'TAG-001',
+      meter_stop_wh: 5500,
+      consumed_wh: 4500,
+      stop_reason: 'Local',
+    });
+  });
+
+  it('falls back to a reason-less summary when stop_reason is absent', async () => {
+    const out = await run(
+      { cp_id: 'CP_A' },
+      evt({
+        topic: 'tx.stopped',
+        payload: { transactionId: 7, idTag: 'TAG-X', meterStopWh: 100 },
+      }),
+    );
+    const d = out[0]!.delta;
+    if (d.kind !== 'device-events') throw new Error('wrong kind');
+    expect(d.append.summary).toBe('Transaction 7 stopped');
+  });
+});
+
 describe('device-events — robustness', () => {
   it('returns [] for a null payload instead of throwing', async () => {
     const out = await run(

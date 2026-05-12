@@ -90,6 +90,11 @@ export const configSchema = z.object({
   KAFKA_TOPICS_STATUS: z.string().default('cp.status'),
   KAFKA_TOPICS_METER: z.string().default('cp.meter'),
   KAFKA_TOPICS_TX_STARTED: z.string().default('tx.started'),
+  // tx.stopped fires on StopTransaction. Without it the Transactions
+  // card on the detail page doesn't drop a row back to "completed"
+  // until the next 5s poll — and the Statistics card's completed
+  // count lags by the same window.
+  KAFKA_TOPICS_TX_STOPPED: z.string().default('tx.stopped'),
   // Presence: `cp.connected` fires when a charger opens a WS to the
   // gateway, `cp.disconnected` when it goes away. The Console needs
   // both for the `online` flag on the list view to flip in real time

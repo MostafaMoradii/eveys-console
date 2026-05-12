@@ -314,6 +314,16 @@ const META: Record<keyof Config, KeyMeta> = {
     default: 'tx.started',
     sensitive: false,
   },
+  KAFKA_TOPICS_TX_STOPPED: {
+    description:
+      'Topic the Console tails for StopTransaction events. Drives the live "session completed" pivot on the per-charger Transactions card (gateway-side: kafka_topic_tx_stopped).',
+    category: 'kafka',
+    mutable: true,
+    restart: 'console',
+    range: 'topic name',
+    default: 'tx.stopped',
+    sensitive: false,
+  },
   KAFKA_TOPICS_CONNECTED: {
     description:
       'Topic the Console tails for charger-online transitions. Drives the live `online` flag on the list view and the detail page header (gateway-side: kafka_topic_cp_connected).',

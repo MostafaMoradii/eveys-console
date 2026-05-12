@@ -108,14 +108,14 @@ export const statusEvent = z.object({
 });
 export type StatusEvent = z.infer<typeof statusEvent>;
 
-// Merged per-charger event stream. Server fans the four gateway Kafka
-// topics (cp.boot, cp.status, cp.meter, tx.started) into a single
-// chronological feed for the charger detail page. The summary line is
-// pre-rendered server-side so the UI just paints it; `detail` carries
-// the structured fields for the expand-on-click panel.
+// Merged per-charger event stream. Server fans the gateway Kafka
+// topics (cp.boot, cp.status, cp.meter, tx.started, tx.stopped) into
+// a single chronological feed for the charger detail page. The summary
+// line is pre-rendered server-side so the UI just paints it; `detail`
+// carries the structured fields for the expand-on-click panel.
 export const deviceEvent = z.object({
   at: isoTimestamp,
-  kind: z.enum(['boot', 'status', 'meter', 'tx-started']),
+  kind: z.enum(['boot', 'status', 'meter', 'tx-started', 'tx-stopped']),
   summary: z.string(),
   detail: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   connector_id: z.number().int().nonnegative().nullable().optional(),

@@ -53,13 +53,13 @@ export function StatisticsCard({ cpId }: Props) {
     enabled: !!token,
   });
 
-  // Push refresh on tx-started so a new session's first kWh shows
-  // up here without the 30s poll lag. Closed-tx aggregation still
-  // catches up on the next regular poll.
+  // Push refresh on tx-started + tx-stopped so a new session shows
+  // up immediately and the completed/active counts pivot live —
+  // without the 30s poll lag.
   useInvalidateOnCpEvents({
     cpId,
     queryKeys: [['cp-statistics', cpId]],
-    kinds: ['tx-started'],
+    kinds: ['tx-started', 'tx-stopped'],
   });
 
   const stats: ChargerStats | null = useMemo(() => {

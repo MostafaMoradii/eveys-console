@@ -140,14 +140,15 @@ export function TransactionsHistory({ cpId }: Props) {
     enabled: !!token,
   });
 
-  // Push refresh: every tx-started / status event arriving on the
-  // broker invalidates this list so a new row appears within ~100ms
-  // instead of waiting for the 5s poll. The poll stays on as a
-  // safety net.
+  // Push refresh: every tx-started / tx-stopped / status event
+  // arriving on the broker refetches this list so a new row appears
+  // (and a completed row pivots from open → completed) within
+  // ~100ms instead of waiting for the 5s poll. The poll stays on as
+  // a safety net.
   useInvalidateOnCpEvents({
     cpId,
     queryKeys: [['cp-transactions', cpId]],
-    kinds: ['tx-started', 'status'],
+    kinds: ['tx-started', 'tx-stopped', 'status'],
   });
 
   // Subscribe to live MeterValues for the cp_id so open rows can show
