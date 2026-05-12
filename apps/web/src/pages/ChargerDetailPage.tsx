@@ -126,7 +126,7 @@ export function ChargerDetailPage() {
         </TabsContent>
 
         <TabsContent value="commands">
-          <CommandsConsole cpId={cp.cp_id} />
+          <CommandsConsole cpId={cp.cp_id} online={cp.online} />
         </TabsContent>
 
         <TabsContent value="diagnostics">
