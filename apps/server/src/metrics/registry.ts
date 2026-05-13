@@ -114,6 +114,7 @@ export type GatewayOp =
   | 'get_transaction'
   | 'list_meter_values'
   | 'list_cp_frames'
+  | 'get_uptime'
   | 'command_remote_start'
   | 'command_remote_stop'
   | 'command_reset'

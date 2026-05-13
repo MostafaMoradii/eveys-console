@@ -6,6 +6,7 @@ import type { ChargePointSummary } from '@eveys-console/protocol';
 
 import { ChargerSpecChips } from '@/components/ChargerSpecChips';
 import { TimeAgo } from '@/components/TimeAgo';
+import { UptimeChip } from '@/components/UptimeChip';
 import { CommandsConsole } from '@/components/CommandsConsole';
 import { DeviceEventsPanel } from '@/components/DeviceEventsPanel';
 import { DiagnosticsHistory } from '@/components/DiagnosticsHistory';
@@ -269,9 +270,14 @@ function Header({ cp }: { cp: ChargePointSummary }) {
             className="font-mono text-xs"
             title={`booted at ${cp.last_boot_at}`}
           >
-            uptime: {formatUptime(cp.last_boot_at)}
+            since boot: {formatUptime(cp.last_boot_at)}
           </Badge>
         ) : null}
+        {/* Operational uptime % over a range (distinct from the
+            time-since-boot badge above). Refetches when the charger
+            comes back online — last_boot_at is the natural identity
+            since a fresh boot means an outage just closed. */}
+        <UptimeChip cpId={cp.cp_id} refetchKey={cp.last_boot_at} />
       </div>
     </div>
   );
