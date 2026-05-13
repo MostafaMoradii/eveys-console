@@ -221,6 +221,19 @@ export class GatewayClient {
     );
   }
 
+  /** Uptime% over a date range, plus the contributing offline intervals.
+   *  The gateway caps the window at 90 days (vs 7 for the time-series
+   *  streams) — aggregations are cheap and operators want quarterly
+   *  answers. The response excludes in-flight outages; couple with the
+   *  charger's live `online` flag for current state. */
+  getUptime(cpId: string, params: { from: string; to: string }) {
+    const qs = new URLSearchParams({ from: params.from, to: params.to });
+    return this.json<unknown>(
+      'get_uptime',
+      `/api/v1/charge-points/${encodeURIComponent(cpId)}/uptime?${qs.toString()}`,
+    );
+  }
+
   // ---- OCPP commands -----------------------------------------------------
   // Each method maps to one of the gateway's
   // `POST /api/v1/charge-points/{cp_id}/commands/{slug}` endpoints. The body
