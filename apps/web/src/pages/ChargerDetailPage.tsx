@@ -9,6 +9,7 @@ import { TimeAgo } from '@/components/TimeAgo';
 import { CommandsConsole } from '@/components/CommandsConsole';
 import { DeviceEventsPanel } from '@/components/DeviceEventsPanel';
 import { DiagnosticsHistory } from '@/components/DiagnosticsHistory';
+import { OcppLogPanel } from '@/components/OcppLogPanel';
 import { ReservationsPanel } from '@/components/ReservationsPanel';
 import { StatisticsCard } from '@/components/StatisticsCard';
 import { TransactionsHistory } from '@/components/TransactionsHistory';
@@ -100,6 +101,9 @@ export function ChargerDetailPage() {
           <TabsTrigger value="diagnostics" data-testid="detail-tab-diagnostics">
             Diagnostics
           </TabsTrigger>
+          <TabsTrigger value="ocpp-log" data-testid="detail-tab-ocpp-log">
+            OCPP Log
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -144,6 +148,10 @@ export function ChargerDetailPage() {
 
         <TabsContent value="diagnostics">
           <DiagnosticsHistory cpId={cp.cp_id} />
+        </TabsContent>
+
+        <TabsContent value="ocpp-log">
+          <OcppLogPanel cpId={cp.cp_id} />
         </TabsContent>
       </Tabs>
     </div>

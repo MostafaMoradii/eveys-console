@@ -195,6 +195,32 @@ export class GatewayClient {
     );
   }
 
+  /** Verbatim OCPP frame audit for a charger. Both directions by
+   *  default; pass `direction` for one side, `action` for one OCPP
+   *  action name. The gateway caps the window at 7 days (same as
+   *  meter-values + status-history). */
+  listCpFrames(
+    cpId: string,
+    params: {
+      from: string;
+      to: string;
+      direction?: 'inbound' | 'outbound';
+      action?: string;
+      limit?: number;
+    },
+  ) {
+    const qs = new URLSearchParams();
+    qs.set('from', params.from);
+    qs.set('to', params.to);
+    if (params.direction) qs.set('direction', params.direction);
+    if (params.action) qs.set('action', params.action);
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    return this.json<unknown>(
+      'list_cp_frames',
+      `/api/v1/charge-points/${encodeURIComponent(cpId)}/frames?${qs.toString()}`,
+    );
+  }
+
   // ---- OCPP commands -----------------------------------------------------
   // Each method maps to one of the gateway's
   // `POST /api/v1/charge-points/{cp_id}/commands/{slug}` endpoints. The body
