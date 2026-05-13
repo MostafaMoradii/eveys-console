@@ -631,6 +631,91 @@ describe('Broker — charge-point (single) presence deltas', () => {
   });
 });
 
+// Without these subscriptions the detail page's diagnostics + firmware
+// status chips stay stuck on whatever the initial snapshot held — the
+// gateway records new values but the Console never re-fetches the row
+// to surface them. See #173 for the original repro.
+describe('Broker — charge-point diagnostics/firmware status deltas', () => {
+  it('re-fetches the row on cp.diagnostics_status for the subscribed cp_id', async () => {
+    const kafka = new FakeKafka();
+    const broker = new Broker(
+      kafka as unknown as KafkaTail,
+      fakeGateway({ online: true }),
+      silentLog,
+    );
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-point', { cp_id: 'CP_A' });
+
+    kafka.emit({
+      topic: 'cp.diagnostics_status',
+      cpId: 'CP_A',
+      cursor: 'k:cp.diagnostics_status:0:1',
+      timestamp: new Date(),
+      payload: { status: 'Uploading' },
+    });
+    await flushAsync();
+
+    expect(deliver).toHaveBeenCalledOnce();
+    const [, d] = deliver.mock.calls[0]!;
+    expect(d.delta.kind).toBe('charge-point');
+    expect(d.delta.row.cp_id).toBe('CP_A');
+  });
+
+  it('re-fetches the row on cp.firmware_status for the subscribed cp_id', async () => {
+    const kafka = new FakeKafka();
+    const broker = new Broker(
+      kafka as unknown as KafkaTail,
+      fakeGateway({ online: true }),
+      silentLog,
+    );
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-point', { cp_id: 'CP_A' });
+
+    kafka.emit({
+      topic: 'cp.firmware_status',
+      cpId: 'CP_A',
+      cursor: 'k:cp.firmware_status:0:1',
+      timestamp: new Date(),
+      payload: { status: 'Downloaded' },
+    });
+    await flushAsync();
+
+    expect(deliver).toHaveBeenCalledOnce();
+    const [, d] = deliver.mock.calls[0]!;
+    expect(d.delta.kind).toBe('charge-point');
+  });
+
+  it('ignores diagnostics/firmware status events for other cp_ids', async () => {
+    const kafka = new FakeKafka();
+    const broker = new Broker(kafka as unknown as KafkaTail, fakeGateway(), silentLog);
+    broker.start();
+    const deliver = vi.fn();
+    broker.registerConnection('c1', deliver);
+    await broker.subscribe('c1', 'charge-point', { cp_id: 'CP_A' });
+
+    kafka.emit({
+      topic: 'cp.diagnostics_status',
+      cpId: 'CP_B',
+      cursor: 'k:cp.diagnostics_status:0:2',
+      timestamp: new Date(),
+      payload: { status: 'Uploaded' },
+    });
+    kafka.emit({
+      topic: 'cp.firmware_status',
+      cpId: 'CP_B',
+      cursor: 'k:cp.firmware_status:0:2',
+      timestamp: new Date(),
+      payload: { status: 'Installed' },
+    });
+    await flushAsync();
+    expect(deliver).not.toHaveBeenCalled();
+  });
+});
+
 describe('Broker — transactions-active deltas', () => {
   it('decodes a tx.started payload into a transaction summary', async () => {
     const kafka = new FakeKafka();

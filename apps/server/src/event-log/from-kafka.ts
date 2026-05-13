@@ -6,9 +6,13 @@
 // one mapping function means the live tail and the persisted log
 // always agree on what an event "looks like."
 //
-// The four topics handled here match the resolver in
-// `broker/queries.ts` — boot, status, meter, tx-started. Anything
-// else returns null.
+// Topics handled: boot, status, meter, tx-started, tx-stopped,
+// cp.connected, cp.disconnected, cp.diagnostics_status,
+// cp.firmware_status. Anything else returns null. The diagnostics +
+// firmware events are surfaced as DeviceEvent rows so they show up
+// in the live tail AND in the durable Events panel — without that,
+// the operator only sees the chip on the detail header flip and has
+// no record of the transition history.
 
 import type { DeviceEvent } from '@eveys-console/protocol';
 
@@ -143,6 +147,89 @@ export function deviceEventFromKafka(event: KafkaEvent): MappedEvent | null {
           meter_start_wh: meterStartWh,
         },
         connector_id: connectorId,
+      },
+    };
+  }
+
+  if (event.topic === 'tx.stopped') {
+    const transactionId = Number(p.transactionId ?? 0);
+    const idTag = nullableString(p.idTag);
+    const meterStopWh = Number(p.meterStopWh ?? 0);
+    const consumedWh = p.consumedWh != null ? Number(p.consumedWh) : null;
+    const stopReason = nullableString(p.stopReason);
+    return {
+      cpId: event.cpId,
+      event: {
+        at,
+        kind: 'tx-stopped',
+        summary: stopReason
+          ? `Transaction ${transactionId} stopped — ${stopReason}`
+          : `Transaction ${transactionId} stopped`,
+        detail: {
+          transaction_id: transactionId,
+          id_tag: idTag,
+          meter_stop_wh: meterStopWh,
+          consumed_wh: consumedWh,
+          stop_reason: stopReason,
+        },
+        connector_id: null,
+      },
+    };
+  }
+
+  if (event.topic === 'cp.connected') {
+    const subprotocol = nullableString(p.subprotocol);
+    const podId = nullableString(p.podId);
+    return {
+      cpId: event.cpId,
+      event: {
+        at,
+        kind: 'connected',
+        summary: subprotocol ? `WebSocket connected — ${subprotocol}` : 'WebSocket connected',
+        detail: { subprotocol, pod_id: podId },
+        connector_id: null,
+      },
+    };
+  }
+
+  if (event.topic === 'cp.disconnected') {
+    const reason = nullableString(p.reason);
+    return {
+      cpId: event.cpId,
+      event: {
+        at,
+        kind: 'disconnected',
+        summary: reason ? `WebSocket disconnected — ${reason}` : 'WebSocket disconnected',
+        detail: { reason },
+        connector_id: null,
+      },
+    };
+  }
+
+  if (event.topic === 'cp.diagnostics_status') {
+    const status = String(p.status ?? '');
+    return {
+      cpId: event.cpId,
+      event: {
+        at,
+        kind: 'diagnostics-status',
+        summary: status ? `DiagnosticsStatus — ${status}` : 'DiagnosticsStatus',
+        detail: { status: status === '' ? null : status },
+        connector_id: null,
+      },
+    };
+  }
+
+  if (event.topic === 'cp.firmware_status') {
+    const status = String(p.status ?? '');
+    return {
+      cpId: event.cpId,
+      event: {
+        at,
+        kind: 'firmware-status',
+        summary: status ? `FirmwareStatus — ${status}` : 'FirmwareStatus',
+        detail: { status: status === '' ? null : status },
+        connector_id: null,
       },
     };
   }

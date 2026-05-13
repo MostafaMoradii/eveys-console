@@ -59,6 +59,10 @@ const KIND_META: Record<DeviceEvent['kind'], { variant: ChipVariant; label: stri
   meter: { variant: 'secondary', label: 'meter' },
   'tx-started': { variant: 'default', label: 'tx-started' },
   'tx-stopped': { variant: 'secondary', label: 'tx-stopped' },
+  connected: { variant: 'success', label: 'connected' },
+  disconnected: { variant: 'warning', label: 'disconnected' },
+  'diagnostics-status': { variant: 'default', label: 'diagnostics' },
+  'firmware-status': { variant: 'default', label: 'firmware' },
 };
 const ALL_KINDS = Object.keys(KIND_META) as DeviceEvent['kind'][];
 

@@ -366,6 +366,26 @@ const META: Record<keyof Config, KeyMeta> = {
     default: 'cp.disconnected',
     sensitive: false,
   },
+  KAFKA_TOPICS_DIAGNOSTICS_STATUS: {
+    description:
+      'Topic the Console tails for DiagnosticsStatusNotification events. Drives the live diagnostics-status chip on the detail page — without it the chip stays stuck on whatever value was in the initial snapshot (gateway-side: kafka_topic_cp_diagnostics_status).',
+    category: 'kafka',
+    mutable: true,
+    restart: 'console',
+    range: 'topic name',
+    default: 'cp.diagnostics_status',
+    sensitive: false,
+  },
+  KAFKA_TOPICS_FIRMWARE_STATUS: {
+    description:
+      'Topic the Console tails for FirmwareStatusNotification events. Companion to KAFKA_TOPICS_DIAGNOSTICS_STATUS for UpdateFirmware / SignedUpdateFirmware flows (gateway-side: kafka_topic_cp_firmware_status).',
+    category: 'kafka',
+    mutable: true,
+    restart: 'console',
+    range: 'topic name',
+    default: 'cp.firmware_status',
+    sensitive: false,
+  },
 
   WS_MAX_SUBSCRIPTIONS_PER_CONN: {
     description: 'Cap on simultaneous subscriptions per WebSocket. Plumbed but not yet enforced.',

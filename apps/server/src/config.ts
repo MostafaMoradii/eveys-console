@@ -121,6 +121,14 @@ export const configSchema = z.object({
   // event happens to come through, which is rarely.
   KAFKA_TOPICS_CONNECTED: z.string().default('cp.connected'),
   KAFKA_TOPICS_DISCONNECTED: z.string().default('cp.disconnected'),
+  // DiagnosticsStatusNotification + FirmwareStatusNotification flips
+  // (Idle → Uploading → Uploaded, etc.). The gateway records the
+  // latest value on the charger row; without these subscriptions the
+  // detail page's chips don't update until the operator manually
+  // reloads. Names match gateway-side `kafka_topic_cp_diagnostics_status`
+  // / `_firmware_status`.
+  KAFKA_TOPICS_DIAGNOSTICS_STATUS: z.string().default('cp.diagnostics_status'),
+  KAFKA_TOPICS_FIRMWARE_STATUS: z.string().default('cp.firmware_status'),
 
   // WS hardening
   WS_MAX_SUBSCRIPTIONS_PER_CONN: z.coerce.number().int().positive().default(50),
