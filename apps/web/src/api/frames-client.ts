@@ -1,0 +1,52 @@
+// REST client for the per-charger OCPP frame audit.
+//
+//   fetchCpFrames(token, cpId, { from, to, direction?, action?, limit? })
+//     → GET /sys/charge-points/:cp_id/frames?…
+//
+// One-shot fetch — the OCPP Log tab is for investigation, not live
+// tailing. (Live activity is on the Events tab.) Refetch on every
+// filter change.
+
+import { CONSOLE_BASE_URL as BASE } from '@/lib/console-url';
+
+export interface OcppFrame {
+  event_id: string;
+  occurred_at: string;
+  cp_id: string;
+  direction: 'inbound' | 'outbound';
+  action: string;
+  message_type: number; // 2 = CALL, 3 = CALLRESULT, 4 = CALLERROR
+  message_id: string;
+  ocpp_version: string;
+  transaction_id: number | null;
+  raw_payload: string;
+}
+
+export interface CpFramesParams {
+  from: string;
+  to: string;
+  direction?: 'inbound' | 'outbound';
+  action?: string;
+  limit?: number;
+}
+
+export interface CpFramesResponse {
+  cp_id: string;
+  frames: OcppFrame[];
+  request_id?: string;
+}
+
+export async function fetchCpFrames(
+  token: string,
+  cpId: string,
+  params: CpFramesParams,
+): Promise<CpFramesResponse> {
+  const qs = new URLSearchParams({ from: params.from, to: params.to });
+  if (params.direction) qs.set('direction', params.direction);
+  if (params.action) qs.set('action', params.action);
+  if (params.limit != null) qs.set('limit', String(params.limit));
+  const url = `${BASE}/sys/charge-points/${encodeURIComponent(cpId)}/frames?${qs.toString()}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`sys/charge-points/${cpId}/frames ${res.status}`);
+  return (await res.json()) as CpFramesResponse;
+}
