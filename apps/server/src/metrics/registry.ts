@@ -115,6 +115,7 @@ export type GatewayOp =
   | 'list_meter_values'
   | 'list_cp_frames'
   | 'get_uptime'
+  | 'list_fleet_status_history'
   | 'command_remote_start'
   | 'command_remote_stop'
   | 'command_reset'

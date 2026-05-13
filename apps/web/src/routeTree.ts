@@ -7,6 +7,11 @@ import { createRootRoute, createRoute } from '@tanstack/react-router';
 import { ConsoleShell } from './components/AppShell';
 import { AlertsPage } from './pages/AlertsPage';
 import { ChargerDetailPage } from './pages/ChargerDetailPage';
+import {
+  FleetEventsPage,
+  validateFleetEventsSearch,
+  type FleetEventsSearch,
+} from './pages/FleetEventsPage';
 import { FleetPage } from './pages/FleetPage';
 import { OcppConformancePage } from './pages/OcppConformancePage';
 import { SystemConfigPage } from './pages/SystemConfigPage';
@@ -48,6 +53,14 @@ const chargerDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/inspect/charge-points/$cpId',
   component: ChargerDetailPage,
+});
+
+const fleetEventsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/inspect/fleet/events',
+  component: FleetEventsPage,
+  validateSearch: (raw: Record<string, unknown>): FleetEventsSearch =>
+    validateFleetEventsSearch(raw),
 });
 
 const transactionsRoute = createRoute({
@@ -102,6 +115,7 @@ export const routeTree = rootRoute.addChildren([
   alertsRoute,
   inspectChargePointsRoute,
   chargerDetailRoute,
+  fleetEventsRoute,
   transactionsRoute,
   transactionDetailRoute,
   sysConfigRoute,
