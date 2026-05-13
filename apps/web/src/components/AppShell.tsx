@@ -8,6 +8,7 @@ import {
   Menu,
   Plug,
   Receipt,
+  Search as SearchIcon,
   Settings,
   Sparkles,
 } from 'lucide-react';
@@ -253,6 +254,12 @@ function NavContents({ path }: { path: string }) {
           label="Transactions"
           icon={<Receipt className="h-4 w-4" />}
           active={path.startsWith('/inspect/transactions')}
+        />
+        <NavItem
+          to="/inspect/fleet/events"
+          label="Fleet events"
+          icon={<SearchIcon className="h-4 w-4" />}
+          active={path.startsWith('/inspect/fleet/events')}
         />
       </NavSection>
     </>

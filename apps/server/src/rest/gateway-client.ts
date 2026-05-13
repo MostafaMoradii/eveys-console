@@ -173,6 +173,29 @@ export class GatewayClient {
     );
   }
 
+  /** Fleet-wide StatusNotification history. Most common use:
+   *  "all Faulted statuses across the fleet this week" — pass
+   *  `status: ['Faulted']` and a ≤7-day window. Repeatable status
+   *  and cp_id support the "either of these" cases. */
+  listFleetStatusHistory(params: {
+    from: string;
+    to: string;
+    status?: readonly string[];
+    cp_id?: readonly string[];
+    limit?: number;
+  }) {
+    const qs = new URLSearchParams();
+    qs.set('from', params.from);
+    qs.set('to', params.to);
+    for (const s of params.status ?? []) qs.append('status', s);
+    for (const c of params.cp_id ?? []) qs.append('cp_id', c);
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    return this.json<unknown>(
+      'list_fleet_status_history',
+      `/api/v1/status-history?${qs.toString()}`,
+    );
+  }
+
   listMeterValues(
     cpId: string,
     params: {

@@ -50,6 +50,7 @@ import { registerSysAlertsRoute } from './routes/sys-alerts.js';
 import { registerSysChargePointTransactionsRoute } from './routes/sys-charge-point-transactions.js';
 import { registerSysCpFramesRoute } from './routes/sys-cp-frames.js';
 import { registerSysCpUptimeRoute } from './routes/sys-cp-uptime.js';
+import { registerSysFleetStatusHistoryRoute } from './routes/sys-fleet-status-history.js';
 import { registerSysCpEventsRoute } from './routes/sys-cp-events.js';
 import { registerSysCpReservationsRoute } from './routes/sys-cp-reservations.js';
 import { registerSysConfigRoute } from './routes/sys-config.js';
@@ -174,6 +175,7 @@ async function main() {
   await registerSysCpReservationsRoute(app, { gateway });
   await registerSysCpFramesRoute(app, { gateway });
   await registerSysCpUptimeRoute(app, { gateway });
+  await registerSysFleetStatusHistoryRoute(app, { gateway });
   await registerSysCpEventsRoute(app, { eventLogRoot: config.EVENT_LOG_DIR });
   await registerSysTransactionsRoute(app, { gateway });
   await registerSysAlertsRoute(app, { logger, channelsStore, rulesStore });
