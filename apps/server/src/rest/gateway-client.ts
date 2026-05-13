@@ -90,6 +90,7 @@ export class GatewayClient {
     params: {
       online?: boolean;
       vendor?: string;
+      ocpp_version?: string;
       last_status?: string;
       cp_id_prefix?: string;
       cp_id_contains?: string;
@@ -102,6 +103,7 @@ export class GatewayClient {
     const qs = new URLSearchParams();
     if (params.online !== undefined) qs.set('online', String(params.online));
     if (params.vendor) qs.set('vendor', params.vendor);
+    if (params.ocpp_version) qs.set('ocpp_version', params.ocpp_version);
     if (params.last_status) qs.set('last_status', params.last_status);
     if (params.cp_id_prefix) qs.set('cp_id_prefix', params.cp_id_prefix);
     if (params.cp_id_contains) qs.set('cp_id_contains', params.cp_id_contains);
