@@ -218,6 +218,8 @@ function TranscriptRow({ entry }: { entry: TranscriptEntry }) {
         ) : null}
       </div>
 
+      <ResponseHighlights entry={entry} />
+
       <div className="flex flex-wrap gap-2">
         <RowToggle
           label={reqOpen ? '← Hide request' : '→ Show request'}
@@ -265,6 +267,37 @@ function RowToggle({
     >
       {label}
     </button>
+  );
+}
+
+/** Surfaces a couple of fields from the OCPP response inline next to
+ *  the row's status pill so the operator doesn't have to expand the
+ *  JSON toggle for the most common follow-up actions. Today that's
+ *  `reservation_id` on a successful ReserveNow — without it the
+ *  operator has no way to know what id to pass to CancelReservation
+ *  short of reading the JSON. Extend cautiously: anything added here
+ *  has to be obvious and short, otherwise it bloats the row. */
+function ResponseHighlights({ entry }: { entry: TranscriptEntry }) {
+  if (entry.phase !== 'ok' || entry.outcome !== 'accepted') return null;
+  if (!entry.response || typeof entry.response !== 'object') return null;
+  const res = entry.response as Record<string, unknown>;
+  const chips: { label: string; value: string }[] = [];
+  if (entry.method === 'reserve-now' && typeof res.reservation_id === 'number') {
+    chips.push({ label: 'reservation_id', value: String(res.reservation_id) });
+  }
+  if (chips.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5" data-testid="transcript-response-highlights">
+      {chips.map((c) => (
+        <span
+          key={c.label}
+          className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-2 py-0.5 font-mono text-[10px]"
+        >
+          <span className="text-muted-foreground">{c.label}</span>
+          <span className="font-semibold text-foreground">{c.value}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 

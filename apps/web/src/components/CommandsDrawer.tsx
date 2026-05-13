@@ -10,6 +10,8 @@
 import { Loader2, Send } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
+import type { Reservation } from '@eveys-console/protocol';
+
 import { issueDiagnostics } from '@/api/diagnostics-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -101,6 +103,7 @@ export function CommandsList({
   getConfigResult,
   setGetConfigResult,
   ocppVersion,
+  activeReservations,
 }: {
   busy: string | null;
   send: (
@@ -122,6 +125,10 @@ export function CommandsList({
    *  "Advanced" disclosure; OCPP 2.0.1 chargers get GetLog inline
    *  in the Diagnostics section. */
   ocppVersion?: string | null;
+  /** Active reservations for this charger, inlined by the gateway
+   *  detail endpoint. Drives the CancelReservation dropdown so
+   *  operators don't have to remember (or hand-type) a reservation_id. */
+  activeReservations?: Reservation[];
 }) {
   // OCPP 2.0.1 has GetLog as a core command. Anything else (including
   // plain 1.6 or unknown) puts GetLog behind the disclosure so the
@@ -162,7 +169,11 @@ export function CommandsList({
 
       <Section title="Reservations">
         <ReserveNowForm busy={busy} send={send} />
-        <CancelReservationForm busy={busy} send={send} />
+        <CancelReservationForm
+          busy={busy}
+          send={send}
+          {...(activeReservations ? { activeReservations } : {})}
+        />
       </Section>
 
       <Section title="Vendor">
@@ -638,8 +649,20 @@ function ReserveNowForm({ busy, send }: CmdFormProps) {
   );
 }
 
-function CancelReservationForm({ busy, send }: CmdFormProps) {
+function CancelReservationForm({
+  busy,
+  send,
+  activeReservations,
+}: CmdFormProps & { activeReservations?: Reservation[] }) {
+  // Prefer the dropdown when the gateway has inlined Active rows; fall
+  // back to a numeric input when it hasn't (older gateway build or a
+  // charger that took a reservation_id in a way we didn't observe).
+  // The fallback is also a real escape hatch — operators occasionally
+  // know an id from a back-office system that the gateway doesn't.
+  const rows = activeReservations ?? [];
+  const [manual, setManual] = useState(false);
   const [reservationId, setReservationId] = useState('');
+  const useDropdown = rows.length > 0 && !manual;
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const id = Number(reservationId);
@@ -647,17 +670,52 @@ function CancelReservationForm({ busy, send }: CmdFormProps) {
     void send('cancel-reservation', { reservation_id: id });
   };
   return (
-    <CmdCard title="CancelReservation" hint="Drop a previously-Accepted reservation by id.">
+    <CmdCard
+      title="CancelReservation"
+      hint="Drop a previously-Accepted reservation by id. Picks from the charger's currently-Active list."
+    >
       <form onSubmit={submit} className="space-y-2">
         <Field label="reservation_id" required>
-          <Input
-            type="number"
-            min="1"
-            required
-            value={reservationId}
-            onChange={(e) => setReservationId(e.target.value)}
-          />
+          {useDropdown ? (
+            <Select
+              required
+              value={reservationId}
+              onChange={(e) => setReservationId(e.target.value)}
+              data-testid="cancel-reservation-select"
+            >
+              <option value="" disabled>
+                Select an active reservation…
+              </option>
+              {rows.map((r) => (
+                <option key={r.reservation_id} value={String(r.reservation_id)}>
+                  #{r.reservation_id} · connector {r.connector_id} · id_tag {r.id_tag}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <Input
+              type="number"
+              min="1"
+              required
+              value={reservationId}
+              onChange={(e) => setReservationId(e.target.value)}
+              placeholder={rows.length === 0 ? 'No active reservations on this charger' : ''}
+              data-testid="cancel-reservation-input"
+            />
+          )}
         </Field>
+        {rows.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              setManual((v) => !v);
+              setReservationId('');
+            }}
+            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+          >
+            {manual ? 'Pick from active list' : 'Enter an id manually'}
+          </button>
+        ) : null}
         <SubmitButton busy={busy} method="cancel-reservation" />
       </form>
     </CmdCard>

@@ -110,6 +110,7 @@ export type GatewayOp =
   | 'get_charge_point'
   | 'list_active_transactions'
   | 'list_charge_point_transactions'
+  | 'list_charge_point_reservations'
   | 'get_transaction'
   | 'list_meter_values'
   | 'command_remote_start'
