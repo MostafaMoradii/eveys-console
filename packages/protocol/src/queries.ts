@@ -36,6 +36,31 @@ export const connectorState = z
 // adds in a future minor must be tolerated by the schema (see the
 // `.passthrough()` at the bottom — accepts unknown fields rather than
 // rejecting the whole row).
+/** One row from the gateway's `reservations` table (ADR-0021).
+ *  Three statuses: `Pending` (allocated id, charger hasn't replied
+ *  yet), `Active` (charger Accepted; honoured until expiry or
+ *  consumed by a matching StartTransaction), `Cancelled` (operator
+ *  issued CancelReservation and the charger Accepted). A reservation
+ *  consumed by a StartTransaction stays as `Active` in this table —
+ *  the gateway has no separate "Used" status today; the Console
+ *  derives "consumed by tx N" via id_tag + time-window matching. */
+export const reservation = z
+  .object({
+    reservation_id: z.number().int().nonnegative(),
+    connector_id: z.number().int().nonnegative(),
+    id_tag: z.string(),
+    /** The list endpoint includes this; the inlined `active_reservations`
+     *  block on the charge-point detail row omits it. Optional so both
+     *  shapes parse. */
+    parent_id_tag: z.string().nullable().optional(),
+    expiry_date: isoTimestamp.nullable(),
+    status: z.string(),
+    created_at: isoTimestamp.nullable().optional(),
+    updated_at: isoTimestamp.nullable().optional(),
+  })
+  .passthrough();
+export type Reservation = z.infer<typeof reservation>;
+
 export const chargePointSummary = z
   .object({
     cp_id: z.string(),
@@ -58,6 +83,12 @@ export const chargePointSummary = z
     last_diagnostics_status: z.string().nullable().optional(),
     last_firmware_status: z.string().nullable().optional(),
     connectors: z.array(connectorState),
+    /** Currently-Active reservations on this charger, inlined by the
+     *  gateway's detail endpoint so the Commands tab can populate
+     *  the CancelReservation dropdown without a second round-trip.
+     *  Field is optional because the list endpoint omits it (only
+     *  the detail endpoint inlines this). */
+    active_reservations: z.array(reservation).optional(),
   })
   .passthrough();
 export type ChargePointSummary = z.infer<typeof chargePointSummary>;

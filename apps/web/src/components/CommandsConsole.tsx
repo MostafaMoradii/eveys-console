@@ -19,6 +19,8 @@
 
 import { useState } from 'react';
 
+import type { Reservation } from '@eveys-console/protocol';
+
 import { CommandsList, useIssueUrl } from '@/components/CommandsDrawer';
 import { CommandTranscript } from '@/components/CommandTranscript';
 import { useCommandTranscript } from '@/hooks/use-command-transcript';
@@ -28,6 +30,7 @@ export function CommandsConsole({
   cpId,
   online,
   ocppVersion,
+  activeReservations,
 }: {
   cpId: string;
   /** Charger's current online state. When false, every Send button
@@ -42,6 +45,9 @@ export function CommandsConsole({
    *  Extensions" disclosure. Null when the gateway hasn't recorded
    *  a value yet — treated like 1.6. */
   ocppVersion?: string | null;
+  /** Active reservations for this charger from the gateway detail
+   *  endpoint. Drives the CancelReservation dropdown. */
+  activeReservations?: Reservation[];
 }) {
   const { client, token } = useConsoleClient();
   const t = useCommandTranscript(client, cpId);
@@ -92,6 +98,7 @@ export function CommandsConsole({
             getConfigResult={getConfigResult}
             setGetConfigResult={setGetConfigResult}
             ocppVersion={ocppVersion ?? null}
+            {...(activeReservations ? { activeReservations } : {})}
           />
         </fieldset>
       </div>

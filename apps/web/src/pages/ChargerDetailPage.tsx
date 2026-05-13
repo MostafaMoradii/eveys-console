@@ -9,6 +9,7 @@ import { TimeAgo } from '@/components/TimeAgo';
 import { CommandsConsole } from '@/components/CommandsConsole';
 import { DeviceEventsPanel } from '@/components/DeviceEventsPanel';
 import { DiagnosticsHistory } from '@/components/DiagnosticsHistory';
+import { ReservationsPanel } from '@/components/ReservationsPanel';
 import { StatisticsCard } from '@/components/StatisticsCard';
 import { TransactionsHistory } from '@/components/TransactionsHistory';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -90,6 +91,9 @@ export function ChargerDetailPage() {
           <TabsTrigger value="transactions" data-testid="detail-tab-transactions">
             Transactions
           </TabsTrigger>
+          <TabsTrigger value="reservations" data-testid="detail-tab-reservations">
+            Reservations
+          </TabsTrigger>
           <TabsTrigger value="commands" data-testid="detail-tab-commands">
             Commands
           </TabsTrigger>
@@ -125,11 +129,16 @@ export function ChargerDetailPage() {
           <TransactionsHistory cpId={cp.cp_id} />
         </TabsContent>
 
+        <TabsContent value="reservations">
+          <ReservationsPanel cpId={cp.cp_id} />
+        </TabsContent>
+
         <TabsContent value="commands">
           <CommandsConsole
             cpId={cp.cp_id}
             online={cp.online}
             ocppVersion={cp.ocpp_version ?? null}
+            {...(cp.active_reservations ? { activeReservations: cp.active_reservations } : {})}
           />
         </TabsContent>
 

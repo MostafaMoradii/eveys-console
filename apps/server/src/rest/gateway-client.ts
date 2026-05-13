@@ -139,6 +139,25 @@ export class GatewayClient {
     );
   }
 
+  /** Reservation history for one charger. The gateway returns
+   *  every status (Pending / Active / Cancelled); the operator UI
+   *  filters as needed. */
+  listChargePointReservations(
+    cpId: string,
+    params: { active?: boolean; status?: string; id_tag?: string; limit?: number } = {},
+  ) {
+    const qs = new URLSearchParams();
+    if (params.active !== undefined) qs.set('active', String(params.active));
+    if (params.status) qs.set('status', params.status);
+    if (params.id_tag) qs.set('id_tag', params.id_tag);
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return this.json<unknown>(
+      'list_charge_point_reservations',
+      `/api/v1/charge-points/${encodeURIComponent(cpId)}/reservations${suffix}`,
+    );
+  }
+
   // ---- Per-transaction detail + meter-values time-series ----------------
   // The active-transaction list flows through the WS broker as a snapshot.
   // The single-transaction detail page does NOT have a broker query — it
