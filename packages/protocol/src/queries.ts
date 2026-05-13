@@ -49,7 +49,10 @@ export const reservation = z
     reservation_id: z.number().int().nonnegative(),
     connector_id: z.number().int().nonnegative(),
     id_tag: z.string(),
-    parent_id_tag: z.string().nullable(),
+    /** The list endpoint includes this; the inlined `active_reservations`
+     *  block on the charge-point detail row omits it. Optional so both
+     *  shapes parse. */
+    parent_id_tag: z.string().nullable().optional(),
     expiry_date: isoTimestamp.nullable(),
     status: z.string(),
     created_at: isoTimestamp.nullable().optional(),
