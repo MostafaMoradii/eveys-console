@@ -40,7 +40,11 @@ export async function fetchChargePointReservations(
   // array depending on the build; normalise here so callers don't
   // have to care which one they hit.
   if (Array.isArray(body)) return { reservations: body as Reservation[] };
-  if (body && typeof body === 'object' && Array.isArray((body as { reservations?: unknown }).reservations)) {
+  if (
+    body &&
+    typeof body === 'object' &&
+    Array.isArray((body as { reservations?: unknown }).reservations)
+  ) {
     return body as ReservationsList;
   }
   return { reservations: [] };

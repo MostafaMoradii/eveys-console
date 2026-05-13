@@ -26,8 +26,7 @@ vi.mock('@/api/reservations-client', () => ({
   fetchChargePointReservations: (...args: unknown[]) => fetchReservations(...args),
 }));
 vi.mock('@/api/transactions-client', () => ({
-  fetchAllChargePointTransactions: (...args: unknown[]) =>
-    fetchAllChargePointTransactions(...args),
+  fetchAllChargePointTransactions: (...args: unknown[]) => fetchAllChargePointTransactions(...args),
 }));
 vi.mock('@/lib/ws-context', () => ({
   useConsoleClient: () => ({
@@ -110,9 +109,10 @@ describe('matchTransaction', () => {
   });
 
   it('matches a tx that started slightly past expiry (within 60s grace)', () => {
-    expect(
-      matchTransaction(baseRes, [{ ...baseTx, started_at: '2026-05-12T10:30:30Z' }]),
-    ).toEqual({ ...baseTx, started_at: '2026-05-12T10:30:30Z' });
+    expect(matchTransaction(baseRes, [{ ...baseTx, started_at: '2026-05-12T10:30:30Z' }])).toEqual({
+      ...baseTx,
+      started_at: '2026-05-12T10:30:30Z',
+    });
   });
 
   it('does not match a tx that started >60s past expiry', () => {

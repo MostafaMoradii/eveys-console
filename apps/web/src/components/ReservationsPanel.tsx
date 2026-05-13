@@ -24,10 +24,7 @@ import { useMemo } from 'react';
 import type { Reservation } from '@eveys-console/protocol';
 
 import { fetchChargePointReservations } from '@/api/reservations-client';
-import {
-  fetchAllChargePointTransactions,
-  type TransactionRow,
-} from '@/api/transactions-client';
+import { fetchAllChargePointTransactions, type TransactionRow } from '@/api/transactions-client';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -147,9 +144,7 @@ export function ReservationsPanel({ cpId }: Props) {
                 <TableCell>
                   <StatusBadge status={r.status} />
                 </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {formatDate(r.expiry_date)}
-                </TableCell>
+                <TableCell className="font-mono text-xs">{formatDate(r.expiry_date)}</TableCell>
                 <TableCell className="font-mono text-xs">{formatDate(r.created_at)}</TableCell>
                 <TableCell className="font-mono text-xs">
                   {tx ? (
