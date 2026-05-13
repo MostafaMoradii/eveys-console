@@ -659,7 +659,16 @@ function CancelReservationForm({
   // charger that took a reservation_id in a way we didn't observe).
   // The fallback is also a real escape hatch — operators occasionally
   // know an id from a back-office system that the gateway doesn't.
-  const rows = activeReservations ?? [];
+  // Drop expired rows — the gateway leaves a reservation as
+  // status=Active past its expiry_date (there's no "Expired" status
+  // today). An expired hold isn't a sensible CancelReservation
+  // target; offering it in the dropdown invites a confusing
+  // NotFound response from the charger.
+  const rows = (activeReservations ?? []).filter((r) => {
+    if (!r.expiry_date) return true;
+    const ms = Date.parse(r.expiry_date);
+    return Number.isNaN(ms) || ms > Date.now();
+  });
   const [manual, setManual] = useState(false);
   const [reservationId, setReservationId] = useState('');
   const useDropdown = rows.length > 0 && !manual;

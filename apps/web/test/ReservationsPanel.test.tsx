@@ -124,6 +124,7 @@ describe('matchTransaction', () => {
 
 describe('ReservationsPanel', () => {
   it('renders one row per reservation with status badge and id', async () => {
+    const futureIso = new Date(Date.now() + 60 * 60_000).toISOString();
     fetchReservations.mockResolvedValue({
       reservations: [
         {
@@ -131,7 +132,7 @@ describe('ReservationsPanel', () => {
           connector_id: 1,
           id_tag: 'TAG_A',
           parent_id_tag: null,
-          expiry_date: '2026-05-12T10:30:00Z',
+          expiry_date: futureIso,
           status: 'Active',
           created_at: '2026-05-12T10:00:00Z',
           updated_at: '2026-05-12T10:00:00Z',
@@ -154,6 +155,31 @@ describe('ReservationsPanel', () => {
     expect(screen.getByTestId('reservation-row-43')).toBeInTheDocument();
     expect(screen.getByText('Active')).toBeInTheDocument();
     expect(screen.getByText('Cancelled')).toBeInTheDocument();
+  });
+
+  it('renders an Active row past its expiry as Expired', async () => {
+    fetchReservations.mockResolvedValue({
+      reservations: [
+        {
+          reservation_id: 99,
+          connector_id: 1,
+          id_tag: 'TAG_A',
+          parent_id_tag: null,
+          // Year-old expiry, still status=Active in the gateway. The
+          // gateway never flips Active rows; the panel derives the
+          // Expired label client-side.
+          expiry_date: '2025-01-01T00:00:00Z',
+          status: 'Active',
+          created_at: '2024-12-31T23:00:00Z',
+          updated_at: '2024-12-31T23:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    });
+    renderWithRouter(<ReservationsPanel cpId="cp_a" />);
+    expect(await screen.findByTestId('reservation-row-99')).toBeInTheDocument();
+    expect(screen.getByText('Expired')).toBeInTheDocument();
+    expect(screen.queryByText('Active')).toBeNull();
   });
 
   it('shows the empty-state copy when the gateway returns no reservations', async () => {

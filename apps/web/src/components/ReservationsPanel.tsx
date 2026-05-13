@@ -142,7 +142,7 @@ export function ReservationsPanel({ cpId }: Props) {
                 <TableCell className="font-mono">{r.connector_id}</TableCell>
                 <TableCell className="font-mono text-xs">{r.id_tag}</TableCell>
                 <TableCell>
-                  <StatusBadge status={r.status} />
+                  <StatusBadge status={r.status} expiryDate={r.expiry_date} />
                 </TableCell>
                 <TableCell className="font-mono text-xs">{formatDate(r.expiry_date)}</TableCell>
                 <TableCell className="font-mono text-xs">{formatDate(r.created_at)}</TableCell>
@@ -168,9 +168,21 @@ export function ReservationsPanel({ cpId }: Props) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const variant: 'success' | 'warning' | 'destructive' | 'muted' =
-    status === 'Active'
+/** The gateway keeps a reservation as `Active` after its expiry —
+ *  there's no separate "Expired" status today (a reservation only
+ *  flips to `Cancelled` when an operator issues CancelReservation).
+ *  Surface the expired-but-still-Active rows distinctly here so an
+ *  operator doesn't misread a stale hold as a live one. */
+function StatusBadge({ status, expiryDate }: { status: string; expiryDate: string | null }) {
+  const expired =
+    status === 'Active' &&
+    typeof expiryDate === 'string' &&
+    !Number.isNaN(Date.parse(expiryDate)) &&
+    Date.parse(expiryDate) < Date.now();
+  const displayed = expired ? 'Expired' : status;
+  const variant: 'success' | 'warning' | 'destructive' | 'muted' = expired
+    ? 'muted'
+    : status === 'Active'
       ? 'success'
       : status === 'Pending'
         ? 'warning'
@@ -179,7 +191,7 @@ function StatusBadge({ status }: { status: string }) {
           : 'muted';
   return (
     <Badge variant={variant} className="text-[10px] uppercase tracking-wider">
-      {status}
+      {displayed}
     </Badge>
   );
 }
