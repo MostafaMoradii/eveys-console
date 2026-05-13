@@ -76,9 +76,15 @@ export function FleetPage() {
 
   // Server-side filters — pushed into the subscription params so they
   // cut the whole device set, not just the loaded page. The server
-  // accepts `online`, `vendor`, `last_status`, `cp_id_contains`.
+  // accepts `online`, `vendor`, `ocpp_version`, `last_status`,
+  // `cp_id_contains`.
   const [onlineFilter, setOnlineFilter] = useState<OnlineFilter>('all');
   const [vendorFilter, setVendorFilter] = useState<string>('');
+  // 'all' = no filter. Closed set today (only OCPP 1.6 in the wild);
+  // adding 2.0.1 as an option even though no rows match yet so the
+  // dropdown is forward-compatible without a code change when 2.0.1
+  // chargers start showing up.
+  const [ocppVersionFilter, setOcppVersionFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<(typeof STATUSES)[number]>('all');
   const [pageSize, setPageSize] = useState<number>(100);
@@ -117,7 +123,7 @@ export function FleetPage() {
   // page that exists only in the previous filter set.
   useEffect(() => {
     setPage(1);
-  }, [onlineFilter, vendorFilter, statusFilter, searchCommitted, pageSize]);
+  }, [onlineFilter, vendorFilter, ocppVersionFilter, statusFilter, searchCommitted, pageSize]);
 
   // Build subscription params. Re-subscribes when any of these change
   // (use-subscription stringifies params and uses that as a dep).
@@ -126,10 +132,19 @@ export function FleetPage() {
     if (onlineFilter === 'online') p.online = true;
     if (onlineFilter === 'offline') p.online = false;
     if (vendorFilter.trim()) p.vendor = vendorFilter.trim();
+    if (ocppVersionFilter !== 'all') p.ocpp_version = ocppVersionFilter;
     if (statusFilter !== 'all') p.last_status = statusFilter;
     if (searchCommitted) p.cp_id_contains = searchCommitted;
     return p;
-  }, [onlineFilter, vendorFilter, statusFilter, searchCommitted, pageSize, page]);
+  }, [
+    onlineFilter,
+    vendorFilter,
+    ocppVersionFilter,
+    statusFilter,
+    searchCommitted,
+    pageSize,
+    page,
+  ]);
 
   const sub = useSubscription('charge-points', subParams);
 
@@ -217,6 +232,8 @@ export function FleetPage() {
         vendorFilter={vendorFilter}
         onVendorChange={setVendorFilter}
         knownVendors={knownVendors}
+        ocppVersionFilter={ocppVersionFilter}
+        onOcppVersionChange={setOcppVersionFilter}
         statusFilter={statusFilter}
         onStatusChange={setStatusFilter}
         faultsOnly={faultsOnly}
@@ -247,6 +264,10 @@ interface FilterBarProps {
   vendorFilter: string;
   onVendorChange: (v: string) => void;
   knownVendors: string[];
+  /** 'all' = no filter. Anything else (e.g. 'ocpp1.6') is the
+   *  gateway-side wire value passed through unchanged. */
+  ocppVersionFilter: string;
+  onOcppVersionChange: (v: string) => void;
   statusFilter: (typeof STATUSES)[number];
   onStatusChange: (v: (typeof STATUSES)[number]) => void;
   faultsOnly: boolean;
@@ -298,6 +319,7 @@ function countActiveFilters(p: FilterBarProps): number {
   if (p.search.trim()) n++;
   if (p.onlineFilter !== 'all') n++;
   if (p.vendorFilter.trim()) n++;
+  if (p.ocppVersionFilter !== 'all') n++;
   if (p.statusFilter !== 'all') n++;
   if (p.faultsOnly) n++;
   return n;
@@ -312,6 +334,8 @@ function FilterFields({
   vendorFilter,
   onVendorChange,
   knownVendors,
+  ocppVersionFilter,
+  onOcppVersionChange,
   statusFilter,
   onStatusChange,
   faultsOnly,
@@ -360,6 +384,22 @@ function FilterFields({
             <option key={v} value={v} />
           ))}
         </datalist>
+      </FilterField>
+
+      <FilterField label="OCPP" hint="server-side" stretch={stretch}>
+        <Select
+          value={ocppVersionFilter}
+          onChange={(e) => onOcppVersionChange(e.currentTarget.value)}
+          className={cn(stretch ? 'w-full' : 'w-[140px]')}
+          aria-label="OCPP version"
+        >
+          <option value="all">Any</option>
+          <option value="ocpp1.6">OCPP 1.6</option>
+          {/* 2.0.1 not in the wild yet on this fleet; left in the
+              dropdown so the option is forward-compatible without a
+              code change when 2.0.1 chargers start showing up. */}
+          <option value="ocpp2.0.1">OCPP 2.0.1</option>
+        </Select>
       </FilterField>
 
       <FilterField label="Status" hint="server-side" stretch={stretch}>

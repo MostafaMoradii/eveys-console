@@ -180,17 +180,30 @@ afterEach(() => {
 // ---- helpers -------------------------------------------------------------
 
 // Find a <select> by the visible text of its currently-selected
-// option. The page has multiple selects but they all start at
-// distinct default values ("All" for online, "Any" for status,
-// "100" for page size), so a unique label-less query is feasible.
-function selectByCurrentText(text: string | RegExp): HTMLSelectElement {
+// option, optionally narrowing by an option label that must also
+// be present in the same select. The page has multiple selects and
+// two of them default to "Any" (OCPP version + Status), so a sole
+// current-text query is ambiguous; passing `containsOption` picks
+// the right one by checking for a discriminator option inside.
+function selectByCurrentText(
+  text: string | RegExp,
+  containsOption?: string | RegExp,
+): HTMLSelectElement {
   const selects = document.querySelectorAll('select');
   for (const sel of Array.from(selects)) {
     const opt = sel.options[sel.selectedIndex];
     if (!opt) continue;
     const t = opt.textContent ?? '';
     const match = typeof text === 'string' ? t === text : text.test(t);
-    if (match) return sel;
+    if (!match) continue;
+    if (containsOption !== undefined) {
+      const has = Array.from(sel.options).some((o) => {
+        const v = o.textContent ?? '';
+        return typeof containsOption === 'string' ? v === containsOption : containsOption.test(v);
+      });
+      if (!has) continue;
+    }
+    return sel;
   }
   throw new Error(`No <select> found with selected option matching ${String(text)}`);
 }
@@ -413,7 +426,7 @@ describe('FleetPage — client-side filters', () => {
     render(<FleetPage />);
     subscriptionCalls.length = 0;
 
-    const statusSelect = selectByCurrentText(/Any/);
+    const statusSelect = selectByCurrentText(/Any/, 'Charging');
     await user.selectOptions(statusSelect, 'Charging');
 
     const last = subscriptionCalls.at(-1);
@@ -455,6 +468,43 @@ describe('FleetPage — server-side filter passthrough', () => {
 
     const last = subscriptionCalls.at(-1);
     expect(last?.params.vendor).toBe('Eveys');
+  });
+
+  it('ocpp version select pushes ocpp_version into subscription params', async () => {
+    const user = userEvent.setup();
+    nextSubResult = {
+      snapshot: { kind: 'charge-points', rows: [baseRow('CP_A')], next_cursor: null },
+    };
+    render(<FleetPage />);
+    subscriptionCalls.length = 0;
+
+    // The OCPP select has a unique aria-label, which keeps it
+    // distinguishable from the Status select that also defaults to
+    // "Any".
+    const ocppSelect = screen.getByLabelText('OCPP version');
+    await user.selectOptions(ocppSelect, 'ocpp1.6');
+
+    const last = subscriptionCalls.at(-1);
+    expect(last?.params.ocpp_version).toBe('ocpp1.6');
+  });
+
+  it('selecting OCPP "Any" removes ocpp_version from subscription params', async () => {
+    const user = userEvent.setup();
+    nextSubResult = {
+      snapshot: { kind: 'charge-points', rows: [baseRow('CP_A')], next_cursor: null },
+    };
+    render(<FleetPage />);
+
+    const ocppSelect = screen.getByLabelText('OCPP version');
+    await user.selectOptions(ocppSelect, 'ocpp1.6');
+    subscriptionCalls.length = 0;
+    await user.selectOptions(ocppSelect, 'all');
+
+    const last = subscriptionCalls.at(-1);
+    // No ocpp_version key when filter is "Any" — the page omits
+    // unset filters from the params rather than sending an empty
+    // string, so the gateway's no-filter path is exercised.
+    expect(last?.params.ocpp_version).toBeUndefined();
   });
 
   it('changing page-size resets to page 1 and updates page_size param', async () => {
