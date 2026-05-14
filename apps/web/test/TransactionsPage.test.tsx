@@ -55,6 +55,40 @@ vi.mock('@/lib/use-breakpoint', () => ({
   useIsBelow: () => false,
 }));
 
+// Live overlay subscription. The page mounts `LiveTailRefetcher` only
+// when `live=true && no date range filter`. We surface a per-test
+// store of mounted (`query`, `params`) entries so tests can assert
+// whether the WS subscription opened — that's how we verify the
+// liveAllowed gate without instantiating a real broker.
+interface SubProbe {
+  query: string;
+  setDelta: (d: unknown) => void;
+}
+const subMounts: Array<SubProbe> = [];
+const subDispatchers = new Map<string, (d: unknown) => void>();
+
+vi.mock('@/hooks/use-subscription', async () => {
+  const { useEffect, useState } = await import('react');
+  return {
+    useSubscription: (query: string, _params: unknown) => {
+      const [lastDelta, setLastDelta] = useState<unknown>(null);
+      useEffect(() => {
+        const probe: SubProbe = { query, setDelta: setLastDelta };
+        subMounts.push(probe);
+        subDispatchers.set(query, setLastDelta);
+        return () => {
+          const i = subMounts.indexOf(probe);
+          if (i >= 0) subMounts.splice(i, 1);
+          if (subDispatchers.get(query) === setLastDelta) {
+            subDispatchers.delete(query);
+          }
+        };
+      }, [query]);
+      return { loading: false, error: null, snapshot: null, lastDelta, cursor: null };
+    },
+  };
+});
+
 const routerSearch: Record<string, unknown> = {};
 const searchListeners = new Set<() => void>();
 let searchSnapshot: Record<string, unknown> = {};
@@ -148,6 +182,8 @@ beforeEach(() => {
   nextError.value = null;
   fetchCalls.length = 0;
   responseQueue.length = 0;
+  subMounts.length = 0;
+  subDispatchers.clear();
   for (const k of Object.keys(routerSearch)) delete routerSearch[k];
   searchSnapshot = {};
 });
@@ -295,5 +331,87 @@ describe('TransactionsPage — pagination', () => {
 
     expect(screen.getByTestId('transactions-prev')).toBeDisabled();
     expect(screen.getByTestId('transactions-next')).toBeDisabled();
+  });
+});
+
+describe('TransactionsPage — live overlay', () => {
+  it('does not open the WS subscription when live is off (default)', async () => {
+    nextResponse.value = { transactions: [], next_cursor: null };
+    renderPage();
+    await waitFor(() => expect(fetchCalls.length).toBe(1));
+
+    expect(subMounts.find((s) => s.query === 'transactions-active')).toBeUndefined();
+  });
+
+  it('opens the WS subscription when live=true', async () => {
+    searchSnapshot = { live: true };
+    routerSearch.live = true;
+    nextResponse.value = { transactions: [], next_cursor: null };
+    renderPage();
+    await waitFor(() => expect(fetchCalls.length).toBe(1));
+
+    await waitFor(() =>
+      expect(subMounts.find((s) => s.query === 'transactions-active')).toBeDefined(),
+    );
+  });
+
+  it('refetches on each incoming transactions-active delta', async () => {
+    searchSnapshot = { live: true };
+    routerSearch.live = true;
+    responseQueue.push(
+      { transactions: [row({ transaction_id: 1 })], next_cursor: null },
+      { transactions: [row({ transaction_id: 2 })], next_cursor: null },
+    );
+    renderPage();
+    await waitFor(() => expect(fetchCalls.length).toBe(1));
+
+    const dispatch = await waitFor(() => {
+      const fn = subDispatchers.get('transactions-active');
+      if (!fn) throw new Error('subscription not yet mounted');
+      return fn;
+    });
+
+    responseQueue.push({
+      transactions: [row({ transaction_id: 99 })],
+      next_cursor: null,
+    });
+    dispatch({
+      kind: 'transactions-active',
+      op: 'upsert',
+      row: { transaction_id: 99 },
+    });
+
+    await waitFor(() => expect(fetchCalls.length).toBeGreaterThanOrEqual(2));
+  });
+
+  it('auto-disables live when a date range is set (no WS subscription opens)', async () => {
+    searchSnapshot = { live: true, from: '2026-05-10T00:00:00Z' };
+    routerSearch.live = true;
+    routerSearch.from = '2026-05-10T00:00:00Z';
+    nextResponse.value = { transactions: [], next_cursor: null };
+    renderPage();
+    await waitFor(() => expect(fetchCalls.length).toBe(1));
+
+    // Subscription must NOT mount when liveAllowed=false.
+    expect(subMounts.find((s) => s.query === 'transactions-active')).toBeUndefined();
+
+    // And the checkbox is rendered disabled with the "disabled while a
+    // date range is set" hint.
+    const checkbox = screen.getByTestId('transactions-filter-live');
+    expect(checkbox).toBeDisabled();
+    expect(screen.getByText(/disabled while a date range is set/i)).toBeInTheDocument();
+  });
+
+  it('toggling the checkbox flips the URL search param', async () => {
+    const user = userEvent.setup();
+    nextResponse.value = { transactions: [], next_cursor: null };
+    renderPage();
+    await waitFor(() => expect(fetchCalls.length).toBe(1));
+
+    await user.click(screen.getByTestId('transactions-filter-live'));
+    await waitFor(() => expect(routerSearch.live).toBe(true));
+
+    await user.click(screen.getByTestId('transactions-filter-live'));
+    await waitFor(() => expect(routerSearch.live).toBeUndefined());
   });
 });
