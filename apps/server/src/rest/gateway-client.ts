@@ -286,6 +286,19 @@ export class GatewayClient {
     );
   }
 
+  /** Per-transaction OCPP frame audit. No time window — the
+   *  transaction itself bounds the result. 404 if the tx doesn't
+   *  exist; an existing tx with zero frames returns frames=[]. */
+  listTransactionFrames(txId: number, params: { limit?: number } = {}) {
+    const qs = new URLSearchParams();
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.json<unknown>(
+      'list_transaction_frames',
+      `/api/v1/transactions/${encodeURIComponent(String(txId))}/frames${suffix}`,
+    );
+  }
+
   /** Uptime% over a date range, plus the contributing offline intervals.
    *  The gateway caps the window at 90 days (vs 7 for the time-series
    *  streams) — aggregations are cheap and operators want quarterly

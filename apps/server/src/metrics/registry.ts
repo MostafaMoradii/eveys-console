@@ -116,6 +116,7 @@ export type GatewayOp =
   | 'get_transaction'
   | 'list_meter_values'
   | 'list_cp_frames'
+  | 'list_transaction_frames'
   | 'get_uptime'
   | 'aggregate_transactions'
   | 'list_fleet_status_history'

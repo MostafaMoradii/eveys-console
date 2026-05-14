@@ -17,6 +17,7 @@ interface FakeGateway {
   getTransaction: ReturnType<typeof vi.fn>;
   listMeterValues: ReturnType<typeof vi.fn>;
   aggregateTransactions: ReturnType<typeof vi.fn>;
+  listTransactionFrames: ReturnType<typeof vi.fn>;
 }
 
 function makeFakeGateway(): FakeGateway {
@@ -25,6 +26,7 @@ function makeFakeGateway(): FakeGateway {
     getTransaction: vi.fn(),
     listMeterValues: vi.fn(),
     aggregateTransactions: vi.fn(),
+    listTransactionFrames: vi.fn(),
   };
 }
 
@@ -298,5 +300,117 @@ describe('GET /sys/transactions/aggregate', () => {
       error: 'window-too-large',
       error_code: 'WINDOW_TOO_LARGE',
     });
+  });
+});
+
+describe('GET /sys/transactions/:tx_id/frames', () => {
+  let gateway: FakeGateway;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    gateway = makeFakeGateway();
+    app = await buildApp(gateway);
+  });
+
+  it('returns 401 without a JWT', async () => {
+    const res = await app.inject({ method: 'GET', url: '/sys/transactions/42/frames' });
+    expect(res.statusCode).toBe(401);
+    expect(gateway.listTransactionFrames).not.toHaveBeenCalled();
+  });
+
+  it('forwards the upstream body unchanged', async () => {
+    const upstream = {
+      transaction_id: 42,
+      frames: [
+        {
+          event_id: 'evt-1',
+          occurred_at: '2026-05-14T10:00:00Z',
+          cp_id: 'CP_A',
+          direction: 'inbound',
+          action: 'StartTransaction',
+          message_type: 2,
+          message_id: 'm1',
+          ocpp_version: '1.6',
+          transaction_id: 42,
+          raw_payload: '[2,"m1","StartTransaction",{}]',
+        },
+      ],
+      request_id: 'req-1',
+    };
+    gateway.listTransactionFrames.mockResolvedValue(upstream);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/42/frames',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(upstream);
+    expect(gateway.listTransactionFrames).toHaveBeenCalledWith(42, {});
+  });
+
+  it('forwards limit when present and bounds it', async () => {
+    gateway.listTransactionFrames.mockResolvedValue({ transaction_id: 42, frames: [] });
+    await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/42/frames?limit=250',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(gateway.listTransactionFrames).toHaveBeenLastCalledWith(42, { limit: 250 });
+
+    const tooBig = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/42/frames?limit=20000',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(tooBig.statusCode).toBe(400);
+
+    const zero = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/42/frames?limit=0',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(zero.statusCode).toBe(400);
+  });
+
+  it('rejects a non-integer tx_id with 400', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/banana/frames',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(gateway.listTransactionFrames).not.toHaveBeenCalled();
+  });
+
+  it('passes through a 404 from upstream when tx is unknown', async () => {
+    const err = Object.assign(new Error('upstream'), {
+      status: 404,
+      body: JSON.stringify({ error: 'unknown-tx', error_code: 'UNKNOWN_TRANSACTION_ID' }),
+    });
+    gateway.listTransactionFrames.mockRejectedValue(err);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/9999999/frames',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({
+      error: 'unknown-tx',
+      error_code: 'UNKNOWN_TRANSACTION_ID',
+    });
+  });
+
+  it('does NOT collide with GET /sys/transactions/:tx_id (the detail route)', async () => {
+    // The two routes differ by the trailing `/frames` segment. Confirm
+    // detail still works after the frames route is registered.
+    gateway.getTransaction.mockResolvedValue({ transaction_id: 42 });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/42',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(gateway.getTransaction).toHaveBeenCalledWith(42);
+    expect(gateway.listTransactionFrames).not.toHaveBeenCalled();
   });
 });
