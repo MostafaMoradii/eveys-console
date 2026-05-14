@@ -655,11 +655,10 @@ function formatDuration(startedAt: string, stoppedAt: string | null): string {
 }
 
 function formatEnergy(r: TransactionRow): string {
-  // Active sessions show "—" because consumed_wh hasn't been computed
-  // yet on the gateway side (it derives from meter_stop_wh — null
-  // while running). The detail page polls meter-values for live
-  // telemetry; this list view is the audit snapshot.
-  const wh = r.meter_stop_wh != null ? r.meter_stop_wh - r.meter_start_wh : null;
+  // Prefer the gateway-computed `consumed_wh` — null while the session
+  // is open, populated at StopTransaction. Fall back to recomputing
+  // from meters if older gateway versions don't surface it yet.
+  const wh = r.consumed_wh ?? (r.meter_stop_wh != null ? r.meter_stop_wh - r.meter_start_wh : null);
   if (wh == null) return '—';
   const kWh = wh / 1000;
   return `${kWh.toFixed(3)} kWh`;

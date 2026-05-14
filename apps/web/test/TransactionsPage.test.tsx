@@ -170,6 +170,7 @@ function row(overrides: Partial<TransactionRow> = {}): TransactionRow {
     meter_start_wh: 1_000,
     started_at: '2026-05-13T10:00:00Z',
     meter_stop_wh: 5_500,
+    consumed_wh: 4_500,
     stopped_at: '2026-05-13T11:00:00Z',
     stop_reason: 'Local',
     open: false,
@@ -208,7 +209,13 @@ describe('TransactionsPage — initial load', () => {
     nextResponse.value = {
       transactions: [
         row({ transaction_id: 101, open: false }),
-        row({ transaction_id: 202, open: true, stopped_at: null, meter_stop_wh: null }),
+        row({
+          transaction_id: 202,
+          open: true,
+          stopped_at: null,
+          meter_stop_wh: null,
+          consumed_wh: null,
+        }),
       ],
       next_cursor: null,
     };
