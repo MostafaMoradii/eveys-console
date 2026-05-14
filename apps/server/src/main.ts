@@ -58,6 +58,7 @@ import { registerSysConsoleAdminConfigRoute } from './routes/sys-console-admin-c
 import { registerSysGatewayAdminConfigRoute } from './routes/sys-gateway-admin-config.js';
 import { registerSysGatewayConfigRoute } from './routes/sys-gateway-config.js';
 import { registerSysKpisRoute } from './routes/sys-kpis.js';
+import { registerSysRestartRoute } from './routes/sys-restart.js';
 import { OverrideStore } from './store/override-store.js';
 import { registerSysStatusRoute } from './routes/sys-status.js';
 import { registerSysTransactionsRoute } from './routes/sys-transactions.js';
@@ -170,6 +171,7 @@ async function main() {
   await registerSysConsoleAdminConfigRoute(app, { config, overrideStore, logger });
   await registerSysGatewayConfigRoute(app, { gateway });
   await registerSysGatewayAdminConfigRoute(app, { gateway });
+  await registerSysRestartRoute(app, { config, gateway });
   await registerSysKpisRoute(app, { gateway });
   await registerSysChargePointTransactionsRoute(app, { gateway });
   await registerSysCpReservationsRoute(app, { gateway });

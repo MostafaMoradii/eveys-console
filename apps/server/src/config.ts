@@ -159,6 +159,14 @@ export const configSchema = z.object({
   EVENT_LOG_RETENTION_MONTHS: z.coerce.number().int().positive().default(12),
   EVENT_LOG_FSYNC_INTERVAL_MS: z.coerce.number().int().nonnegative().default(200),
   EVENT_LOG_BOOTSTRAP_LIMIT: z.coerce.number().int().positive().default(200),
+
+  // Admin / restart. POST /sys/restart and POST /sys/restart-gateway
+  // are dormant unless these toggles flip them on. Off by default —
+  // a prod operator opts in only when the UI's pending-restart banner
+  // is actually wanted. Debounce mirrors the gateway-side guard so a
+  // double-click can't queue two exits.
+  CONSOLE_RESTART_ENABLED: z.coerce.boolean().default(false),
+  CONSOLE_RESTART_DEBOUNCE_MS: z.coerce.number().int().positive().default(5000),
 });
 
 export type Config = z.infer<typeof configSchema>;
