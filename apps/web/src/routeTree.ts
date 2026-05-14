@@ -17,7 +17,11 @@ import { OcppConformancePage } from './pages/OcppConformancePage';
 import { SystemConfigPage } from './pages/SystemConfigPage';
 import { SystemPage } from './pages/SystemPage';
 import { TransactionDetailPage } from './pages/TransactionDetailPage';
-import { TransactionsPage } from './pages/TransactionsPage';
+import {
+  TransactionsPage,
+  validateTransactionsPageSearch,
+  type TransactionsPageSearch,
+} from './pages/TransactionsPage';
 
 export const rootRoute = createRootRoute({ component: ConsoleShell });
 
@@ -67,6 +71,8 @@ const transactionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/inspect/transactions',
   component: TransactionsPage,
+  validateSearch: (raw: Record<string, unknown>): TransactionsPageSearch =>
+    validateTransactionsPageSearch(raw),
 });
 
 const transactionDetailRoute = createRoute({
