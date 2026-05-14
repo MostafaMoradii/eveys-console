@@ -148,6 +148,13 @@ export interface ChannelEmail {
   auth_username?: string;
   auth_password?: string;
   require_tls?: boolean;
+  /** Override the managed Subject template. Empty/unset → managed
+   *  `eveys.email.subject` ships verbatim. */
+  subject?: string;
+  /** Override the managed HTML body template. */
+  html?: string;
+  /** Override the managed plain-text fallback template. */
+  text?: string;
 }
 
 export interface ChannelWebhook {
@@ -179,6 +186,10 @@ export interface ChannelTelegram {
   /** Optional message formatter. Alertmanager supports HTML and
    *  MarkdownV2; HTML matches the default template. */
   parse_mode?: 'HTML' | 'MarkdownV2';
+  /** Override the managed Telegram message template. Empty/unset →
+   *  managed `eveys.telegram.message` ships verbatim. The override
+   *  respects the parse_mode above. */
+  message?: string;
 }
 
 export type Channel = ChannelSlack | ChannelEmail | ChannelWebhook | ChannelTelegram;

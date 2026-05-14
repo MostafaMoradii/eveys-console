@@ -26,6 +26,10 @@ import {
   type ManagedConfig,
 } from '../store/channels-store.js';
 import type { AlertingRule, RulesStore } from '../store/rules-store.js';
+import {
+  TemplateOverrideValidationError,
+  validateTemplateOverride,
+} from '../store/template-override-validator.js';
 
 // Mirror of the web side's `AlertSeverity` (see apps/web/src/lib/alerts.ts).
 // Kept as a local literal so the server doesn't pull a web type. The
@@ -631,6 +635,9 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
     auth_username: z.string().max(256).optional(),
     auth_password: z.string().max(1024).optional(),
     require_tls: z.boolean().optional(),
+    subject: z.string().max(1024).optional(),
+    html: z.string().max(65_536).optional(),
+    text: z.string().max(65_536).optional(),
   });
   const webhookBody = z.object({
     type: z.literal('webhook'),
@@ -661,6 +668,7 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
       .regex(/^-?\d+$/, 'expected a numeric chat id (channels start with -100…)'),
     api_url: z.string().url().optional(),
     parse_mode: z.enum(['HTML', 'MarkdownV2']).optional(),
+    message: z.string().max(65_536).optional(),
   });
   const channelBody = z.discriminatedUnion('type', [
     slackBody,
@@ -668,6 +676,25 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
     webhookBody,
     telegramBody,
   ]);
+
+  /** Validate every per-type override field on a channel body. Throws
+   *  `TemplateOverrideValidationError` on the first bad field; the
+   *  caller turns that into a 400. We don't combine errors across
+   *  fields because the operator's UI flags one field at a time. */
+  function validateOverrides(body: z.infer<typeof channelBody>): void {
+    if (body.type === 'slack') {
+      validateTemplateOverride('title', body.title);
+      validateTemplateOverride('text', body.text);
+    } else if (body.type === 'email') {
+      validateTemplateOverride('subject', body.subject);
+      validateTemplateOverride('html', body.html);
+      validateTemplateOverride('text', body.text);
+    } else if (body.type === 'telegram') {
+      validateTemplateOverride('message', body.message);
+    }
+    // Webhook has no template fields by design — the receiver POSTs
+    // the raw Alertmanager payload; there's nothing to template.
+  }
 
   // ---- POST /sys/alerts/channels — add ------------------------------------
   app.post(
@@ -679,6 +706,17 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
       const parsed = channelBody.safeParse(req.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: 'invalid_body', detail: parsed.error.flatten() });
+      }
+      try {
+        validateOverrides(parsed.data);
+      } catch (err) {
+        if (err instanceof TemplateOverrideValidationError) {
+          return reply.code(400).send({
+            error: 'invalid_template_override',
+            detail: { field: err.field, bad: err.bad, message: err.message },
+          });
+        }
+        throw err;
       }
       try {
         const cfg = await deps.channelsStore.read();
@@ -716,6 +754,17 @@ export async function registerSysAlertsRoute(app: any, deps: RouteDeps = {}) {
       }
       if (parsed.data.name !== name) {
         return reply.code(400).send({ error: 'name_mismatch' });
+      }
+      try {
+        validateOverrides(parsed.data);
+      } catch (err) {
+        if (err instanceof TemplateOverrideValidationError) {
+          return reply.code(400).send({
+            error: 'invalid_template_override',
+            detail: { field: err.field, bad: err.bad, message: err.message },
+          });
+        }
+        throw err;
       }
       try {
         const cfg = await deps.channelsStore.read();

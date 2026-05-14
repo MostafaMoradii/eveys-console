@@ -1898,3 +1898,159 @@ describe('DELETE /sys/alerts/rules/managed/:name', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR #170 — per-receiver template overrides on the Channels form
+// ---------------------------------------------------------------------------
+
+describe('POST /sys/alerts/channels — template-override validation', () => {
+  let ctx: Awaited<ReturnType<typeof buildChannelsApp>>;
+  beforeEach(async () => {
+    ctx = await buildChannelsApp();
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({}) }));
+  });
+  afterEach(async () => {
+    await ctx.app.close();
+    await rm(ctx.dir, { recursive: true, force: true });
+  });
+
+  it('accepts an email override using allowlisted helpers', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'email',
+        name: 'oncall',
+        to: 'a@b.com',
+        from: 'c@d.com',
+        smarthost: 'smtp.example.com:587',
+        subject: 'Alert: {{ .CommonLabels.alertname }}',
+        text: 'Status {{ .Status }}',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const cfg = await ctx.store.read();
+    const email = cfg.channels[0] as Extract<(typeof cfg.channels)[number], { type: 'email' }>;
+    expect(email.subject).toBe('Alert: {{ .CommonLabels.alertname }}');
+    expect(email.text).toBe('Status {{ .Status }}');
+  });
+
+  it('rejects an email subject that references an unknown helper with 400', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'email',
+        name: 'oncall',
+        to: 'a@b.com',
+        from: 'c@d.com',
+        smarthost: 'smtp.example.com:587',
+        // `.CommonLabel` (missing trailing `s`) is the typo to catch.
+        subject: 'Alert: {{ .CommonLabel.alertname }}',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as {
+      error: string;
+      detail: { field: string; bad: string[]; message: string };
+    };
+    expect(body.error).toBe('invalid_template_override');
+    expect(body.detail.field).toBe('subject');
+    expect(body.detail.bad).toContain('.CommonLabel');
+    expect(body.detail.message).toMatch(/Allowed roots/);
+  });
+
+  it('accepts a Telegram message override using allowlisted helpers', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'telegram',
+        name: 'tg',
+        bot_token: '12345:AAEFxyz_fake_token_tail_9999',
+        chat_id: '-100123',
+        message: '🚨 {{ .CommonLabels.alertname }} on {{ .Status }}',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const cfg = await ctx.store.read();
+    const tg = cfg.channels[0] as Extract<(typeof cfg.channels)[number], { type: 'telegram' }>;
+    expect(tg.message).toBe('🚨 {{ .CommonLabels.alertname }} on {{ .Status }}');
+  });
+
+  it('rejects a Telegram message override with an unknown helper', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'telegram',
+        name: 'tg',
+        bot_token: '12345:AAEFxyz_fake_token_tail_9999',
+        chat_id: '-100123',
+        message: '{{ .Foo.bar }}',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as { error: string; detail: { field: string; bad: string[] } };
+    expect(body.error).toBe('invalid_template_override');
+    expect(body.detail.field).toBe('message');
+    expect(body.detail.bad).toContain('.Foo');
+  });
+
+  it('accepts a Slack override with `text` template referencing `.GroupLabels`', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'slack',
+        name: 'ops',
+        api_url: 'https://hooks.slack.com/services/T1/B2/abc123def-tail',
+        channel: '#ops',
+        text: 'group {{ .GroupLabels.cluster }}',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('PUT also validates overrides — typo-on-edit is rejected', async () => {
+    // First create a valid channel.
+    const create = await ctx.app.inject({
+      method: 'POST',
+      url: '/sys/alerts/channels',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'email',
+        name: 'oncall',
+        to: 'a@b.com',
+        from: 'c@d.com',
+        smarthost: 'smtp.example.com:587',
+      },
+    });
+    expect(create.statusCode).toBe(201);
+    mockFetchOnce(() => ({ ok: true, status: 200, json: async () => ({}) }));
+
+    // Now try to PUT with a bad override.
+    const put = await ctx.app.inject({
+      method: 'PUT',
+      url: '/sys/alerts/channels/oncall',
+      headers: { authorization: authHeader(ctx.app) },
+      payload: {
+        type: 'email',
+        name: 'oncall',
+        to: 'a@b.com',
+        from: 'c@d.com',
+        smarthost: 'smtp.example.com:587',
+        html: '<h1>{{ .Bogus }}</h1>',
+      },
+    });
+    expect(put.statusCode).toBe(400);
+    const body = put.json() as { error: string; detail: { field: string } };
+    expect(body.error).toBe('invalid_template_override');
+    expect(body.detail.field).toBe('html');
+  });
+});
