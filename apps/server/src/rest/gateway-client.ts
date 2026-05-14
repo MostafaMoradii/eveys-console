@@ -299,6 +299,24 @@ export class GatewayClient {
     );
   }
 
+  /** Bucketed analytics over completed transactions. Window cap is
+   *  90 days, same as `getUptime`. The gateway excludes active
+   *  sessions (no `stopped_reported_at` → no totals to add). */
+  aggregateTransactions(params: {
+    from: string;
+    to: string;
+    bucket?: 'hour' | 'day';
+    group_by?: 'none' | 'cp_id' | 'id_tag';
+  }) {
+    const qs = new URLSearchParams({ from: params.from, to: params.to });
+    if (params.bucket) qs.set('bucket', params.bucket);
+    if (params.group_by) qs.set('group_by', params.group_by);
+    return this.json<unknown>(
+      'aggregate_transactions',
+      `/api/v1/transactions/aggregate?${qs.toString()}`,
+    );
+  }
+
   // ---- OCPP commands -----------------------------------------------------
   // Each method maps to one of the gateway's
   // `POST /api/v1/charge-points/{cp_id}/commands/{slug}` endpoints. The body

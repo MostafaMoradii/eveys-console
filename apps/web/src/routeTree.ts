@@ -6,6 +6,11 @@ import { createRootRoute, createRoute } from '@tanstack/react-router';
 
 import { ConsoleShell } from './components/AppShell';
 import { AlertsPage } from './pages/AlertsPage';
+import {
+  AnalyticsPage,
+  validateAnalyticsPageSearch,
+  type AnalyticsPageSearch,
+} from './pages/AnalyticsPage';
 import { ChargerDetailPage } from './pages/ChargerDetailPage';
 import {
   FleetEventsPage,
@@ -81,6 +86,14 @@ const transactionDetailRoute = createRoute({
   component: TransactionDetailPage,
 });
 
+const analyticsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/inspect/analytics',
+  component: AnalyticsPage,
+  validateSearch: (raw: Record<string, unknown>): AnalyticsPageSearch =>
+    validateAnalyticsPageSearch(raw),
+});
+
 const sysConfigRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sys/config',
@@ -124,6 +137,7 @@ export const routeTree = rootRoute.addChildren([
   fleetEventsRoute,
   transactionsRoute,
   transactionDetailRoute,
+  analyticsRoute,
   sysConfigRoute,
   ocppConformanceRoute,
 ]);

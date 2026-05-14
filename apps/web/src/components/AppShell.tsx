@@ -1,6 +1,7 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import {
   Activity,
+  BarChart3,
   BellRing,
   Bolt,
   BookOpen,
@@ -260,6 +261,12 @@ function NavContents({ path }: { path: string }) {
           label="Fleet events"
           icon={<SearchIcon className="h-4 w-4" />}
           active={path.startsWith('/inspect/fleet/events')}
+        />
+        <NavItem
+          to="/inspect/analytics"
+          label="Analytics"
+          icon={<BarChart3 className="h-4 w-4" />}
+          active={path.startsWith('/inspect/analytics')}
         />
       </NavSection>
     </>
