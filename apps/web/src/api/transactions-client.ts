@@ -106,9 +106,22 @@ export interface TransactionRow {
   open: boolean;
 }
 
+export interface PaginationBlock {
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
+
 export interface TransactionsList {
   transactions: TransactionRow[];
+  /** Cursor mode response field — null when there are no more pages
+   *  in cursor mode, or whenever the request used page mode (the
+   *  gateway still serializes the key, just as null). */
   next_cursor: string | null;
+  /** Page mode response field — present only when the request used
+   *  `page` + `page_size`. Cursor-mode responses omit it. */
+  pagination?: PaginationBlock;
 }
 
 export interface ListParams {
@@ -218,14 +231,27 @@ export async function fetchAllChargePointTransactions(
  *  active=true|false|absent. */
 export type TransactionStatusFilter = 'active' | 'finished' | 'all';
 
+/** Sortable columns. Mirrors the gateway's closed enum (id is the
+ *  default — `started_at` is most useful in the UI). */
+export type TransactionsSortKey = 'id' | 'started_at' | 'stopped_at' | 'consumed_wh';
+export type TransactionsSortDir = 'asc' | 'desc';
+
 export interface TransactionsListParams {
   status?: TransactionStatusFilter;
   cp_id?: string;
   id_tag?: string;
   from?: string;
   to?: string;
+  /** Cursor pagination (newest-first by id). Mutually exclusive with
+   *  `page`/`page_size`. Cursor mode requires the default sort. */
   cursor?: string;
+  /** Page-mode pagination. Required when sorting by anything other
+   *  than `id` — the gateway 400s on `cursor` + non-id sort. */
+  page?: number;
+  page_size?: number;
   limit?: number;
+  sort?: TransactionsSortKey;
+  dir?: TransactionsSortDir;
 }
 
 export async function fetchTransactions(
@@ -239,7 +265,11 @@ export async function fetchTransactions(
   if (params.from) qs.set('from', params.from);
   if (params.to) qs.set('to', params.to);
   if (params.cursor) qs.set('cursor', params.cursor);
+  if (params.page !== undefined) qs.set('page', String(params.page));
+  if (params.page_size !== undefined) qs.set('page_size', String(params.page_size));
   if (params.limit !== undefined) qs.set('limit', String(params.limit));
+  if (params.sort) qs.set('sort', params.sort);
+  if (params.dir) qs.set('dir', params.dir);
   const suffix = qs.toString() ? `?${qs}` : '';
   const url = `${BASE}/sys/transactions${suffix}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });

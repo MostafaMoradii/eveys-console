@@ -414,3 +414,60 @@ describe('GET /sys/transactions/:tx_id/frames', () => {
     expect(gateway.listTransactionFrames).not.toHaveBeenCalled();
   });
 });
+
+describe('GET /sys/transactions — sort + dir', () => {
+  let gateway: FakeGateway;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    gateway = makeFakeGateway();
+    app = await buildApp(gateway);
+  });
+
+  it('forwards sort + dir to the gateway when valid', async () => {
+    gateway.listTransactions.mockResolvedValue({
+      transactions: [],
+      pagination: { page: 1, page_size: 20, total: 0, total_pages: 0 },
+    });
+    await app.inject({
+      method: 'GET',
+      url: '/sys/transactions?sort=consumed_wh&dir=desc&page=1&page_size=20',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(gateway.listTransactions).toHaveBeenLastCalledWith({
+      sort: 'consumed_wh',
+      dir: 'desc',
+      page: 1,
+      page_size: 20,
+    });
+  });
+
+  it('rejects an unknown sort with 400', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions?sort=banana',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(gateway.listTransactions).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown dir with 400', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions?sort=consumed_wh&dir=upside-down',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(gateway.listTransactions).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-integer page with 400', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions?sort=consumed_wh&page=zero',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
