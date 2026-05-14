@@ -190,6 +190,99 @@ describe('ChannelsPanel — Slack form', () => {
   });
 });
 
+describe('ChannelsPanel — template overrides (PR #170)', () => {
+  it('Email form renders the override disclosure and submits override fields', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(screen.getByTestId('add-channel-button'));
+    await user.click(screen.getByTestId('add-channel-email'));
+
+    // Disclosure is closed by default for an empty form — the
+    // override section exists but its inner inputs aren't accessible
+    // by default. Expand it.
+    expect(screen.getByTestId('email-overrides')).toBeInTheDocument();
+    await user.click(within(screen.getByTestId('email-overrides')).getByText(/Custom message/i));
+
+    await user.type(screen.getByTestId('email-name'), 'oncall');
+    await user.type(screen.getByTestId('email-to'), 'a@b.com');
+    await user.type(screen.getByTestId('email-from'), 'c@d.com');
+    await user.type(screen.getByTestId('email-smarthost'), 'smtp.example.com:587');
+    // userEvent.type interprets `{` as a keyboard-escape prefix; for
+    // template-literal values we want pasted verbatim, do a direct
+    // change-event instead.
+    const subjectEl = screen.getByTestId('email-subject') as HTMLInputElement;
+    subjectEl.focus();
+    await user.paste('Custom: {{ .CommonLabels.alertname }}');
+    await user.type(screen.getByTestId('email-html'), '<h1>custom html</h1>');
+    await user.click(screen.getByTestId('submit-channel'));
+
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    const payload = createMutate.mock.calls[0]?.[0] as Channel & {
+      subject?: string;
+      html?: string;
+    };
+    expect(payload.type).toBe('email');
+    expect(payload.subject).toBe('Custom: {{ .CommonLabels.alertname }}');
+    expect(payload.html).toBe('<h1>custom html</h1>');
+  });
+
+  it('Telegram form renders the override disclosure and submits the message override', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(screen.getByTestId('add-channel-button'));
+    await user.click(screen.getByTestId('add-channel-telegram'));
+
+    expect(screen.getByTestId('telegram-overrides')).toBeInTheDocument();
+    await user.click(within(screen.getByTestId('telegram-overrides')).getByText(/Custom message/i));
+
+    await user.type(screen.getByTestId('telegram-name'), 'oncall-tg');
+    await user.type(screen.getByTestId('telegram-bot-token'), '12345:AAEFxyz_fake_token_99999');
+    await user.type(screen.getByTestId('telegram-chat-id'), '-1001234567890');
+    await user.type(screen.getByTestId('telegram-message'), 'tg override');
+    await user.click(screen.getByTestId('submit-channel'));
+
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    const payload = createMutate.mock.calls[0]?.[0] as Channel & { message?: string };
+    expect(payload.type).toBe('telegram');
+    expect(payload.message).toBe('tg override');
+  });
+
+  it('Edit-flow pre-fills override fields and opens the disclosure when overrides exist', async () => {
+    const user = userEvent.setup();
+    channelsStub = {
+      channels: [
+        {
+          type: 'email',
+          name: 'oncall',
+          to: 'a@b.com',
+          from: 'c@d.com',
+          smarthost: 'smtp.example.com:587',
+          subject: 'EXISTING SUBJECT',
+        },
+      ],
+      defaultChannel: 'oncall',
+      loading: false,
+      error: null,
+    };
+    renderPanel();
+    await user.click(screen.getByTestId('edit-channel-button'));
+    // Subject is pre-filled; disclosure is open because the row has
+    // an override.
+    expect((screen.getByTestId('email-subject') as HTMLInputElement).value).toBe(
+      'EXISTING SUBJECT',
+    );
+    expect(screen.getByTestId('email-overrides')).toHaveAttribute('open');
+  });
+
+  it('Webhook form does NOT render an override disclosure (webhooks POST raw JSON)', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(screen.getByTestId('add-channel-button'));
+    await user.click(screen.getByTestId('add-channel-webhook'));
+    expect(screen.queryByTestId('webhook-overrides')).toBeNull();
+  });
+});
+
 describe('ChannelsPanel — edit', () => {
   it('pre-fills the form from the selected channel and disables the name field', async () => {
     const user = userEvent.setup();

@@ -47,6 +47,15 @@ export interface ChannelEmail {
   auth_username?: string;
   auth_password?: string;
   require_tls?: boolean;
+  /** Override the Console-managed Subject header. When unset, the
+   *  managed `eveys.email.subject` template ships verbatim. */
+  subject?: string;
+  /** Override the HTML body. Empty / unset = managed
+   *  `eveys.email.html` template. */
+  html?: string;
+  /** Override the plain-text fallback body. Empty / unset = managed
+   *  `eveys.email.text` template. */
+  text?: string;
 }
 
 export interface ChannelWebhook {
@@ -79,6 +88,10 @@ export interface ChannelTelegram {
    *  MarkdownV2; we expose only HTML in the UI (matches the default
    *  template). Server is permissive — anything else round-trips. */
   parse_mode?: string;
+  /** Override the Telegram message body. Empty / unset = managed
+   *  `eveys.telegram.message` template. The override is the literal
+   *  Go template / static text Alertmanager will emit. */
+  message?: string;
 }
 
 export type Channel = ChannelSlack | ChannelEmail | ChannelWebhook | ChannelTelegram;
@@ -354,6 +367,7 @@ function receiverToChannel(r: AlertmanagerReceiver): Channel | null {
   }
   const email = r.email_configs?.[0];
   if (email && typeof email.to === 'string') {
+    const inv = CHANNEL_TEMPLATE_INVOCATIONS.email;
     const out: ChannelEmail = {
       type: 'email',
       name: r.name,
@@ -364,6 +378,20 @@ function receiverToChannel(r: AlertmanagerReceiver): Channel | null {
     if (email.auth_username) out.auth_username = email.auth_username;
     if (email.auth_password) out.auth_password = email.auth_password;
     if (typeof email.require_tls === 'boolean') out.require_tls = email.require_tls;
+    // Strip default template invocations on read — they're the
+    // Console-managed defaults, not operator overrides. Surface an
+    // override field as undefined (== "using default") when the
+    // stored value is exactly our canonical invocation.
+    const subject = email.headers?.Subject;
+    if (subject && !isDefaultTemplateInvocation(subject, inv.headers_subject)) {
+      out.subject = subject;
+    }
+    if (email.html && !isDefaultTemplateInvocation(email.html, inv.html)) {
+      out.html = email.html;
+    }
+    if (email.text && !isDefaultTemplateInvocation(email.text, inv.text)) {
+      out.text = email.text;
+    }
     return out;
   }
   const webhook = r.webhook_configs?.[0];
@@ -386,6 +414,7 @@ function receiverToChannel(r: AlertmanagerReceiver): Channel | null {
   }
   const telegram = r.telegram_configs?.[0];
   if (telegram && typeof telegram.bot_token === 'string') {
+    const inv = CHANNEL_TEMPLATE_INVOCATIONS.telegram;
     const out: ChannelTelegram = {
       type: 'telegram',
       name: r.name,
@@ -394,6 +423,12 @@ function receiverToChannel(r: AlertmanagerReceiver): Channel | null {
     };
     if (telegram.api_url) out.api_url = telegram.api_url;
     if (telegram.parse_mode) out.parse_mode = telegram.parse_mode;
+    // Same strip-the-default logic as the slack + email branches —
+    // an operator override stays; the canonical invocation goes back
+    // to "using default".
+    if (telegram.message && !isDefaultTemplateInvocation(telegram.message, inv.message)) {
+      out.message = telegram.message;
+    }
     return out;
   }
   return null;
@@ -474,11 +509,17 @@ function channelToReceiver(c: Channel, templatesEnabled: boolean): AlertmanagerR
       };
     }
     case 'email': {
-      // Email: html, text and Subject all come from named templates.
-      // The legacy default-receiver behaviour shipped subject+plain
-      // body; we keep that fallback when templates aren't wired, so
-      // pre-PR-#169 deploys behave identically.
+      // Email: html, text and Subject default to named templates.
+      // Operator overrides (subject/html/text on the channel record)
+      // ship as literal strings — matches how Slack title/text already
+      // behave so the override semantics are consistent across channel
+      // types. When templates aren't wired AND no overrides are set,
+      // Alertmanager falls back to its built-in default subject + body,
+      // which matches pre-PR-#169 behaviour.
       const inv = CHANNEL_TEMPLATE_INVOCATIONS.email;
+      const html = c.html ?? (templatesEnabled ? tpl(inv.html) : undefined);
+      const text = c.text ?? (templatesEnabled ? tpl(inv.text) : undefined);
+      const subject = c.subject ?? (templatesEnabled ? tpl(inv.headers_subject) : undefined);
       return {
         name: c.name,
         email_configs: [
@@ -489,13 +530,9 @@ function channelToReceiver(c: Channel, templatesEnabled: boolean): AlertmanagerR
             ...(c.auth_username ? { auth_username: c.auth_username } : {}),
             ...(c.auth_password ? { auth_password: c.auth_password } : {}),
             ...(c.require_tls !== undefined ? { require_tls: c.require_tls } : {}),
-            ...(templatesEnabled
-              ? {
-                  html: tpl(inv.html),
-                  text: tpl(inv.text),
-                  headers: { Subject: tpl(inv.headers_subject) },
-                }
-              : {}),
+            ...(html !== undefined ? { html } : {}),
+            ...(text !== undefined ? { text } : {}),
+            ...(subject !== undefined ? { headers: { Subject: subject } } : {}),
             send_resolved: true,
           },
         ],
@@ -543,6 +580,7 @@ function channelToReceiver(c: Channel, templatesEnabled: boolean): AlertmanagerR
       // receiver.
       const chatId = Number.parseInt(c.chat_id, 10);
       const inv = CHANNEL_TEMPLATE_INVOCATIONS.telegram;
+      const message = c.message ?? (templatesEnabled ? tpl(inv.message) : undefined);
       return {
         name: c.name,
         telegram_configs: [
@@ -554,7 +592,7 @@ function channelToReceiver(c: Channel, templatesEnabled: boolean): AlertmanagerR
             // <b>/<i>/<a> tags render. Operators can override on the
             // channel form (e.g. for MarkdownV2 + a custom message).
             parse_mode: c.parse_mode ?? 'HTML',
-            ...(templatesEnabled ? { message: tpl(inv.message) } : {}),
+            ...(message !== undefined ? { message } : {}),
             send_resolved: true,
           },
         ],

@@ -457,6 +457,7 @@ function SlackForm({
   const [apiUrl, setApiUrl] = useState(initial?.api_url ?? '');
   const [channel, setChannel] = useState(initial?.channel ?? '');
   const [title, setTitle] = useState(initial?.title ?? '');
+  const [text, setText] = useState(initial?.text ?? '');
 
   const submit = useChannelSubmit(isEdit, onClose);
   const valid = isValidChannelName(name) && apiUrl.trim() && channel.trim();
@@ -470,6 +471,7 @@ function SlackForm({
           api_url: apiUrl.trim(),
           channel: channel.trim(),
           ...(title.trim() ? { title: title.trim() } : {}),
+          ...(text.trim() ? { text: text.trim() } : {}),
         })
       }
       onClose={onClose}
@@ -503,13 +505,24 @@ function SlackForm({
         testId="slack-channel"
         placeholder="#ocpp-alerts"
       />
-      <Field
-        label="Title (optional)"
-        hint="Override the default Alertmanager-rendered title"
-        value={title}
-        onChange={setTitle}
-        testId="slack-title"
-      />
+      <OverrideSection testId="slack-overrides" defaultOpen={Boolean(title.trim() || text.trim())}>
+        <Field
+          label="Title override"
+          hint="Override the default Slack title template"
+          value={title}
+          onChange={setTitle}
+          testId="slack-title"
+        />
+        <Field
+          label="Text override"
+          hint="Override the default Slack body template"
+          value={text}
+          onChange={setText}
+          testId="slack-text"
+          multiline
+          rows={4}
+        />
+      </OverrideSection>
     </FormShell>
   );
 }
@@ -526,6 +539,9 @@ function EmailForm({
   const [user, setUser] = useState(initial?.auth_username ?? '');
   const [pass, setPass] = useState(initial?.auth_password ?? '');
   const [tls, setTls] = useState(initial?.require_tls ?? true);
+  const [subject, setSubject] = useState(initial?.subject ?? '');
+  const [html, setHtml] = useState(initial?.html ?? '');
+  const [text, setText] = useState(initial?.text ?? '');
 
   const submit = useChannelSubmit(isEdit, onClose);
   const valid = isValidChannelName(name) && to.trim() && from.trim() && smarthost.trim();
@@ -542,6 +558,9 @@ function EmailForm({
           ...(user.trim() ? { auth_username: user.trim() } : {}),
           ...(pass ? { auth_password: pass } : {}),
           require_tls: tls,
+          ...(subject.trim() ? { subject: subject.trim() } : {}),
+          ...(html.trim() ? { html } : {}),
+          ...(text.trim() ? { text } : {}),
         })
       }
       onClose={onClose}
@@ -598,6 +617,36 @@ function EmailForm({
         />
         Require TLS
       </label>
+      <OverrideSection
+        testId="email-overrides"
+        defaultOpen={Boolean(subject.trim() || html.trim() || text.trim())}
+      >
+        <Field
+          label="Subject override"
+          hint="Header that lands in the Subject: line — single line"
+          value={subject}
+          onChange={setSubject}
+          testId="email-subject"
+        />
+        <Field
+          label="HTML body override"
+          hint="Replaces the managed `eveys.email.html` template"
+          value={html}
+          onChange={setHtml}
+          testId="email-html"
+          multiline
+          rows={5}
+        />
+        <Field
+          label="Text body override"
+          hint="Plain-text fallback for clients that don't render HTML"
+          value={text}
+          onChange={setText}
+          testId="email-text"
+          multiline
+          rows={4}
+        />
+      </OverrideSection>
     </FormShell>
   );
 }
@@ -720,6 +769,7 @@ function TelegramForm({
   const [chatId, setChatId] = useState(initial?.chat_id ?? '');
   const [apiUrl, setApiUrl] = useState(initial?.api_url ?? '');
   const [parseMode, setParseMode] = useState<'HTML' | 'MarkdownV2'>(initial?.parse_mode ?? 'HTML');
+  const [message, setMessage] = useState(initial?.message ?? '');
 
   const submit = useChannelSubmit(isEdit, onClose);
   // On add, bot_token is required; on edit, an empty value means
@@ -739,6 +789,7 @@ function TelegramForm({
         };
         if (apiUrl.trim()) base.api_url = apiUrl.trim();
         if (parseMode) base.parse_mode = parseMode;
+        if (message.trim()) base.message = message;
         submit.go(base);
       }}
       onClose={onClose}
@@ -794,6 +845,17 @@ function TelegramForm({
           <option value="MarkdownV2">MarkdownV2</option>
         </select>
       </div>
+      <OverrideSection testId="telegram-overrides" defaultOpen={Boolean(message.trim())}>
+        <Field
+          label="Message override"
+          hint="Replaces the managed `eveys.telegram.message` template — respects the parse mode above"
+          value={message}
+          onChange={setMessage}
+          testId="telegram-message"
+          multiline
+          rows={5}
+        />
+      </OverrideSection>
     </FormShell>
   );
 }
@@ -884,6 +946,8 @@ function Field({
   testId,
   placeholder,
   type,
+  multiline,
+  rows,
 }: {
   label: string;
   hint?: string;
@@ -893,23 +957,79 @@ function Field({
   testId: string;
   placeholder?: string;
   type?: string;
+  /** Render a `<textarea>` instead of `<input>`. Used by override
+   *  fields (html / text / message) where the operator pastes
+   *  multi-line content. */
+  multiline?: boolean;
+  /** Visible rows for the textarea. Ignored when `multiline` is
+   *  falsy. Defaults to 4. */
+  rows?: number;
 }) {
   return (
     <div className="space-y-1">
       <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </label>
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.currentTarget.value)}
-        disabled={disabled}
-        data-testid={testId}
-        placeholder={placeholder}
-        type={type}
-        className={cn(type === 'password' && 'font-mono')}
-      />
+      {multiline ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.currentTarget.value)}
+          disabled={disabled}
+          data-testid={testId}
+          placeholder={placeholder}
+          rows={rows ?? 4}
+          className="w-full rounded-md border bg-background px-3 py-2 font-mono text-xs"
+        />
+      ) : (
+        <Input
+          value={value}
+          onChange={(e) => onChange(e.currentTarget.value)}
+          disabled={disabled}
+          data-testid={testId}
+          placeholder={placeholder}
+          type={type}
+          className={cn(type === 'password' && 'font-mono')}
+        />
+      )}
       {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
     </div>
+  );
+}
+
+/** Disclosure wrapper for the per-channel template-override fields.
+ *  Always-collapsed by default to keep the form small for the common
+ *  case (operator wants the managed defaults); operators who need to
+ *  customise expand it and edit. Open-by-default when any nested
+ *  field already has a value, so an edit-flow on an existing override
+ *  doesn't hide what's there. */
+function OverrideSection({
+  testId,
+  defaultOpen,
+  children,
+}: {
+  testId: string;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details
+      open={defaultOpen}
+      data-testid={testId}
+      className="rounded-md border bg-muted/30 px-3 py-2"
+    >
+      <summary className="cursor-pointer select-none text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Custom message (optional)
+      </summary>
+      <div className="mt-2 space-y-2">
+        <p className="text-[11px] text-muted-foreground">
+          Leave empty to use the managed default templates. When set, the literal value goes into
+          Alertmanager. Allowed root references: <code>.Alerts</code>, <code>.CommonLabels</code>,{' '}
+          <code>.CommonAnnotations</code>, <code>.GroupLabels</code>, <code>.Status</code>,{' '}
+          <code>.ExternalURL</code>.
+        </p>
+        {children}
+      </div>
+    </details>
   );
 }
 

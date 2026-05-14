@@ -450,4 +450,78 @@ describe('Console-managed default templates (PR #169)', () => {
     expect((out.channels[0] as { title?: string }).title).toBeUndefined();
     expect((out.channels[0] as { text?: string }).text).toBeUndefined();
   });
+
+  it('preserves operator-set Email subject/html/text on round-trip (override wins)', async () => {
+    const ch: Channel = {
+      type: 'email',
+      name: 'oncall',
+      to: 'a@b',
+      from: 'c@d',
+      smarthost: 's:25',
+      subject: 'CUSTOM SUBJECT: {{ .CommonLabels.alertname }}',
+      html: '<h1>custom html body</h1>',
+      text: 'custom text body',
+    };
+    await templated.updateChannels([ch], 'oncall');
+    const text = await readFile(templatedPath, 'utf8');
+    expect(text).toContain('CUSTOM SUBJECT');
+    expect(text).toContain('custom html body');
+    expect(text).toContain('custom text body');
+    // No default template invocations should appear when overrides
+    // are in play.
+    expect(text).not.toContain('{{ template "eveys.email.html" . }}');
+    expect(text).not.toContain('{{ template "eveys.email.text" . }}');
+    expect(text).not.toContain('{{ template "eveys.email.subject" . }}');
+    // Read-back preserves every override verbatim.
+    const out = await templated.read();
+    expect(out.channels[0]).toEqual(ch);
+  });
+
+  it('round-trips an Email channel through default-template strip on read (override fields undefined)', async () => {
+    const ch: Channel = {
+      type: 'email',
+      name: 'oncall',
+      to: 'a@b',
+      from: 'c@d',
+      smarthost: 's:25',
+    };
+    await templated.updateChannels([ch], 'oncall');
+    const out = await templated.read();
+    expect(out.channels[0]).toEqual(ch);
+    expect((out.channels[0] as { subject?: string }).subject).toBeUndefined();
+    expect((out.channels[0] as { html?: string }).html).toBeUndefined();
+    expect((out.channels[0] as { text?: string }).text).toBeUndefined();
+  });
+
+  it('preserves operator-set Telegram message on round-trip (override wins)', async () => {
+    const ch: Channel = {
+      type: 'telegram',
+      name: 'tg',
+      bot_token: '12345:abc',
+      chat_id: '-100123',
+      message: 'CUSTOM TG: {{ .CommonLabels.alertname }} on {{ .Status }}',
+    };
+    await templated.updateChannels([ch], 'tg');
+    const text = await readFile(templatedPath, 'utf8');
+    expect(text).toContain('CUSTOM TG');
+    expect(text).not.toContain('{{ template "eveys.telegram.message" . }}');
+    // render injects the default `parse_mode: HTML` if the operator
+    // didn't set one — round-trip reflects that.
+    const out = await templated.read();
+    expect(out.channels[0]).toEqual({ ...ch, parse_mode: 'HTML' });
+  });
+
+  it('round-trips a Telegram channel through default-template strip on read', async () => {
+    const ch: Channel = {
+      type: 'telegram',
+      name: 'tg',
+      bot_token: '12345:abc',
+      chat_id: '-100123',
+    };
+    await templated.updateChannels([ch], 'tg');
+    const out = await templated.read();
+    // Same `parse_mode: HTML` injection as above.
+    expect(out.channels[0]).toEqual({ ...ch, parse_mode: 'HTML' });
+    expect((out.channels[0] as { message?: string }).message).toBeUndefined();
+  });
 });
