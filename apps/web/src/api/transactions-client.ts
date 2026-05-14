@@ -95,6 +95,9 @@ export interface TransactionRow {
   started_at: string;
   /** Wh integer at session stop, or null while the session is open. */
   meter_stop_wh: number | null;
+  /** Energy delivered, computed gateway-side as
+   *  `meter_stop_wh - meter_start_wh`. Null while the session is open. */
+  consumed_wh: number | null;
   /** ISO-8601 string, or null while the session is open. */
   stopped_at: string | null;
   /** OCPP `Reason` enum value if the charger sent one, else null. */
