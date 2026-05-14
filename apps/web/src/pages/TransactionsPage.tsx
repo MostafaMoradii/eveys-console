@@ -16,8 +16,8 @@
 // intentional, replay would confuse "Previous" semantics.
 
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { ChevronLeft, ChevronRight, Loader2, Radio, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -38,6 +38,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useSubscription } from '@/hooks/use-subscription';
 import { useIsBelow } from '@/lib/use-breakpoint';
 import { useConsoleClient } from '@/lib/ws-context';
 
@@ -53,6 +54,10 @@ export interface TransactionsPageSearch {
   from?: string;
   to?: string;
   page_size?: PageSize;
+  /** Opt-in "Live" toggle. When on (and no date range is set), the page
+   *  subscribes to the `transactions-active` WS query and refetches on
+   *  every delta so freshly-started sessions surface within ~100ms. */
+  live?: boolean;
 }
 
 export function validateTransactionsPageSearch(
@@ -72,6 +77,13 @@ export function validateTransactionsPageSearch(
   ) {
     out.page_size = raw.page_size as PageSize;
   }
+  // Accept truthy strings + a real boolean so `?live=true` from a typed
+  // <Link> and pasted URLs both work. The page hides the toggle when a
+  // date range is set, so the URL form is the only entry point in that
+  // case.
+  if (raw.live === true || raw.live === 'true' || raw.live === '1') {
+    out.live = true;
+  }
   return out;
 }
 
@@ -87,6 +99,11 @@ export function TransactionsPage() {
   const from = search.from ?? '';
   const to = search.to ?? '';
   const pageSize = search.page_size ?? DEFAULT_PAGE_SIZE;
+  // Live overlay is meaningful only over an open-ended window. If the
+  // operator sets a date range, the "live" stream would arrive outside
+  // it — auto-disable rather than show misleading updates.
+  const liveAllowed = !from && !to;
+  const live = liveAllowed && (search.live ?? false);
 
   // Local text-input state so typing doesn't fire a request per
   // keystroke. Committed on Enter / Search button / blur. Mirrors the
@@ -111,6 +128,7 @@ export function TransactionsPage() {
         if (!out.from) delete out.from;
         if (!out.to) delete out.to;
         if (out.page_size === DEFAULT_PAGE_SIZE) delete out.page_size;
+        if (!out.live) delete out.live;
         return out;
       },
       replace: true,
@@ -191,6 +209,8 @@ export function TransactionsPage() {
         from={from}
         to={to}
         pageSize={pageSize}
+        live={live}
+        liveAllowed={liveAllowed}
         onStatusChange={(v) => setSearch({ status: v })}
         onCpIdInputChange={setCpIdInput}
         onIdTagInputChange={setIdTagInput}
@@ -199,7 +219,10 @@ export function TransactionsPage() {
         onFromChange={(v) => setSearch({ from: v })}
         onToChange={(v) => setSearch({ to: v })}
         onPageSizeChange={(v) => setSearch({ page_size: v })}
+        onLiveChange={(v) => setSearch({ live: v })}
       />
+
+      {live ? <LiveTailRefetcher filterKey={filterKey} /> : null}
 
       {query.error ? (
         <Alert variant="destructive">
@@ -244,6 +267,8 @@ function FilterRow({
   from,
   to,
   pageSize,
+  live,
+  liveAllowed,
   onStatusChange,
   onCpIdInputChange,
   onIdTagInputChange,
@@ -252,6 +277,7 @@ function FilterRow({
   onFromChange,
   onToChange,
   onPageSizeChange,
+  onLiveChange,
 }: {
   status: TransactionStatusFilter;
   cpIdInput: string;
@@ -259,6 +285,8 @@ function FilterRow({
   from: string;
   to: string;
   pageSize: PageSize;
+  live: boolean;
+  liveAllowed: boolean;
   onStatusChange: (v: TransactionStatusFilter) => void;
   onCpIdInputChange: (v: string) => void;
   onIdTagInputChange: (v: string) => void;
@@ -267,6 +295,7 @@ function FilterRow({
   onFromChange: (v: string) => void;
   onToChange: (v: string) => void;
   onPageSizeChange: (v: PageSize) => void;
+  onLiveChange: (v: boolean) => void;
 }) {
   return (
     <div
@@ -364,6 +393,28 @@ function FilterRow({
           ))}
         </Select>
       </FilterField>
+
+      <div className="sm:col-span-6">
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={live}
+            onChange={(e) => onLiveChange(e.currentTarget.checked)}
+            disabled={!liveAllowed}
+            data-testid="transactions-filter-live"
+            className="h-3.5 w-3.5"
+          />
+          <Radio
+            className={`h-3.5 w-3.5 ${live ? 'animate-pulse text-success' : 'text-muted-foreground'}`}
+          />
+          <span>
+            Live updates
+            {!liveAllowed ? (
+              <span className="ml-1 text-[10px]">(disabled while a date range is set)</span>
+            ) : null}
+          </span>
+        </label>
+      </div>
     </div>
   );
 }
@@ -612,4 +663,37 @@ function formatEnergy(r: TransactionRow): string {
   if (wh == null) return '—';
   const kWh = wh / 1000;
   return `${kWh.toFixed(3)} kWh`;
+}
+
+// ----------------------------------------------------------------------------
+// Live tail
+// ----------------------------------------------------------------------------
+//
+// Mounted only when `live=true && no date range filter`. Subscribes to
+// the broker's `transactions-active` query and refetches the REST list
+// whenever a tx-started / tx-stopped delta arrives. We refetch the
+// authoritative gateway response rather than merge broker rows
+// client-side: broker and REST disagree on field names + finished tx
+// don't show on the broker at all, so trying to reconcile is brittle.
+// Refetch is louder than necessary but produces correct results.
+
+function LiveTailRefetcher({ filterKey }: { filterKey: string }) {
+  const sub = useSubscription('transactions-active', {});
+  const qc = useQueryClient();
+  const lastSeenRef = useRef<unknown>(null);
+
+  useEffect(() => {
+    const delta = sub.lastDelta;
+    if (!delta || delta.kind !== 'transactions-active') return;
+    // Each delta is a fresh object from the WS layer; reference equality
+    // dedupes against accidental re-runs from parent re-renders.
+    if (lastSeenRef.current === delta) return;
+    lastSeenRef.current = delta;
+    void qc.refetchQueries({
+      queryKey: ['sys-transactions', filterKey],
+      type: 'active',
+    });
+  }, [sub.lastDelta, qc, filterKey]);
+
+  return null;
 }
