@@ -86,6 +86,16 @@ export class GatewayClient {
     );
   }
 
+  /** Trip the gateway's self-restart trigger. Returns 202 immediately;
+   *  the gateway schedules SIGTERM ~500ms later and the container's
+   *  restart policy brings it back. Returns 503 when the gateway has
+   *  not opted in (`EVEYS_OCPP_ADMIN_RESTART_ENABLED=false`); the proxy
+   *  passes that through unchanged so the UI can show a meaningful
+   *  message. */
+  restartGateway() {
+    return this.json<unknown>('restart_gateway', '/api/v1/admin/restart', { method: 'POST' });
+  }
+
   listChargePoints(
     params: {
       online?: boolean;

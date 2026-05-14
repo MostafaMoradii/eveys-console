@@ -106,6 +106,7 @@ export type GatewayOp =
   | 'admin_config'
   | 'patch_admin_config'
   | 'delete_admin_config_override'
+  | 'restart_gateway'
   | 'list_charge_points'
   | 'get_charge_point'
   | 'list_active_transactions'

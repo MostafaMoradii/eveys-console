@@ -495,6 +495,26 @@ const META: Record<keyof Config, KeyMeta> = {
     default: '200',
     sensitive: false,
   },
+  CONSOLE_RESTART_ENABLED: {
+    description:
+      'Enable POST /sys/restart and POST /sys/restart-gateway so the Console UI can drive a process restart (used for config keys that need a fresh boot). Off by default; flip on only when the UI overlay is wired and the operator wants it. Both endpoints return 503 SERVICE_UNAVAILABLE when this is false.',
+    category: 'admin',
+    mutable: false,
+    restart: 'console',
+    range: 'boolean',
+    default: 'false',
+    sensitive: false,
+  },
+  CONSOLE_RESTART_DEBOUNCE_MS: {
+    description:
+      'Minimum gap between accepted restart requests. A second POST inside this window returns 202 + already_scheduled but does NOT queue another exit. Guards against double-clicks and the UI overlay racing the operator button.',
+    category: 'admin',
+    mutable: false,
+    restart: 'console',
+    range: 'positive integer (milliseconds)',
+    default: '5000',
+    sensitive: false,
+  },
 };
 
 export interface ConfigEntry {
