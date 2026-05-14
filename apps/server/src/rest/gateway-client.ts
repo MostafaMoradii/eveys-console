@@ -136,6 +136,38 @@ export class GatewayClient {
     return this.json<unknown>('list_active_transactions', `/api/v1/transactions?active=true`);
   }
 
+  /** Global transaction list. Distinct from `listActiveTransactions`
+   *  above (which the WS broker uses to bootstrap the active-only
+   *  snapshot) — this is the operator-facing audit endpoint with the
+   *  full filter set.
+   *
+   *  The gateway accepts more params than we forward; this surface is
+   *  the closed subset the Console UI actually uses. Add a new param
+   *  here AND in the proxy route's coercion AND in the web client
+   *  before exposing it. */
+  listTransactions(
+    params: {
+      active?: boolean;
+      cp_id?: string;
+      id_tag?: string;
+      from?: string;
+      to?: string;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) {
+    const qs = new URLSearchParams();
+    if (params.active !== undefined) qs.set('active', String(params.active));
+    if (params.cp_id) qs.set('cp_id', params.cp_id);
+    if (params.id_tag) qs.set('id_tag', params.id_tag);
+    if (params.from) qs.set('from', params.from);
+    if (params.to) qs.set('to', params.to);
+    if (params.cursor) qs.set('cursor', params.cursor);
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return this.json<unknown>('list_transactions', `/api/v1/transactions${suffix}`);
+  }
+
   listChargePointTransactions(
     cpId: string,
     params: { active?: boolean; limit?: number; cursor?: string } = {},

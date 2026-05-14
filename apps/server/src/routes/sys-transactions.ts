@@ -1,6 +1,9 @@
-// Proxies the gateway's per-transaction detail + meter-values surfaces so
-// the browser only ever talks to the Console server. Two endpoints, mapped
-// 1:1 to the gateway:
+// Proxies the gateway's transactions surface so the browser only ever
+// talks to the Console server. Three endpoints, each mapped 1:1 to the
+// gateway:
+//
+//   GET /sys/transactions?status=&cp_id=&id_tag=&from=&to=&cursor=&limit=
+//       → GET /api/v1/transactions?... (audit list, PR A1 of #188)
 //
 //   GET /sys/transactions/:tx_id
 //       → GET /api/v1/transactions/{transaction_id}
@@ -17,6 +20,16 @@ import type { GatewayClient } from '../rest/gateway-client.js';
 
 interface RouteDeps {
   gateway: GatewayClient;
+}
+
+interface ListQuery {
+  status?: string;
+  cp_id?: string;
+  id_tag?: string;
+  from?: string;
+  to?: string;
+  cursor?: string;
+  limit?: string;
 }
 
 interface MeterValuesQuery {
@@ -60,6 +73,55 @@ export async function registerSysTransactionsRoute(app: any, deps: RouteDeps) {
       detail: err instanceof Error ? err.message : 'unknown',
     });
   };
+
+  app.get(
+    '/sys/transactions',
+    { preHandler: requireAuth },
+    async (
+      req: { query: ListQuery },
+      reply: { code: (n: number) => { send: (b: unknown) => unknown } },
+    ) => {
+      const q = req.query ?? {};
+      const params: Parameters<typeof deps.gateway.listTransactions>[0] = {};
+
+      // `status` is a closed enum on the UI side: active | finished |
+      // all. The gateway only knows `active=true|false|absent`, so we
+      // translate. Anything else (incl. empty / typo) is a hard 400 —
+      // silently mapping unknown values to "all" would mask UI bugs.
+      if (q.status !== undefined && q.status !== '') {
+        if (q.status === 'active') params.active = true;
+        else if (q.status === 'finished') params.active = false;
+        else if (q.status === 'all') {
+          /* leave active unset */
+        } else {
+          return reply.code(400).send({
+            error: 'bad-request',
+            detail: 'status must be active|finished|all',
+          });
+        }
+      }
+
+      if (q.cp_id) params.cp_id = q.cp_id;
+      if (q.id_tag) params.id_tag = q.id_tag;
+      if (q.from) params.from = q.from;
+      if (q.to) params.to = q.to;
+      if (q.cursor) params.cursor = q.cursor;
+
+      if (q.limit !== undefined && q.limit !== '') {
+        const n = Number(q.limit);
+        if (!Number.isInteger(n) || n <= 0 || n > 1000) {
+          return reply.code(400).send({ error: 'bad-request', detail: 'limit must be 1..1000' });
+        }
+        params.limit = n;
+      }
+
+      try {
+        return await deps.gateway.listTransactions(params);
+      } catch (err) {
+        return handleGatewayError(err, reply);
+      }
+    },
+  );
 
   app.get(
     '/sys/transactions/:tx_id',
