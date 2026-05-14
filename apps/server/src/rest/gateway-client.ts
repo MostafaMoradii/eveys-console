@@ -153,7 +153,11 @@ export class GatewayClient {
       from?: string;
       to?: string;
       cursor?: string;
+      page?: number;
+      page_size?: number;
       limit?: number;
+      sort?: 'id' | 'started_at' | 'stopped_at' | 'consumed_wh';
+      dir?: 'asc' | 'desc';
     } = {},
   ) {
     const qs = new URLSearchParams();
@@ -163,7 +167,11 @@ export class GatewayClient {
     if (params.from) qs.set('from', params.from);
     if (params.to) qs.set('to', params.to);
     if (params.cursor) qs.set('cursor', params.cursor);
+    if (params.page !== undefined) qs.set('page', String(params.page));
+    if (params.page_size !== undefined) qs.set('page_size', String(params.page_size));
     if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params.sort) qs.set('sort', params.sort);
+    if (params.dir) qs.set('dir', params.dir);
     const suffix = qs.toString() ? `?${qs}` : '';
     return this.json<unknown>('list_transactions', `/api/v1/transactions${suffix}`);
   }

@@ -29,7 +29,11 @@ interface ListQuery {
   from?: string;
   to?: string;
   cursor?: string;
+  page?: string;
+  page_size?: string;
   limit?: string;
+  sort?: string;
+  dir?: string;
 }
 
 interface MeterValuesQuery {
@@ -124,6 +128,50 @@ export async function registerSysTransactionsRoute(app: any, deps: RouteDeps) {
           return reply.code(400).send({ error: 'bad-request', detail: 'limit must be 1..1000' });
         }
         params.limit = n;
+      }
+
+      // Page-mode pagination is required when the operator sorts on
+      // anything but the default; the gateway 400s on `cursor + non-id
+      // sort`. The Console UI flips to page mode automatically when a
+      // column-header sort is active; this just forwards verbatim.
+      if (q.page !== undefined && q.page !== '') {
+        const n = Number(q.page);
+        if (!Number.isInteger(n) || n <= 0) {
+          return reply.code(400).send({ error: 'bad-request', detail: 'page must be >= 1' });
+        }
+        params.page = n;
+      }
+      if (q.page_size !== undefined && q.page_size !== '') {
+        const n = Number(q.page_size);
+        if (!Number.isInteger(n) || n <= 0 || n > 1000) {
+          return reply
+            .code(400)
+            .send({ error: 'bad-request', detail: 'page_size must be 1..1000' });
+        }
+        params.page_size = n;
+      }
+
+      if (q.sort !== undefined && q.sort !== '') {
+        if (
+          q.sort === 'id' ||
+          q.sort === 'started_at' ||
+          q.sort === 'stopped_at' ||
+          q.sort === 'consumed_wh'
+        ) {
+          params.sort = q.sort;
+        } else {
+          return reply.code(400).send({
+            error: 'bad-request',
+            detail: 'sort must be id|started_at|stopped_at|consumed_wh',
+          });
+        }
+      }
+      if (q.dir !== undefined && q.dir !== '') {
+        if (q.dir === 'asc' || q.dir === 'desc') {
+          params.dir = q.dir;
+        } else {
+          return reply.code(400).send({ error: 'bad-request', detail: 'dir must be asc|desc' });
+        }
       }
 
       try {

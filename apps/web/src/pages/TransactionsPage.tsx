@@ -17,7 +17,16 @@
 
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Loader2, Radio, Search } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Radio,
+  Search,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -41,12 +50,17 @@ import {
 } from '@/components/ui/table';
 import { useSubscription } from '@/hooks/use-subscription';
 import { useIsBelow } from '@/lib/use-breakpoint';
+import { cn } from '@/lib/utils';
 import { useConsoleClient } from '@/lib/ws-context';
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 const DEFAULT_PAGE_SIZE: PageSize = 20;
 const DEFAULT_STATUS: TransactionStatusFilter = 'all';
+
+const SORTABLE_KEYS = ['id', 'started_at', 'stopped_at', 'consumed_wh'] as const;
+type SortKey = (typeof SORTABLE_KEYS)[number];
+type SortDir = 'asc' | 'desc';
 
 export interface TransactionsPageSearch {
   status?: TransactionStatusFilter;
@@ -59,6 +73,11 @@ export interface TransactionsPageSearch {
    *  subscribes to the `transactions-active` WS query and refetches on
    *  every delta so freshly-started sessions surface within ~100ms. */
   live?: boolean;
+  /** Sort key when the operator clicks a column header. Default
+   *  (`id`) is omitted from the URL — the unsorted view stays the
+   *  copy-pasted default. */
+  sort?: SortKey;
+  dir?: SortDir;
 }
 
 export function validateTransactionsPageSearch(
@@ -84,6 +103,12 @@ export function validateTransactionsPageSearch(
   // case.
   if (raw.live === true || raw.live === 'true' || raw.live === '1') {
     out.live = true;
+  }
+  if (typeof raw.sort === 'string' && (SORTABLE_KEYS as readonly string[]).includes(raw.sort)) {
+    out.sort = raw.sort as SortKey;
+  }
+  if (raw.dir === 'asc' || raw.dir === 'desc') {
+    out.dir = raw.dir;
   }
   return out;
 }
@@ -114,6 +139,14 @@ export function TransactionsPage() {
   useEffect(() => setCpIdInput(cpId), [cpId]);
   useEffect(() => setIdTagInput(idTag), [idTag]);
 
+  // Sort state. `id` is the implicit default — the URL strips it so
+  // unsorted-view paste-links stay compact. A non-default sort flips
+  // pagination from cursor mode to page mode (the gateway 400s on
+  // cursor + non-id sort).
+  const sortKey: SortKey = search.sort ?? 'id';
+  const sortDir: SortDir = search.dir ?? 'desc';
+  const isSorted = sortKey !== 'id';
+
   const setSearch = (next: Partial<TransactionsPageSearch>) =>
     void navigate({
       search: (prev: Record<string, unknown>) => {
@@ -130,17 +163,48 @@ export function TransactionsPage() {
         if (!out.to) delete out.to;
         if (out.page_size === DEFAULT_PAGE_SIZE) delete out.page_size;
         if (!out.live) delete out.live;
+        if (out.sort === 'id') delete out.sort;
+        if (!out.sort) delete out.dir;
         return out;
       },
       replace: true,
     });
 
-  // Cursor stack for pagination. The current page's cursor is at the
-  // top; Previous pops; Next pushes the response's `next_cursor`.
-  // Reset whenever any filter changes (so we don't carry stale cursors
-  // into a new query window).
+  // Click handler for column headers. Three-state cycle:
+  //   not sorted on this column     → sort desc
+  //   currently sorted on it, desc  → sort asc
+  //   currently sorted on it, asc   → clear sort (back to default `id`)
+  // Also resets the cursor stack + page index since any sort change
+  // invalidates the current pagination position.
+  const toggleSort = (key: SortKey) => {
+    cursorStack.current = [];
+    setPageIdx(1);
+    if (sortKey !== key) {
+      setSearch({ sort: key, dir: 'desc' });
+    } else if (sortDir === 'desc') {
+      setSearch({ sort: key, dir: 'asc' });
+    } else {
+      // Clear sort → unsorted view. Strip both keys from the URL via
+      // navigate-with-mutator so we don't pass `undefined` through the
+      // exact-optional-property-types-strict Partial<…> contract.
+      void navigate({
+        search: (prev: Record<string, unknown>) => {
+          const out: TransactionsPageSearch = { ...(prev as TransactionsPageSearch) };
+          delete out.sort;
+          delete out.dir;
+          return out;
+        },
+        replace: true,
+      });
+    }
+  };
+
+  // Cursor stack — only used in default-sort mode. Page-mode (sorted)
+  // uses a simple integer index in React state. Both reset whenever
+  // any filter (or the sort) changes.
   const cursorStack = useRef<string[]>([]);
-  const filterKey = `${status}|${cpId}|${idTag}|${from}|${to}|${pageSize}`;
+  const [pageIdx, setPageIdx] = useState(1);
+  const filterKey = `${status}|${cpId}|${idTag}|${from}|${to}|${pageSize}|${sortKey}|${sortDir}`;
   const prevFilterKeyRef = useRef(filterKey);
   if (prevFilterKeyRef.current !== filterKey) {
     cursorStack.current = [];
@@ -152,18 +216,25 @@ export function TransactionsPage() {
       : undefined;
 
   const query = useQuery({
-    queryKey: ['sys-transactions', filterKey, currentCursor],
+    queryKey: isSorted
+      ? ['sys-transactions', filterKey, 'page', pageIdx]
+      : ['sys-transactions', filterKey, 'cursor', currentCursor ?? ''],
     queryFn: () => {
       if (!token) throw new Error('not signed in');
-      const params: Parameters<typeof fetchTransactions>[1] = {
-        status,
-        limit: pageSize,
-      };
+      const params: Parameters<typeof fetchTransactions>[1] = { status };
       if (cpId) params.cp_id = cpId;
       if (idTag) params.id_tag = idTag;
       if (from) params.from = from;
       if (to) params.to = to;
-      if (currentCursor) params.cursor = currentCursor;
+      if (isSorted) {
+        params.sort = sortKey;
+        params.dir = sortDir;
+        params.page = pageIdx;
+        params.page_size = pageSize;
+      } else {
+        params.limit = pageSize;
+        if (currentCursor) params.cursor = currentCursor;
+      }
       return fetchTransactions(token, params);
     },
     enabled: !!token,
@@ -173,6 +244,11 @@ export function TransactionsPage() {
   });
 
   const goNext = () => {
+    if (isSorted) {
+      const pg = query.data?.pagination;
+      if (pg && pageIdx < pg.total_pages) setPageIdx(pageIdx + 1);
+      return;
+    }
     const cur = query.data?.next_cursor;
     if (!cur) return;
     cursorStack.current = [...cursorStack.current, cur];
@@ -180,18 +256,24 @@ export function TransactionsPage() {
     setNudge((n) => n + 1);
   };
   const goPrev = () => {
+    if (isSorted) {
+      if (pageIdx > 1) setPageIdx(pageIdx - 1);
+      return;
+    }
     if (cursorStack.current.length === 0) return;
     cursorStack.current = cursorStack.current.slice(0, -1);
     setNudge((n) => n + 1);
   };
-  // Cheap nudge so pagination actions trigger a render without
-  // mirroring the stack into React state (which would re-trigger the
-  // filter-changed reset).
+  // Cheap nudge so cursor-mode pagination actions trigger a render
+  // without mirroring the stack into React state (which would
+  // re-trigger the filter-changed reset).
   const [, setNudge] = useState(0);
 
-  const pageNumber = cursorStack.current.length + 1;
-  const hasPrev = cursorStack.current.length > 0;
-  const hasNext = Boolean(query.data?.next_cursor);
+  const pageNumber = isSorted ? pageIdx : cursorStack.current.length + 1;
+  const hasPrev = isSorted ? pageIdx > 1 : cursorStack.current.length > 0;
+  const hasNext = isSorted
+    ? (query.data?.pagination?.total_pages ?? 0) > pageIdx
+    : Boolean(query.data?.next_cursor);
   const rows = query.data?.transactions ?? [];
 
   return (
@@ -241,7 +323,16 @@ export function TransactionsPage() {
         <EmptyState />
       ) : (
         <>
-          {isPhone ? <TransactionsCards rows={rows} /> : <TransactionsTable rows={rows} />}
+          {isPhone ? (
+            <TransactionsCards rows={rows} />
+          ) : (
+            <TransactionsTable
+              rows={rows}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onToggleSort={toggleSort}
+            />
+          )}
           <Pagination
             pageNumber={pageNumber}
             pageSize={pageSize}
@@ -435,18 +526,84 @@ function FilterField({ label, children }: { label: string; children: React.React
 // Table + cards
 // ----------------------------------------------------------------------------
 
-function TransactionsTable({ rows }: { rows: TransactionRow[] }) {
+function SortableHead({
+  k,
+  label,
+  activeKey,
+  dir,
+  onClick,
+  align,
+}: {
+  k: SortKey;
+  label: string;
+  activeKey: SortKey;
+  dir: SortDir;
+  onClick: (key: SortKey) => void;
+  align?: 'right';
+}) {
+  const active = activeKey === k;
+  const Icon = active ? (dir === 'desc' ? ArrowDown : ArrowUp) : ArrowUpDown;
+  return (
+    <TableHead className={align === 'right' ? 'text-right' : undefined}>
+      <button
+        type="button"
+        onClick={() => onClick(k)}
+        className={cn(
+          'inline-flex items-center gap-1 text-left font-medium hover:text-foreground',
+          align === 'right' && 'flex-row-reverse',
+          active ? 'text-foreground' : 'text-muted-foreground',
+        )}
+        aria-sort={active ? (dir === 'desc' ? 'descending' : 'ascending') : 'none'}
+        data-testid={`transactions-sort-${k}`}
+      >
+        <span>{label}</span>
+        <Icon className={cn('h-3 w-3 shrink-0', !active && 'opacity-40')} />
+      </button>
+    </TableHead>
+  );
+}
+
+function TransactionsTable({
+  rows,
+  sortKey,
+  sortDir,
+  onToggleSort,
+}: {
+  rows: TransactionRow[];
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onToggleSort: (key: SortKey) => void;
+}) {
   return (
     <div className="rounded-md border" data-testid="transactions-table">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>transaction_id</TableHead>
+            <SortableHead
+              k="id"
+              label="transaction_id"
+              activeKey={sortKey}
+              dir={sortDir}
+              onClick={onToggleSort}
+            />
             <TableHead>cp_id</TableHead>
             <TableHead>id_tag</TableHead>
-            <TableHead>started</TableHead>
+            <SortableHead
+              k="started_at"
+              label="started"
+              activeKey={sortKey}
+              dir={sortDir}
+              onClick={onToggleSort}
+            />
             <TableHead>duration</TableHead>
-            <TableHead className="text-right">energy</TableHead>
+            <SortableHead
+              k="consumed_wh"
+              label="energy"
+              activeKey={sortKey}
+              dir={sortDir}
+              onClick={onToggleSort}
+              align="right"
+            />
             <TableHead>status</TableHead>
           </TableRow>
         </TableHeader>

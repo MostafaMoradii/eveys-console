@@ -422,3 +422,120 @@ describe('TransactionsPage — live overlay', () => {
     await waitFor(() => expect(routerSearch.live).toBeUndefined());
   });
 });
+
+describe('TransactionsPage — sortable columns', () => {
+  it('default render does not send sort/dir + uses cursor mode', async () => {
+    nextResponse.value = { transactions: [row()], next_cursor: null };
+    renderPage();
+    await waitFor(() => expect(fetchCalls.length).toBe(1));
+    const c = fetchCalls[0];
+    expect(c.sort).toBeUndefined();
+    expect(c.dir).toBeUndefined();
+    expect(c.page).toBeUndefined();
+    // Cursor mode means `limit` is forwarded for page-size; absence of
+    // `page` is the signal.
+    expect(c.limit).toBe(20);
+  });
+
+  it('clicking the started header sorts desc and switches to page mode', async () => {
+    nextResponse.value = { transactions: [row()], next_cursor: null };
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(fetchCalls.length).toBe(1));
+
+    nextResponse.value = {
+      transactions: [row()],
+      next_cursor: null,
+      pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 },
+    };
+    await user.click(screen.getByTestId('transactions-sort-started_at'));
+
+    await waitFor(() => expect(fetchCalls.length).toBe(2));
+    const c = fetchCalls[1];
+    expect(c.sort).toBe('started_at');
+    expect(c.dir).toBe('desc');
+    expect(c.page).toBe(1);
+    expect(c.page_size).toBe(20);
+    expect(c.cursor).toBeUndefined();
+    expect(routerSearch.sort).toBe('started_at');
+    expect(routerSearch.dir).toBe('desc');
+  });
+
+  it('clicking the same header again flips desc → asc, then clears to default', async () => {
+    nextResponse.value = {
+      transactions: [row()],
+      next_cursor: null,
+      pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 },
+    };
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(fetchCalls.length).toBe(1));
+
+    nextResponse.value = {
+      transactions: [row()],
+      next_cursor: null,
+      pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 },
+    };
+    // 1st click: desc
+    await user.click(screen.getByTestId('transactions-sort-consumed_wh'));
+    await waitFor(() => expect(routerSearch.dir).toBe('desc'));
+
+    nextResponse.value = {
+      transactions: [row()],
+      next_cursor: null,
+      pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 },
+    };
+    // 2nd click: asc
+    await user.click(screen.getByTestId('transactions-sort-consumed_wh'));
+    await waitFor(() => expect(routerSearch.dir).toBe('asc'));
+
+    nextResponse.value = { transactions: [row()], next_cursor: null };
+    // 3rd click: clear → back to default (sort/dir absent)
+    await user.click(screen.getByTestId('transactions-sort-consumed_wh'));
+    await waitFor(() => expect(routerSearch.sort).toBeUndefined());
+    expect(routerSearch.dir).toBeUndefined();
+  });
+
+  it('honours sort/dir from the URL on first render', async () => {
+    searchSnapshot = { sort: 'consumed_wh', dir: 'asc' };
+    routerSearch.sort = 'consumed_wh';
+    routerSearch.dir = 'asc';
+    nextResponse.value = {
+      transactions: [row()],
+      next_cursor: null,
+      pagination: { page: 1, page_size: 20, total: 1, total_pages: 1 },
+    };
+    renderPage();
+    await waitFor(() => expect(fetchCalls.length).toBe(1));
+    const c = fetchCalls[0];
+    expect(c.sort).toBe('consumed_wh');
+    expect(c.dir).toBe('asc');
+    expect(c.page).toBe(1);
+  });
+
+  it('Next bumps page index in page mode', async () => {
+    searchSnapshot = { sort: 'consumed_wh', dir: 'desc' };
+    routerSearch.sort = 'consumed_wh';
+    routerSearch.dir = 'desc';
+    responseQueue.push(
+      {
+        transactions: [row()],
+        next_cursor: null,
+        pagination: { page: 1, page_size: 20, total: 80, total_pages: 4 },
+      },
+      {
+        transactions: [row()],
+        next_cursor: null,
+        pagination: { page: 2, page_size: 20, total: 80, total_pages: 4 },
+      },
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(fetchCalls.length).toBe(1));
+    expect(fetchCalls[0].page).toBe(1);
+
+    await user.click(screen.getByTestId('transactions-next'));
+    await waitFor(() => expect(fetchCalls.length).toBe(2));
+    expect(fetchCalls[1].page).toBe(2);
+  });
+});
