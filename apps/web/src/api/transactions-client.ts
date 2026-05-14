@@ -201,3 +201,45 @@ export async function fetchAllChargePointTransactions(
   }
   return { transactions: all, truncated };
 }
+
+// ----------------------------------------------------------------------------
+// Global transaction list (PR A1 of #188)
+// ----------------------------------------------------------------------------
+//
+// The TransactionsPage uses this — distinct from `fetchChargePointTransactions`
+// above (which scopes to one charger). The shape is the same row type
+// because the gateway returns the same projection; the difference is
+// which endpoint we hit and which filters it accepts.
+
+/** Closed-set status the UI sends; the server translates to the gateway's
+ *  active=true|false|absent. */
+export type TransactionStatusFilter = 'active' | 'finished' | 'all';
+
+export interface TransactionsListParams {
+  status?: TransactionStatusFilter;
+  cp_id?: string;
+  id_tag?: string;
+  from?: string;
+  to?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export async function fetchTransactions(
+  token: string,
+  params: TransactionsListParams = {},
+): Promise<TransactionsList> {
+  const qs = new URLSearchParams();
+  if (params.status) qs.set('status', params.status);
+  if (params.cp_id) qs.set('cp_id', params.cp_id);
+  if (params.id_tag) qs.set('id_tag', params.id_tag);
+  if (params.from) qs.set('from', params.from);
+  if (params.to) qs.set('to', params.to);
+  if (params.cursor) qs.set('cursor', params.cursor);
+  if (params.limit !== undefined) qs.set('limit', String(params.limit));
+  const suffix = qs.toString() ? `?${qs}` : '';
+  const url = `${BASE}/sys/transactions${suffix}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`sys/transactions ${res.status}`);
+  return (await res.json()) as TransactionsList;
+}
