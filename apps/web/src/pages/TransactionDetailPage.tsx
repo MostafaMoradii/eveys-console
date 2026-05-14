@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer } from '@/components/ui/chart';
+import { TxOcppFramesPanel } from '@/components/TxOcppFramesPanel';
 import { formatUptime } from '@/lib/time';
 import { useConsoleClient } from '@/lib/ws-context';
 
@@ -122,6 +123,7 @@ export function TransactionDetailPage() {
       <EnergyChart samples={energyQuery.data?.meter_values ?? []} loading={energyQuery.isLoading} />
       <PhasesCard phases={tx.telemetry?.phases ?? null} />
       {tx.telemetry?.soc.last != null ? <SocCard soc={tx.telemetry.soc} /> : null}
+      <TxOcppFramesPanel txId={tx.transaction_id} />
     </div>
   );
 }

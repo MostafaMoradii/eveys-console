@@ -47,6 +47,10 @@ interface AggregateQuery {
   group_by?: string;
 }
 
+interface TxFramesQuery {
+  limit?: string;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function registerSysTransactionsRoute(app: any, deps: RouteDeps) {
   const requireAuth = async (
@@ -185,6 +189,36 @@ export async function registerSysTransactionsRoute(app: any, deps: RouteDeps) {
       }
       try {
         return await deps.gateway.getTransaction(txId);
+      } catch (err) {
+        return handleGatewayError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/sys/transactions/:tx_id/frames',
+    { preHandler: requireAuth },
+    async (
+      req: { params: { tx_id: string }; query: TxFramesQuery },
+      reply: { code: (n: number) => { send: (b: unknown) => unknown } },
+    ) => {
+      const txId = Number(req.params.tx_id);
+      if (!Number.isInteger(txId) || txId <= 0) {
+        return reply
+          .code(400)
+          .send({ error: 'bad-request', detail: 'tx_id must be a positive integer' });
+      }
+      const params: Parameters<typeof deps.gateway.listTransactionFrames>[1] = {};
+      const rawLimit = req.query?.limit;
+      if (rawLimit !== undefined && rawLimit !== '') {
+        const n = Number(rawLimit);
+        if (!Number.isInteger(n) || n <= 0 || n > 10_000) {
+          return reply.code(400).send({ error: 'bad-request', detail: 'limit must be 1..10000' });
+        }
+        params.limit = n;
+      }
+      try {
+        return await deps.gateway.listTransactionFrames(txId, params);
       } catch (err) {
         return handleGatewayError(err, reply);
       }
