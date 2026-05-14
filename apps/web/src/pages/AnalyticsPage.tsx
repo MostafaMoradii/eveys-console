@@ -24,7 +24,7 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Tooltip, XAxis, YAxis } from 'recharts';
 
 import {
@@ -35,7 +35,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer } from '@/components/ui/chart';
-import { Input } from '@/components/ui/input';
+import { DateTimePicker } from '@/components/ui/datetime-picker';
 import { useConsoleClient } from '@/lib/ws-context';
 
 const DEFAULT_WINDOW_DAYS = 30;
@@ -71,11 +71,6 @@ export function AnalyticsPage() {
 
   const from = search.from ?? defaultRange.from;
   const to = search.to ?? defaultRange.to;
-
-  const [fromInput, setFromInput] = useState(from);
-  const [toInput, setToInput] = useState(to);
-  useEffect(() => setFromInput(from), [from]);
-  useEffect(() => setToInput(to), [to]);
 
   const setRange = (next: Partial<AnalyticsPageSearch>) =>
     void navigate({
@@ -121,12 +116,10 @@ export function AnalyticsPage() {
       </div>
 
       <RangeRow
-        fromInput={fromInput}
-        toInput={toInput}
-        onFromChange={setFromInput}
-        onToChange={setToInput}
-        onCommitFrom={() => setRange({ from: fromInput })}
-        onCommitTo={() => setRange({ to: toInput })}
+        from={from}
+        to={to}
+        onFromChange={(v) => setRange({ from: v })}
+        onToChange={(v) => setRange({ to: v })}
       />
 
       {error ? (
@@ -159,19 +152,15 @@ export function AnalyticsPage() {
 // ----------------------------------------------------------------------------
 
 function RangeRow({
-  fromInput,
-  toInput,
+  from,
+  to,
   onFromChange,
   onToChange,
-  onCommitFrom,
-  onCommitTo,
 }: {
-  fromInput: string;
-  toInput: string;
+  from: string;
+  to: string;
   onFromChange: (v: string) => void;
   onToChange: (v: string) => void;
-  onCommitFrom: () => void;
-  onCommitTo: () => void;
 }) {
   return (
     <div
@@ -179,20 +168,18 @@ function RangeRow({
       data-testid="analytics-range-row"
     >
       <FilterField label="From">
-        <Input
-          type="datetime-local"
-          value={toLocalInput(fromInput)}
-          onChange={(e) => onFromChange(fromLocalInput(e.currentTarget.value))}
-          onBlur={onCommitFrom}
+        <DateTimePicker
+          value={from}
+          onChange={onFromChange}
+          placeholder="From…"
           data-testid="analytics-from"
         />
       </FilterField>
       <FilterField label="To">
-        <Input
-          type="datetime-local"
-          value={toLocalInput(toInput)}
-          onChange={(e) => onToChange(fromLocalInput(e.currentTarget.value))}
-          onBlur={onCommitTo}
+        <DateTimePicker
+          value={to}
+          onChange={onToChange}
+          placeholder="To…"
           data-testid="analytics-to"
         />
       </FilterField>
@@ -343,21 +330,6 @@ function formatBucketLabel(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-function toLocalInput(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fromLocalInput(local: string): string {
-  if (!local) return '';
-  const d = new Date(local);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString();
 }
 
 // Suppress an unused-import lint on `AnalyticsBucket` — kept in the

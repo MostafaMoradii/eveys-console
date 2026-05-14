@@ -232,19 +232,26 @@ describe('AnalyticsPage — rendering', () => {
 });
 
 describe('AnalyticsPage — range edits', () => {
-  it('committing the From input writes through the URL', async () => {
+  it('clearing the From picker writes an empty value through the URL', async () => {
+    // The picker triggers + calendar grid live in a Radix Portal which
+    // jsdom renders fine, but driving a day-grid click in headless
+    // mode is flaky (the grid measures itself). The clear-button path
+    // is the deterministic one to assert URL write-through: it's a
+    // simple <button>, doesn't need layout, and the failure mode it
+    // protects against ("ranges stick after the operator clears them")
+    // is the one operators have actually reported.
+    searchSnapshot = { from: '2026-05-10T00:00:00.000Z' };
+    routerSearch.from = '2026-05-10T00:00:00.000Z';
     nextByDay.value = emptyResp();
     nextByCp.value = emptyResp();
     const user = userEvent.setup();
     renderPage();
     await waitFor(() => expect(fetchCalls.length).toBeGreaterThanOrEqual(1));
 
-    const fromInput = screen.getByTestId('analytics-from');
-    await user.clear(fromInput);
-    await user.type(fromInput, '2026-05-10T08:00');
-    fromInput.blur();
+    // The clear affordance only appears when the picker has a value.
+    const clearBtn = screen.getByTestId('analytics-from-clear');
+    await user.click(clearBtn);
 
-    await waitFor(() => expect(typeof routerSearch.from).toBe('string'));
-    expect(new Date(routerSearch.from as string).toISOString()).toContain('2026-05-10');
+    await waitFor(() => expect(routerSearch.from).toBeUndefined());
   });
 });

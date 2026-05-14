@@ -28,6 +28,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DateTimePicker } from '@/components/ui/datetime-picker';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import {
@@ -363,19 +364,19 @@ function FilterRow({
       </FilterField>
 
       <FilterField label="From">
-        <Input
-          type="datetime-local"
-          value={toLocalInput(from)}
-          onChange={(e) => onFromChange(fromLocalInput(e.currentTarget.value))}
+        <DateTimePicker
+          value={from}
+          onChange={onFromChange}
+          placeholder="From…"
           data-testid="transactions-filter-from"
         />
       </FilterField>
 
       <FilterField label="To">
-        <Input
-          type="datetime-local"
-          value={toLocalInput(to)}
-          onChange={(e) => onToChange(fromLocalInput(e.currentTarget.value))}
+        <DateTimePicker
+          value={to}
+          onChange={onToChange}
+          placeholder="To…"
           data-testid="transactions-filter-to"
         />
       </FilterField>
@@ -428,23 +429,6 @@ function FilterField({ label, children }: { label: string; children: React.React
       {children}
     </div>
   );
-}
-
-/** ISO-8601 ↔ <input type="datetime-local"> bridge. The native input
- *  works in local time without a TZ suffix; we store ISO with offset
- *  so the server sees an unambiguous instant. */
-function toLocalInput(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-function fromLocalInput(local: string): string {
-  if (!local) return '';
-  const d = new Date(local);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toISOString();
 }
 
 // ----------------------------------------------------------------------------
