@@ -40,6 +40,13 @@ interface MeterValuesQuery {
   limit?: string;
 }
 
+interface AggregateQuery {
+  from?: string;
+  to?: string;
+  bucket?: string;
+  group_by?: string;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function registerSysTransactionsRoute(app: any, deps: RouteDeps) {
   const requireAuth = async (
@@ -117,6 +124,45 @@ export async function registerSysTransactionsRoute(app: any, deps: RouteDeps) {
 
       try {
         return await deps.gateway.listTransactions(params);
+      } catch (err) {
+        return handleGatewayError(err, reply);
+      }
+    },
+  );
+
+  app.get(
+    '/sys/transactions/aggregate',
+    { preHandler: requireAuth },
+    async (
+      req: { query: AggregateQuery },
+      reply: { code: (n: number) => { send: (b: unknown) => unknown } },
+    ) => {
+      const q = req.query ?? {};
+      if (!q.from || !q.to) {
+        return reply.code(400).send({ error: 'bad-request', detail: 'from and to are required' });
+      }
+      const params: Parameters<typeof deps.gateway.aggregateTransactions>[0] = {
+        from: q.from,
+        to: q.to,
+      };
+      if (q.bucket !== undefined && q.bucket !== '') {
+        if (q.bucket === 'hour' || q.bucket === 'day') {
+          params.bucket = q.bucket;
+        } else {
+          return reply.code(400).send({ error: 'bad-request', detail: 'bucket must be hour|day' });
+        }
+      }
+      if (q.group_by !== undefined && q.group_by !== '') {
+        if (q.group_by === 'none' || q.group_by === 'cp_id' || q.group_by === 'id_tag') {
+          params.group_by = q.group_by;
+        } else {
+          return reply
+            .code(400)
+            .send({ error: 'bad-request', detail: 'group_by must be none|cp_id|id_tag' });
+        }
+      }
+      try {
+        return await deps.gateway.aggregateTransactions(params);
       } catch (err) {
         return handleGatewayError(err, reply);
       }

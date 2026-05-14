@@ -16,6 +16,7 @@ interface FakeGateway {
   listTransactions: ReturnType<typeof vi.fn>;
   getTransaction: ReturnType<typeof vi.fn>;
   listMeterValues: ReturnType<typeof vi.fn>;
+  aggregateTransactions: ReturnType<typeof vi.fn>;
 }
 
 function makeFakeGateway(): FakeGateway {
@@ -23,6 +24,7 @@ function makeFakeGateway(): FakeGateway {
     listTransactions: vi.fn(),
     getTransaction: vi.fn(),
     listMeterValues: vi.fn(),
+    aggregateTransactions: vi.fn(),
   };
 }
 
@@ -192,5 +194,109 @@ describe('GET /sys/transactions', () => {
     expect(res.statusCode).toBe(200);
     expect(gateway.getTransaction).toHaveBeenCalledWith(42);
     expect(gateway.listTransactions).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /sys/transactions/aggregate', () => {
+  let gateway: FakeGateway;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    gateway = makeFakeGateway();
+    app = await buildApp(gateway);
+  });
+
+  it('returns 401 without a JWT', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/aggregate?from=2026-05-01T00:00:00Z&to=2026-05-10T00:00:00Z',
+    });
+    expect(res.statusCode).toBe(401);
+    expect(gateway.aggregateTransactions).not.toHaveBeenCalled();
+  });
+
+  it('rejects when from or to is missing', async () => {
+    const r1 = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/aggregate?to=2026-05-10T00:00:00Z',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(r1.statusCode).toBe(400);
+    const r2 = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/aggregate?from=2026-05-01T00:00:00Z',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(r2.statusCode).toBe(400);
+    expect(gateway.aggregateTransactions).not.toHaveBeenCalled();
+  });
+
+  it('forwards from/to verbatim with default bucket/group_by', async () => {
+    gateway.aggregateTransactions.mockResolvedValue({ buckets: [], window: {} });
+    await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/aggregate?from=2026-05-01T00:00:00Z&to=2026-05-10T00:00:00Z',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(gateway.aggregateTransactions).toHaveBeenLastCalledWith({
+      from: '2026-05-01T00:00:00Z',
+      to: '2026-05-10T00:00:00Z',
+    });
+  });
+
+  it('forwards bucket and group_by when valid', async () => {
+    gateway.aggregateTransactions.mockResolvedValue({ buckets: [], window: {} });
+    await app.inject({
+      method: 'GET',
+      url:
+        '/sys/transactions/aggregate?from=2026-05-01T00:00:00Z&to=2026-05-10T00:00:00Z' +
+        '&bucket=hour&group_by=cp_id',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(gateway.aggregateTransactions).toHaveBeenLastCalledWith({
+      from: '2026-05-01T00:00:00Z',
+      to: '2026-05-10T00:00:00Z',
+      bucket: 'hour',
+      group_by: 'cp_id',
+    });
+  });
+
+  it('rejects unknown bucket / group_by', async () => {
+    const badBucket = await app.inject({
+      method: 'GET',
+      url:
+        '/sys/transactions/aggregate?from=2026-05-01T00:00:00Z&to=2026-05-10T00:00:00Z' +
+        '&bucket=year',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(badBucket.statusCode).toBe(400);
+
+    const badGroup = await app.inject({
+      method: 'GET',
+      url:
+        '/sys/transactions/aggregate?from=2026-05-01T00:00:00Z&to=2026-05-10T00:00:00Z' +
+        '&group_by=color',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(badGroup.statusCode).toBe(400);
+    expect(gateway.aggregateTransactions).not.toHaveBeenCalled();
+  });
+
+  it('passes through a structured upstream 400 envelope', async () => {
+    const err = Object.assign(new Error('upstream'), {
+      status: 400,
+      body: JSON.stringify({ error: 'window-too-large', error_code: 'WINDOW_TOO_LARGE' }),
+    });
+    gateway.aggregateTransactions.mockRejectedValue(err);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/sys/transactions/aggregate?from=2025-01-01T00:00:00Z&to=2026-05-10T00:00:00Z',
+      headers: { authorization: authHeader(app) },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: 'window-too-large',
+      error_code: 'WINDOW_TOO_LARGE',
+    });
   });
 });
